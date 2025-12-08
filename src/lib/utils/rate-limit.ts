@@ -116,7 +116,7 @@ export function rateLimit(config: RateLimitConfig): MiddlewareHandler<{
  * Default rate limit configurations
  */
 export const rateLimitConfigs = {
-  /** Standard API rate limit: 60 requests per minute */
+  /** Standard API rate limit: 60 requests per minute (anonymous) */
   standard: { limit: 60, window: 60 },
 
   /** Higher rate limit with API key: 300 requests per minute */
@@ -125,3 +125,31 @@ export const rateLimitConfigs = {
   /** Classification rate limit: 10 requests per minute */
   classification: { limit: 10, window: 60, keyPrefix: 'ratelimit:classify' },
 } as const;
+
+/**
+ * Tier-aware rate limiting middleware
+ * Uses higher limits for authenticated API key users
+ */
+export function rateLimitByTier(options?: {
+  keyPrefix?: string;
+}): MiddlewareHandler<{
+  Bindings: Env;
+  Variables: Variables;
+}> {
+  const { keyPrefix = 'ratelimit' } = options ?? {};
+
+  return async (c, next) => {
+    // Get tier from context (set by apiKeyAuth middleware)
+    const tier = c.get('apiKeyTier') ?? 'anonymous';
+
+    // Select config based on tier
+    const config: RateLimitConfig =
+      tier === 'anonymous'
+        ? { ...rateLimitConfigs.standard, keyPrefix }
+        : { ...rateLimitConfigs.withApiKey, keyPrefix };
+
+    // Create and execute rate limiter
+    const limiter = rateLimit(config);
+    return limiter(c, next);
+  };
+}

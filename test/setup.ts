@@ -15,12 +15,28 @@ beforeAll(async () => {
   await env.DB.exec(
     "CREATE TABLE IF NOT EXISTS classification_queue (id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), agent_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')), attempts INTEGER DEFAULT 0, error TEXT, created_at TEXT DEFAULT (datetime('now')), processed_at TEXT)"
   );
+
+  // Reputation tables
+  await env.DB.exec(
+    "CREATE TABLE IF NOT EXISTS agent_feedback (id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), agent_id TEXT NOT NULL, chain_id INTEGER NOT NULL, score INTEGER NOT NULL CHECK (score >= 0 AND score <= 100), tags TEXT NOT NULL DEFAULT '[]', context TEXT, feedback_uri TEXT, submitter TEXT NOT NULL, eas_uid TEXT UNIQUE, submitted_at TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))"
+  );
+
+  await env.DB.exec(
+    "CREATE TABLE IF NOT EXISTS agent_reputation (id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), agent_id TEXT NOT NULL UNIQUE, chain_id INTEGER NOT NULL, feedback_count INTEGER NOT NULL DEFAULT 0, average_score REAL NOT NULL DEFAULT 0 CHECK (average_score >= 0 AND average_score <= 100), low_count INTEGER NOT NULL DEFAULT 0, medium_count INTEGER NOT NULL DEFAULT 0, high_count INTEGER NOT NULL DEFAULT 0, last_calculated_at TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))"
+  );
+
+  await env.DB.exec(
+    "CREATE TABLE IF NOT EXISTS eas_sync_state (chain_id INTEGER PRIMARY KEY, last_block INTEGER NOT NULL DEFAULT 0, last_timestamp TEXT, attestations_synced INTEGER NOT NULL DEFAULT 0, last_error TEXT, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))"
+  );
 });
 
 // Clean up between tests
 afterEach(async () => {
   await env.DB.exec('DELETE FROM agent_classifications');
   await env.DB.exec('DELETE FROM classification_queue');
+  await env.DB.exec('DELETE FROM agent_feedback');
+  await env.DB.exec('DELETE FROM agent_reputation');
+  await env.DB.exec('DELETE FROM eas_sync_state');
 });
 
 /**
@@ -123,4 +139,92 @@ export function createMockEnv() {
     RATE_LIMIT_RPM: '100',
     CLASSIFICATION_MODEL: 'claude-3-haiku-20240307',
   };
+}
+
+/**
+ * Create a mock feedback for testing
+ */
+export function createMockFeedback(agentId: string, overrides: Record<string, unknown> = {}) {
+  return {
+    agent_id: agentId,
+    chain_id: 11155111,
+    score: 75,
+    tags: JSON.stringify(['reliable', 'fast']),
+    context: 'Great agent!',
+    feedback_uri: 'https://eas.example.com/attestation/0x123',
+    submitter: '0x1234567890123456789012345678901234567890',
+    eas_uid: null as string | null,
+    submitted_at: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+/**
+ * Insert a mock feedback into the database
+ */
+export async function insertMockFeedback(agentId: string, overrides: Record<string, unknown> = {}) {
+  const feedback = createMockFeedback(agentId, overrides);
+  const id = crypto.randomUUID().replace(/-/g, '');
+
+  await env.DB.prepare(
+    `INSERT INTO agent_feedback
+     (id, agent_id, chain_id, score, tags, context, feedback_uri, submitter, eas_uid, submitted_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(
+      id,
+      feedback.agent_id,
+      feedback.chain_id,
+      feedback.score,
+      feedback.tags,
+      feedback.context,
+      feedback.feedback_uri,
+      feedback.submitter,
+      feedback.eas_uid,
+      feedback.submitted_at
+    )
+    .run();
+
+  return { id, ...feedback };
+}
+
+/**
+ * Insert a mock reputation into the database
+ */
+export async function insertMockReputation(
+  agentId: string,
+  overrides: Record<string, unknown> = {}
+) {
+  const reputation = {
+    agent_id: agentId,
+    chain_id: 11155111,
+    feedback_count: 5,
+    average_score: 72.5,
+    low_count: 1,
+    medium_count: 2,
+    high_count: 2,
+    last_calculated_at: new Date().toISOString(),
+    ...overrides,
+  };
+  const id = crypto.randomUUID().replace(/-/g, '');
+
+  await env.DB.prepare(
+    `INSERT INTO agent_reputation
+     (id, agent_id, chain_id, feedback_count, average_score, low_count, medium_count, high_count, last_calculated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(
+      id,
+      reputation.agent_id,
+      reputation.chain_id,
+      reputation.feedback_count,
+      reputation.average_score,
+      reputation.low_count,
+      reputation.medium_count,
+      reputation.high_count,
+      reputation.last_calculated_at
+    )
+    .run();
+
+  return { id, ...reputation };
 }

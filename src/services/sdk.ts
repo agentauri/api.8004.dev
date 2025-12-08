@@ -4,8 +4,18 @@
  */
 
 import { SDKError } from '@/lib/utils/errors';
-import type { AgentDetail, AgentSummary, ChainStats, Env, SupportedChainId } from '@/types';
+import type { AgentDetail, AgentSummary, ChainStats, Env, SupportedChainId, TrustMethod } from '@/types';
 import { SDK } from 'agent0-sdk';
+
+/**
+ * Derive supported trust methods from agent data
+ */
+function deriveSupportedTrust(x402Support: boolean): TrustMethod[] {
+  const methods: TrustMethod[] = [];
+  if (x402Support) methods.push('x402');
+  // EAS attestations will be added in future when reputation system is integrated
+  return methods;
+}
 
 /**
  * Chain configuration
@@ -13,6 +23,8 @@ import { SDK } from 'agent0-sdk';
 export interface ChainConfig {
   chainId: SupportedChainId;
   name: string;
+  shortName: string;
+  explorerUrl: string;
   rpcEnvKey: keyof Pick<Env, 'SEPOLIA_RPC_URL' | 'BASE_SEPOLIA_RPC_URL' | 'POLYGON_AMOY_RPC_URL'>;
 }
 
@@ -20,9 +32,27 @@ export interface ChainConfig {
  * Supported chains configuration
  */
 export const SUPPORTED_CHAINS: ChainConfig[] = [
-  { chainId: 11155111, name: 'Ethereum Sepolia', rpcEnvKey: 'SEPOLIA_RPC_URL' },
-  { chainId: 84532, name: 'Base Sepolia', rpcEnvKey: 'BASE_SEPOLIA_RPC_URL' },
-  { chainId: 80002, name: 'Polygon Amoy', rpcEnvKey: 'POLYGON_AMOY_RPC_URL' },
+  {
+    chainId: 11155111,
+    name: 'Ethereum Sepolia',
+    shortName: 'sepolia',
+    explorerUrl: 'https://sepolia.etherscan.io',
+    rpcEnvKey: 'SEPOLIA_RPC_URL',
+  },
+  {
+    chainId: 84532,
+    name: 'Base Sepolia',
+    shortName: 'base-sepolia',
+    explorerUrl: 'https://sepolia.basescan.org',
+    rpcEnvKey: 'BASE_SEPOLIA_RPC_URL',
+  },
+  {
+    chainId: 80002,
+    name: 'Polygon Amoy',
+    shortName: 'amoy',
+    explorerUrl: 'https://amoy.polygonscan.com',
+    rpcEnvKey: 'POLYGON_AMOY_RPC_URL',
+  },
 ];
 
 /**
@@ -140,6 +170,7 @@ export function createSDKService(env: Env): SDKService {
             hasMcp: agent.mcp,
             hasA2a: agent.a2a,
             x402Support: agent.x402support,
+            supportedTrust: deriveSupportedTrust(agent.x402support),
           };
         });
 
@@ -176,6 +207,7 @@ export function createSDKService(env: Env): SDKService {
           hasMcp: agent.mcp,
           hasA2a: agent.a2a,
           x402Support: agent.x402support,
+          supportedTrust: deriveSupportedTrust(agent.x402support),
           endpoints: {
             mcp: agent.mcp
               ? {
@@ -189,6 +221,9 @@ export function createSDKService(env: Env): SDKService {
                   version: '1.0.0',
                 }
               : undefined,
+            ens: (agent.extras?.ens as string) || undefined,
+            did: (agent.extras?.did as string) || undefined,
+            agentWallet: (agent.extras?.agentWallet as string) || undefined,
           },
           registration: {
             chainId,
@@ -225,6 +260,8 @@ export function createSDKService(env: Env): SDKService {
           results.push({
             chainId: chain.chainId,
             name: chain.name,
+            shortName: chain.shortName,
+            explorerUrl: chain.explorerUrl,
             agentCount: allAgents.items.length,
             activeCount: activeAgents.items.length,
             status: 'ok',
@@ -235,6 +272,8 @@ export function createSDKService(env: Env): SDKService {
           results.push({
             chainId: chain.chainId,
             name: chain.name,
+            shortName: chain.shortName,
+            explorerUrl: chain.explorerUrl,
             agentCount: 0,
             activeCount: 0,
             status: 'error',

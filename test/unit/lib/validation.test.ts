@@ -91,6 +91,46 @@ describe('listAgentsQuerySchema', () => {
     expect(() => listAgentsQuerySchema.parse({ limit: '0' })).toThrow();
     expect(() => listAgentsQuerySchema.parse({ limit: '101' })).toThrow();
   });
+
+  it('accepts minRep and maxRep parameters', () => {
+    const result = listAgentsQuerySchema.parse({
+      minRep: '50',
+      maxRep: '90',
+    });
+    expect(result.minRep).toBe(50);
+    expect(result.maxRep).toBe(90);
+  });
+
+  it('enforces minRep/maxRep constraints (0-100)', () => {
+    expect(listAgentsQuerySchema.parse({ minRep: '0' }).minRep).toBe(0);
+    expect(listAgentsQuerySchema.parse({ minRep: '100' }).minRep).toBe(100);
+    expect(listAgentsQuerySchema.parse({ maxRep: '0' }).maxRep).toBe(0);
+    expect(listAgentsQuerySchema.parse({ maxRep: '100' }).maxRep).toBe(100);
+    expect(() => listAgentsQuerySchema.parse({ minRep: '-1' })).toThrow();
+    expect(() => listAgentsQuerySchema.parse({ minRep: '101' })).toThrow();
+    expect(() => listAgentsQuerySchema.parse({ maxRep: '-1' })).toThrow();
+    expect(() => listAgentsQuerySchema.parse({ maxRep: '101' })).toThrow();
+  });
+
+  it('accepts reputation as sort field', () => {
+    const result = listAgentsQuerySchema.parse({
+      sort: 'reputation',
+      order: 'desc',
+    });
+    expect(result.sort).toBe('reputation');
+    expect(result.order).toBe('desc');
+  });
+
+  it('validates minRep <= maxRep', () => {
+    // Valid: minRep < maxRep
+    expect(() => listAgentsQuerySchema.parse({ minRep: '10', maxRep: '90' })).not.toThrow();
+
+    // Valid: minRep = maxRep
+    expect(() => listAgentsQuerySchema.parse({ minRep: '50', maxRep: '50' })).not.toThrow();
+
+    // Invalid: minRep > maxRep
+    expect(() => listAgentsQuerySchema.parse({ minRep: '90', maxRep: '10' })).toThrow();
+  });
 });
 
 describe('searchRequestSchema', () => {

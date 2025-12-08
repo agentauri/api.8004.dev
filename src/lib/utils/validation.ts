@@ -46,27 +46,70 @@ const stringBooleanSchema = z
   .pipe(z.boolean());
 
 /**
+ * Comma-separated chain IDs schema
+ * Accepts format like "11155111,84532" and validates each ID
+ */
+const chainsSchema = z
+  .string()
+  .transform((val) =>
+    val
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+      .map((s) => Number.parseInt(s, 10))
+  )
+  .refine(
+    (arr) => arr.every((id) => SUPPORTED_CHAIN_IDS.includes(id as (typeof SUPPORTED_CHAIN_IDS)[number])),
+    { message: `All chain IDs must be one of: ${SUPPORTED_CHAIN_IDS.join(', ')}` }
+  );
+
+/**
+ * Valid sort fields for agent listing
+ */
+export const sortFieldSchema = z.enum(['relevance', 'name', 'createdAt', 'reputation']).default('relevance');
+
+/**
+ * Sort order schema
+ */
+export const sortOrderSchema = z.enum(['asc', 'desc']).default('desc');
+
+/**
  * List agents query parameters schema
  */
-export const listAgentsQuerySchema = z.object({
-  q: z.string().min(1).optional(),
-  chainId: chainIdSchema.optional(),
-  active: stringBooleanSchema.optional(),
-  mcp: stringBooleanSchema.optional(),
-  a2a: stringBooleanSchema.optional(),
-  x402: stringBooleanSchema.optional(),
-  skills: z
-    .string()
-    .transform((val) => val.split(',').map((s) => s.trim()))
-    .optional(),
-  domains: z
-    .string()
-    .transform((val) => val.split(',').map((s) => s.trim()))
-    .optional(),
-  minScore: z.coerce.number().min(0).max(1).optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
-  cursor: z.string().optional(),
-});
+export const listAgentsQuerySchema = z
+  .object({
+    q: z.string().min(1).optional(),
+    chainId: chainIdSchema.optional(),
+    chains: chainsSchema.optional(),
+    active: stringBooleanSchema.optional(),
+    mcp: stringBooleanSchema.optional(),
+    a2a: stringBooleanSchema.optional(),
+    x402: stringBooleanSchema.optional(),
+    skills: z
+      .string()
+      .transform((val) => val.split(',').map((s) => s.trim()))
+      .optional(),
+    domains: z
+      .string()
+      .transform((val) => val.split(',').map((s) => s.trim()))
+      .optional(),
+    minScore: z.coerce.number().min(0).max(1).optional(),
+    minRep: z.coerce.number().int().min(0).max(100).optional(),
+    maxRep: z.coerce.number().int().min(0).max(100).optional(),
+    sort: sortFieldSchema.optional(),
+    order: sortOrderSchema.optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+    cursor: z.string().optional(),
+  })
+  .refine(
+    (data) => {
+      if (data.minRep !== undefined && data.maxRep !== undefined) {
+        return data.minRep <= data.maxRep;
+      }
+      return true;
+    },
+    { message: 'minRep must be less than or equal to maxRep' }
+  );
 
 export type ListAgentsQuery = z.infer<typeof listAgentsQuerySchema>;
 

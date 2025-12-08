@@ -153,11 +153,11 @@ describe('CORS', () => {
     });
   });
 
-  it('handles OPTIONS preflight request', async () => {
+  it('handles OPTIONS preflight request from allowed origin', async () => {
     const request = new Request('http://localhost/api/v1/health', {
       method: 'OPTIONS',
       headers: {
-        Origin: 'https://example.com',
+        Origin: 'https://8004.dev',
         'Access-Control-Request-Method': 'GET',
       },
     });
@@ -174,13 +174,13 @@ describe('CORS', () => {
     await waitOnExecutionContext(ctx);
 
     expect(response.status).toBe(204);
-    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*');
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://8004.dev');
     expect(response.headers.get('Access-Control-Allow-Methods')).toContain('GET');
   });
 
-  it('includes CORS headers on regular requests', async () => {
+  it('includes CORS headers for allowed origins', async () => {
     const request = new Request('http://localhost/api/v1/health', {
-      headers: { Origin: 'https://example.com' },
+      headers: { Origin: 'https://8004.dev' },
     });
     const ctx = createExecutionContext();
     const response = await app.fetch(
@@ -194,7 +194,26 @@ describe('CORS', () => {
     );
     await waitOnExecutionContext(ctx);
 
-    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*');
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://8004.dev');
+  });
+
+  it('rejects CORS from unknown origins', async () => {
+    const request = new Request('http://localhost/api/v1/health', {
+      headers: { Origin: 'https://malicious.com' },
+    });
+    const ctx = createExecutionContext();
+    const response = await app.fetch(
+      request,
+      {
+        ...env,
+        ANTHROPIC_API_KEY: 'sk-ant-test-key',
+        SEARCH_SERVICE_URL: 'https://search.example.com',
+      },
+      ctx
+    );
+    await waitOnExecutionContext(ctx);
+
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull();
   });
 });
 

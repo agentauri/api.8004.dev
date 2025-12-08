@@ -3,7 +3,7 @@
  * @module test/unit/lib/rate-limit
  */
 
-import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
+import { rateLimit, rateLimitByTier, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -176,5 +176,150 @@ describe('rateLimitConfigs', () => {
       window: 60,
       keyPrefix: 'ratelimit:classify',
     });
+  });
+});
+
+describe('rateLimit edge cases', () => {
+  let mockKV: ReturnType<typeof createMockKV>;
+
+  beforeEach(() => {
+    mockKV = createMockKV();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2024-01-01T00:00:00Z'));
+  });
+
+  it('resets window when entry has expired resetAt', async () => {
+    const now = Math.floor(Date.now() / 1000);
+
+    // Pre-populate with an expired entry
+    mockKV.put(
+      'ratelimit:1.2.3.4',
+      JSON.stringify({
+        count: 100, // Over limit
+        resetAt: now - 10, // Expired 10 seconds ago
+      })
+    );
+
+    const app = new Hono<{ Bindings: { CACHE: typeof mockKV } }>();
+    app.use('*', rateLimit({ limit: 10, window: 60 }));
+    app.get('/', (c) => c.text('OK'));
+
+    const request = new Request('http://localhost/', {
+      headers: { 'CF-Connecting-IP': '1.2.3.4' },
+    });
+    const response = await app.fetch(request, { CACHE: mockKV });
+
+    // Should succeed because window was reset
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-RateLimit-Remaining')).toBe('9');
+  });
+
+  it('handles corrupted JSON in KV gracefully', async () => {
+    // Pre-populate with corrupted data
+    mockKV.put('ratelimit:1.2.3.4', 'not-valid-json{{{');
+
+    const app = new Hono<{ Bindings: { CACHE: typeof mockKV } }>();
+    app.use('*', rateLimit({ limit: 10, window: 60 }));
+    app.get('/', (c) => c.text('OK'));
+
+    const request = new Request('http://localhost/', {
+      headers: { 'CF-Connecting-IP': '1.2.3.4' },
+    });
+    const response = await app.fetch(request, { CACHE: mockKV });
+
+    // Should succeed - corrupted entry is treated as fresh
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-RateLimit-Remaining')).toBe('9');
+  });
+
+  it('handles KV errors gracefully (fail open)', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    // Create a KV that throws on get
+    const brokenKV = {
+      get: vi.fn().mockRejectedValue(new Error('KV unavailable')),
+      put: vi.fn().mockRejectedValue(new Error('KV unavailable')),
+    };
+
+    const app = new Hono<{ Bindings: { CACHE: typeof brokenKV } }>();
+    app.use('*', rateLimit({ limit: 10, window: 60 }));
+    app.get('/', (c) => c.text('OK'));
+
+    const request = new Request('http://localhost/', {
+      headers: { 'CF-Connecting-IP': '1.2.3.4' },
+    });
+    const response = await app.fetch(request, { CACHE: brokenKV });
+
+    // Should succeed - fail open on KV errors
+    expect(response.status).toBe(200);
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Rate limit KV error'),
+      expect.any(String)
+    );
+
+    consoleSpy.mockRestore();
+  });
+});
+
+describe('rateLimitByTier', () => {
+  let mockKV: ReturnType<typeof createMockKV>;
+
+  beforeEach(() => {
+    mockKV = createMockKV();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2024-01-01T00:00:00Z'));
+  });
+
+  it('uses standard config for anonymous tier', async () => {
+    const app = new Hono<{ Bindings: { CACHE: typeof mockKV }; Variables: { apiKeyTier?: string } }>();
+    app.use('*', rateLimitByTier());
+    app.get('/', (c) => c.text('OK'));
+
+    const request = new Request('http://localhost/', {
+      headers: { 'CF-Connecting-IP': '1.2.3.4' },
+    });
+    const response = await app.fetch(request, { CACHE: mockKV });
+
+    expect(response.status).toBe(200);
+    // Standard limit is 60
+    expect(response.headers.get('X-RateLimit-Limit')).toBe('60');
+  });
+
+  it('uses higher config for authenticated tier', async () => {
+    const app = new Hono<{ Bindings: { CACHE: typeof mockKV }; Variables: { apiKeyTier?: string } }>();
+
+    // Middleware to set authenticated tier
+    app.use('*', async (c, next) => {
+      c.set('apiKeyTier', 'authenticated');
+      await next();
+    });
+    app.use('*', rateLimitByTier());
+    app.get('/', (c) => c.text('OK'));
+
+    const request = new Request('http://localhost/', {
+      headers: { 'CF-Connecting-IP': '1.2.3.4' },
+    });
+    const response = await app.fetch(request, { CACHE: mockKV });
+
+    expect(response.status).toBe(200);
+    // With API key limit is 300
+    expect(response.headers.get('X-RateLimit-Limit')).toBe('300');
+  });
+
+  it('uses custom keyPrefix', async () => {
+    const app = new Hono<{ Bindings: { CACHE: typeof mockKV }; Variables: { apiKeyTier?: string } }>();
+    app.use('*', rateLimitByTier({ keyPrefix: 'custom-prefix' }));
+    app.get('/', (c) => c.text('OK'));
+
+    const request = new Request('http://localhost/', {
+      headers: { 'CF-Connecting-IP': '1.2.3.4' },
+    });
+    await app.fetch(request, { CACHE: mockKV });
+
+    expect(mockKV.put).toHaveBeenCalledWith(
+      expect.stringContaining('custom-prefix:'),
+      expect.any(String),
+      expect.any(Object)
+    );
   });
 });

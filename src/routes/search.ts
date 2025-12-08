@@ -3,7 +3,7 @@
  * @module routes/search
  */
 
-import { getClassification } from '@/db/queries';
+import { getClassificationsBatch } from '@/db/queries';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import {
@@ -59,6 +59,10 @@ search.post('/', async (c) => {
     filters: body.filters,
   });
 
+  // Batch fetch classifications for all search results (N+1 fix)
+  const agentIds = searchResults.results.map((r) => r.agentId);
+  const classificationsMap = await getClassificationsBatch(c.env.DB, agentIds);
+
   // Enrich search results with agent data and classifications
   const sdk = createSDKService(c.env);
   const enrichedAgents = await Promise.all(
@@ -66,8 +70,8 @@ search.post('/', async (c) => {
       const { chainId, tokenId } = parseAgentId(result.agentId);
       const agent = await sdk.getAgent(chainId, tokenId);
 
-      // Get classification if available
-      const classificationRow = await getClassification(c.env.DB, result.agentId);
+      // Get classification from batch result
+      const classificationRow = classificationsMap.get(result.agentId);
       const oasf = parseClassificationRow(classificationRow);
 
       return {
@@ -81,6 +85,7 @@ search.post('/', async (c) => {
         hasMcp: agent?.hasMcp ?? false,
         hasA2a: agent?.hasA2a ?? false,
         x402Support: agent?.x402Support ?? false,
+        supportedTrust: agent?.supportedTrust ?? [],
         oasf,
         searchScore: result.score,
       };

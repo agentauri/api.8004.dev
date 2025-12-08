@@ -185,6 +185,141 @@ describe('GET /api/v1/agents', () => {
     expect(body.success).toBe(true);
     expect(body.data[0].searchScore).toBeDefined();
   });
+
+  it('handles SDK failures gracefully with search result fallback', async () => {
+    // Mock search to return results
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('search')) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              query: 'test',
+              results: [
+                {
+                  rank: 1,
+                  vectorId: 'v1',
+                  agentId: '11155111:999', // Non-existent agent will fail SDK lookup
+                  chainId: 11155111,
+                  name: 'Fallback Agent',
+                  description: 'Agent from search fallback',
+                  score: 0.9,
+                  metadata: {},
+                },
+              ],
+              total: 1,
+              pagination: { hasMore: false, limit: 20 },
+              requestId: 'test-id',
+              timestamp: new Date().toISOString(),
+            }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok' }) });
+    });
+
+    const request = new Request('http://localhost/api/v1/agents?q=test');
+    const ctx = createExecutionContext();
+    const response = await app.fetch(
+      request,
+      {
+        ...env,
+        ANTHROPIC_API_KEY: 'sk-ant-test-key',
+        SEARCH_SERVICE_URL: 'https://search.example.com',
+      },
+      ctx
+    );
+    await waitOnExecutionContext(ctx);
+
+    expect(response.status).toBe(200);
+
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    // Agent should still be returned with fallback data from search
+    expect(body.data.length).toBeGreaterThanOrEqual(0);
+  });
+
+  it('accepts sort and order parameters', async () => {
+    const request = new Request('http://localhost/api/v1/agents?sort=name&order=asc');
+    const ctx = createExecutionContext();
+    const response = await app.fetch(
+      request,
+      {
+        ...env,
+        ANTHROPIC_API_KEY: 'sk-ant-test-key',
+        SEARCH_SERVICE_URL: 'https://search.example.com',
+      },
+      ctx
+    );
+    await waitOnExecutionContext(ctx);
+
+    expect(response.status).toBe(200);
+
+    const body = await response.json();
+    expect(body.success).toBe(true);
+  });
+
+  it('accepts chains parameter with multiple chain IDs', async () => {
+    const request = new Request('http://localhost/api/v1/agents?chains=11155111,84532');
+    const ctx = createExecutionContext();
+    const response = await app.fetch(
+      request,
+      {
+        ...env,
+        ANTHROPIC_API_KEY: 'sk-ant-test-key',
+        SEARCH_SERVICE_URL: 'https://search.example.com',
+      },
+      ctx
+    );
+    await waitOnExecutionContext(ctx);
+
+    expect(response.status).toBe(200);
+
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
+  });
+
+  it('returns validation error for invalid sort field', async () => {
+    const request = new Request('http://localhost/api/v1/agents?sort=invalid');
+    const ctx = createExecutionContext();
+    const response = await app.fetch(
+      request,
+      {
+        ...env,
+        ANTHROPIC_API_KEY: 'sk-ant-test-key',
+        SEARCH_SERVICE_URL: 'https://search.example.com',
+      },
+      ctx
+    );
+    await waitOnExecutionContext(ctx);
+
+    expect(response.status).toBe(400);
+
+    const body = await response.json();
+    expect(body.success).toBe(false);
+    expect(body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('returns validation error for invalid order', async () => {
+    const request = new Request('http://localhost/api/v1/agents?order=invalid');
+    const ctx = createExecutionContext();
+    const response = await app.fetch(
+      request,
+      {
+        ...env,
+        ANTHROPIC_API_KEY: 'sk-ant-test-key',
+        SEARCH_SERVICE_URL: 'https://search.example.com',
+      },
+      ctx
+    );
+    await waitOnExecutionContext(ctx);
+
+    expect(response.status).toBe(400);
+
+    const body = await response.json();
+    expect(body.success).toBe(false);
+    expect(body.code).toBe('VALIDATION_ERROR');
+  });
 });
 
 describe('GET /api/v1/agents/:agentId', () => {

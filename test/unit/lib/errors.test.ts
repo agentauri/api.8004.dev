@@ -3,7 +3,7 @@
  * @module test/unit/lib/errors
  */
 
-import { AppError, createErrorResponse, errors, handleError } from '@/lib/utils/errors';
+import { AppError, SDKError, createErrorResponse, errors, handleError } from '@/lib/utils/errors';
 import { Hono } from 'hono';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -14,6 +14,33 @@ describe('AppError', () => {
     expect(error.status).toBe(404);
     expect(error.message).toBe('Resource not found');
     expect(error.name).toBe('AppError');
+  });
+});
+
+describe('SDKError', () => {
+  it('creates error with Error as originalError', () => {
+    const originalError = new Error('Connection failed');
+    const error = new SDKError('getAgents', originalError);
+    expect(error.name).toBe('SDKError');
+    expect(error.operation).toBe('getAgents');
+    expect(error.originalError).toBe(originalError);
+    expect(error.message).toBe('SDK getAgents failed: Connection failed');
+  });
+
+  it('creates error with non-Error as originalError (string)', () => {
+    const error = new SDKError('getAgent', 'string error message');
+    expect(error.name).toBe('SDKError');
+    expect(error.operation).toBe('getAgent');
+    expect(error.originalError).toBe('string error message');
+    expect(error.message).toBe('SDK getAgent failed: string error message');
+  });
+
+  it('creates error with non-Error as originalError (object)', () => {
+    const originalError = { code: 500, reason: 'timeout' };
+    const error = new SDKError('searchAgents', originalError);
+    expect(error.operation).toBe('searchAgents');
+    expect(error.originalError).toBe(originalError);
+    expect(error.message).toContain('SDK searchAgents failed:');
   });
 });
 
@@ -143,6 +170,31 @@ describe('handleError', () => {
 
     const body = await res.json();
     expect(body.code).toBe('INTERNAL_ERROR');
+
+    consoleSpy.mockRestore();
+  });
+
+  it('handles SDKError with 503 status', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const app = new Hono();
+    app.onError(handleError);
+    app.get('/test', () => {
+      throw new SDKError('getAgents', new Error('Connection timeout'));
+    });
+
+    const res = await app.request('/test');
+    expect(res.status).toBe(503);
+
+    const body = await res.json();
+    expect(body.code).toBe('SERVICE_UNAVAILABLE');
+    expect(body.error).toContain('temporarily unavailable');
+
+    // Verify error was logged
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('SDKError'),
+      expect.anything()
+    );
 
     consoleSpy.mockRestore();
   });

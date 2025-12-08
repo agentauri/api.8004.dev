@@ -42,6 +42,10 @@ max_batch_timeout = 30
 max_retries = 3
 dead_letter_queue = "classification-jobs-dlq"
 
+# Scheduled triggers (cron)
+[triggers]
+crons = ["0 * * * *"]  # Run EAS indexer every hour
+
 # Staging environment
 [env.staging]
 name = "8004-backend-staging"

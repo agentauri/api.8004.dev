@@ -88,10 +88,18 @@ export function calculateOverallConfidence(
 }
 
 /**
+ * Default timeout for classification requests (30 seconds)
+ */
+const CLASSIFICATION_TIMEOUT_MS = 30_000;
+
+/**
  * Create classifier service
  */
 export function createClassifierService(apiKey: string, model: string): ClassifierService {
-  const anthropic = new Anthropic({ apiKey });
+  const anthropic = new Anthropic({
+    apiKey,
+    timeout: CLASSIFICATION_TIMEOUT_MS,
+  });
 
   return {
     async classify(agent: AgentClassificationInput): Promise<ClassificationResult> {

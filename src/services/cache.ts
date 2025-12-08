@@ -42,6 +42,8 @@ export const CACHE_TTL = {
   CLASSIFICATION: 86400,
   /** Chain stats cache: 15 minutes */
   CHAIN_STATS: 900,
+  /** Platform stats cache: 15 minutes */
+  PLATFORM_STATS: 900,
   /** Taxonomy cache: 1 hour */
   TAXONOMY: 3600,
   /** Search results cache: 5 minutes */
@@ -56,6 +58,7 @@ export const CACHE_KEYS = {
   agentDetail: (agentId: string) => `agents:detail:${agentId}`,
   classification: (agentId: string) => `classification:${agentId}`,
   chainStats: () => 'chains:stats',
+  platformStats: () => 'platform:stats',
   taxonomy: (type: string) => `taxonomy:${type}`,
   search: (hash: string) => `search:${hash}`,
 } as const;

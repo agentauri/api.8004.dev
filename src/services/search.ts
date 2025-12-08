@@ -3,6 +3,7 @@
  * @module services/search
  */
 
+import { fetchWithTimeout } from '@/lib/utils/fetch';
 import type { SearchFilters, SearchResultItem, SearchServiceResult } from '@/types';
 
 /**
@@ -125,7 +126,7 @@ export function createSearchService(searchServiceUrl: string): SearchService {
       }
 
       // agent0lab uses /api/search, AG0 standard uses /api/v1/search
-      const response = await fetch(`${baseUrl}/api/search`, {
+      const response = await fetchWithTimeout(`${baseUrl}/api/search`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -160,9 +161,11 @@ export function createSearchService(searchServiceUrl: string): SearchService {
     async healthCheck(): Promise<boolean> {
       try {
         // agent0lab uses /health, AG0 standard uses /api/v1/health
-        const response = await fetch(`${baseUrl}/health`, {
-          method: 'GET',
-        });
+        const response = await fetchWithTimeout(
+          `${baseUrl}/health`,
+          { method: 'GET' },
+          5000 // 5 second timeout for health checks
+        );
 
         if (!response.ok) return false;
 

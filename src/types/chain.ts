@@ -11,6 +11,10 @@ export interface ChainStats {
   chainId: number;
   /** Chain display name */
   name: string;
+  /** Short chain name (e.g., "sepolia", "base-sepolia") */
+  shortName: string;
+  /** Block explorer URL */
+  explorerUrl: string;
   /** Total number of registered agents */
   agentCount: number;
   /** Number of active agents */
@@ -37,4 +41,24 @@ export interface ChainConfig {
 export interface ChainStatsResponse {
   success: true;
   data: ChainStats[];
+}
+
+/**
+ * Platform-wide statistics
+ */
+export interface PlatformStats {
+  /** Total number of registered agents across all chains */
+  totalAgents: number;
+  /** Number of active agents across all chains */
+  activeAgents: number;
+  /** Per-chain breakdown */
+  chainBreakdown: ChainStats[];
+}
+
+/**
+ * Platform stats API response
+ */
+export interface PlatformStatsResponse {
+  success: true;
+  data: PlatformStats;
 }

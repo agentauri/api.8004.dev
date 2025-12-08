@@ -4,11 +4,17 @@
  */
 
 import type { OASFClassification } from './classification';
+import type { AgentReputation } from './reputation';
 
 /**
  * Supported blockchain chain IDs
  */
 export type SupportedChainId = 11155111 | 84532 | 80002;
+
+/**
+ * Supported trust methods
+ */
+export type TrustMethod = 'x402' | 'eas';
 
 /**
  * Agent summary for list views
@@ -34,10 +40,16 @@ export interface AgentSummary {
   hasA2a: boolean;
   /** Whether the agent supports x402 payments */
   x402Support: boolean;
+  /** Supported trust/payment methods */
+  supportedTrust: TrustMethod[];
   /** OASF classification data */
   oasf?: OASFClassification;
   /** Semantic search relevance score (0-1) */
   searchScore?: number;
+  /** Average reputation score (0-100) */
+  reputationScore?: number;
+  /** Total feedback count */
+  reputationCount?: number;
 }
 
 /**
@@ -72,6 +84,8 @@ export interface AgentEndpoints {
   ens?: string;
   /** DID identifier */
   did?: string;
+  /** Agent wallet address */
+  agentWallet?: string;
 }
 
 /**
@@ -104,6 +118,8 @@ export interface AgentDetail extends AgentSummary {
   mcpTools: string[];
   /** List of A2A skill names */
   a2aSkills: string[];
+  /** Full reputation data */
+  reputation?: AgentReputation;
 }
 
 /**

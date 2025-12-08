@@ -1,0 +1,368 @@
+/**
+ * EAS (Ethereum Attestation Service) attestation indexer
+ * @module services/eas-indexer
+ */
+
+import { getEasSyncState, updateEasSyncState } from '@/db/queries';
+import type { NewFeedback } from '@/db/schema';
+import { fetchWithTimeout } from '@/lib/utils/fetch';
+import { createReputationService } from './reputation';
+
+/**
+ * EAS GraphQL endpoints by chain
+ */
+const EAS_GRAPHQL_ENDPOINTS: Record<number, string> = {
+  11155111: 'https://sepolia.easscan.org/graphql',
+  84532: 'https://base-sepolia.easscan.org/graphql',
+  80002: 'https://polygon-amoy.easscan.org/graphql',
+};
+
+/**
+ * EAS schema UID for agent feedback attestations
+ * This should match the deployed feedback schema on each chain
+ *
+ * IMPORTANT: This is a placeholder value. Before deploying to production:
+ * 1. Deploy the feedback schema to EAS on each supported chain
+ * 2. Replace this value with the actual schema UID
+ * 3. Schema format: (string agentId, uint8 score, string[] tags, string context)
+ *
+ * @see https://easscan.org/schema/create
+ */
+const FEEDBACK_SCHEMA_UID = '0x0000000000000000000000000000000000000000000000000000000000000000';
+
+/**
+ * Validates that the EAS schema UID has been configured
+ * Throws an error if the placeholder value is still in use
+ */
+function validateSchemaConfig(): void {
+  if (FEEDBACK_SCHEMA_UID === '0x0000000000000000000000000000000000000000000000000000000000000000') {
+    console.warn(
+      'EAS Indexer: Using placeholder schema UID. No attestations will be matched. ' +
+        'Deploy the feedback schema to EAS and update FEEDBACK_SCHEMA_UID before production use.'
+    );
+  }
+}
+
+/**
+ * Raw attestation from EAS GraphQL
+ */
+interface EASAttestation {
+  id: string;
+  attester: string;
+  recipient: string;
+  refUID: string;
+  revocationTime: number;
+  expirationTime: number;
+  time: number;
+  txid: string;
+  data: string;
+  schemaId: string;
+}
+
+/**
+ * Decoded feedback attestation data
+ */
+interface FeedbackAttestationData {
+  agentId: string;
+  score: number;
+  tags: string[];
+  context?: string;
+}
+
+/**
+ * EAS indexer service interface
+ */
+export interface EASIndexerService {
+  /**
+   * Sync attestations for a specific chain
+   */
+  syncChain(chainId: number): Promise<SyncResult>;
+
+  /**
+   * Sync attestations for all supported chains
+   */
+  syncAll(): Promise<Map<number, SyncResult>>;
+}
+
+/**
+ * Result of a sync operation
+ */
+export interface SyncResult {
+  chainId: number;
+  success: boolean;
+  attestationsProcessed: number;
+  newFeedbackCount: number;
+  lastBlock: number;
+  error?: string;
+}
+
+/**
+ * GraphQL query for fetching attestations
+ */
+const ATTESTATIONS_QUERY = `
+  query GetAttestations($schemaId: String!, $take: Int!, $skip: Int!, $timeAfter: Int) {
+    attestations(
+      where: {
+        schemaId: { equals: $schemaId }
+        revocationTime: { equals: 0 }
+        time: { gt: $timeAfter }
+      }
+      take: $take
+      skip: $skip
+      orderBy: { time: asc }
+    ) {
+      id
+      attester
+      recipient
+      refUID
+      revocationTime
+      expirationTime
+      time
+      txid
+      data
+      schemaId
+    }
+  }
+`;
+
+/**
+ * Decode attestation data from hex
+ * The data format depends on the schema - this is a placeholder implementation
+ *
+ * IMPORTANT: This function requires implementation before production use.
+ *
+ * The expected schema format is:
+ * (string agentId, uint8 score, string[] tags, string context)
+ *
+ * Implementation steps:
+ * 1. Add viem or ethers.js as a dependency
+ * 2. Define the schema ABI
+ * 3. Use decodeAbiParameters to parse the hex data
+ *
+ * Example implementation with viem:
+ * ```typescript
+ * import { decodeAbiParameters } from 'viem';
+ *
+ * const decoded = decodeAbiParameters(
+ *   [
+ *     { name: 'agentId', type: 'string' },
+ *     { name: 'score', type: 'uint8' },
+ *     { name: 'tags', type: 'string[]' },
+ *     { name: 'context', type: 'string' },
+ *   ],
+ *   hexData as `0x${string}`
+ * );
+ * ```
+ */
+function decodeAttestationData(hexData: string): FeedbackAttestationData | null {
+  try {
+    // Remove 0x prefix if present
+    const data = hexData.startsWith('0x') ? hexData.slice(2) : hexData;
+
+    // Minimum length check (at least some data should be present)
+    if (data.length < 64) {
+      console.warn('Attestation data too short to decode:', data.substring(0, 20));
+      return null;
+    }
+
+    // PLACEHOLDER: Real implementation needs ABI decoding
+    // This will always return null until implemented
+    console.warn(
+      'decodeAttestationData: ABI decoding not implemented. ' +
+        'Add viem/ethers.js and implement proper decoding before production use.'
+    );
+    return null;
+  } catch (error) {
+    console.error('Failed to decode attestation data:', error);
+    return null;
+  }
+}
+
+/**
+ * Fetch attestations from EAS GraphQL API
+ */
+async function fetchAttestations(
+  endpoint: string,
+  schemaId: string,
+  take: number,
+  skip: number,
+  timeAfter: number
+): Promise<EASAttestation[]> {
+  const response = await fetchWithTimeout(
+    endpoint,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query: ATTESTATIONS_QUERY,
+        variables: {
+          schemaId,
+          take,
+          skip,
+          timeAfter,
+        },
+      }),
+    },
+    30_000 // 30 second timeout for GraphQL queries
+  );
+
+  if (!response.ok) {
+    throw new Error(`EAS GraphQL error: ${response.status} ${response.statusText}`);
+  }
+
+  const result = (await response.json()) as {
+    data?: { attestations: EASAttestation[] };
+    errors?: Array<{ message: string }>;
+  };
+
+  if (result.errors?.length) {
+    const firstError = result.errors[0];
+    throw new Error(`EAS GraphQL error: ${firstError?.message ?? 'Unknown error'}`);
+  }
+
+  return result.data?.attestations ?? [];
+}
+
+/**
+ * Create EAS indexer service
+ */
+export function createEASIndexerService(db: D1Database): EASIndexerService {
+  const reputationService = createReputationService(db);
+
+  return {
+    async syncChain(chainId: number): Promise<SyncResult> {
+      const endpoint = EAS_GRAPHQL_ENDPOINTS[chainId];
+      if (!endpoint) {
+        return {
+          chainId,
+          success: false,
+          attestationsProcessed: 0,
+          newFeedbackCount: 0,
+          lastBlock: 0,
+          error: `Unsupported chain: ${chainId}`,
+        };
+      }
+
+      try {
+        // Warn if schema UID is not configured
+        validateSchemaConfig();
+
+        // Get last sync state
+        const syncState = await getEasSyncState(db, chainId);
+        const lastTimestamp = syncState?.last_timestamp
+          ? Math.floor(new Date(syncState.last_timestamp).getTime() / 1000)
+          : 0;
+
+        let attestationsProcessed = 0;
+        let newFeedbackCount = 0;
+        let latestTimestamp = lastTimestamp;
+        let hasMore = true;
+        let skip = 0;
+        const take = 100;
+
+        while (hasMore) {
+          const attestations = await fetchAttestations(
+            endpoint,
+            FEEDBACK_SCHEMA_UID,
+            take,
+            skip,
+            lastTimestamp
+          );
+
+          if (attestations.length === 0) {
+            hasMore = false;
+            break;
+          }
+
+          for (const attestation of attestations) {
+            attestationsProcessed++;
+
+            // Update latest timestamp
+            if (attestation.time > latestTimestamp) {
+              latestTimestamp = attestation.time;
+            }
+
+            // Check if already processed
+            const exists = await reputationService.feedbackExists(attestation.id);
+            if (exists) {
+              continue;
+            }
+
+            // Decode attestation data
+            const decoded = decodeAttestationData(attestation.data);
+            if (!decoded) {
+              console.warn(`Failed to decode attestation ${attestation.id}`);
+              continue;
+            }
+
+            // Create feedback entry
+            const feedback: NewFeedback = {
+              agent_id: decoded.agentId,
+              chain_id: chainId,
+              score: decoded.score,
+              tags: JSON.stringify(decoded.tags),
+              context: decoded.context,
+              feedback_uri: `https://easscan.org/attestation/view/${attestation.id}`,
+              submitter: attestation.attester,
+              eas_uid: attestation.id,
+              submitted_at: new Date(attestation.time * 1000).toISOString(),
+            };
+
+            await reputationService.addFeedback(feedback);
+            newFeedbackCount++;
+          }
+
+          skip += attestations.length;
+          hasMore = attestations.length === take;
+        }
+
+        // Update sync state
+        await updateEasSyncState(
+          db,
+          chainId,
+          0, // We track by timestamp, not block
+          latestTimestamp > 0 ? new Date(latestTimestamp * 1000).toISOString() : null,
+          newFeedbackCount,
+          null
+        );
+
+        return {
+          chainId,
+          success: true,
+          attestationsProcessed,
+          newFeedbackCount,
+          lastBlock: 0,
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error(`Failed to sync chain ${chainId}:`, errorMessage);
+
+        // Update sync state with error
+        await updateEasSyncState(db, chainId, 0, null, 0, errorMessage);
+
+        return {
+          chainId,
+          success: false,
+          attestationsProcessed: 0,
+          newFeedbackCount: 0,
+          lastBlock: 0,
+          error: errorMessage,
+        };
+      }
+    },
+
+    async syncAll(): Promise<Map<number, SyncResult>> {
+      const results = new Map<number, SyncResult>();
+      const chainIds = Object.keys(EAS_GRAPHQL_ENDPOINTS).map(Number);
+
+      for (const chainId of chainIds) {
+        const result = await this.syncChain(chainId);
+        results.set(chainId, result);
+      }
+
+      return results;
+    },
+  };
+}

@@ -8,21 +8,77 @@ import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
 
 describe('cors middleware', () => {
-  it('allows all origins', async () => {
+  it('allows requests from 8004.dev', async () => {
     const app = new Hono();
     app.use('*', cors);
     app.get('/', (c) => c.text('OK'));
 
     const response = await app.fetch(
       new Request('http://localhost/', {
-        headers: { Origin: 'https://example.com' },
+        headers: { Origin: 'https://8004.dev' },
       })
     );
 
-    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*');
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://8004.dev');
   });
 
-  it('handles preflight OPTIONS request', async () => {
+  it('allows requests from www.8004.dev', async () => {
+    const app = new Hono();
+    app.use('*', cors);
+    app.get('/', (c) => c.text('OK'));
+
+    const response = await app.fetch(
+      new Request('http://localhost/', {
+        headers: { Origin: 'https://www.8004.dev' },
+      })
+    );
+
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://www.8004.dev');
+  });
+
+  it('allows requests from localhost:3000 for development', async () => {
+    const app = new Hono();
+    app.use('*', cors);
+    app.get('/', (c) => c.text('OK'));
+
+    const response = await app.fetch(
+      new Request('http://localhost/', {
+        headers: { Origin: 'http://localhost:3000' },
+      })
+    );
+
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:3000');
+  });
+
+  it('rejects requests from unknown origins', async () => {
+    const app = new Hono();
+    app.use('*', cors);
+    app.get('/', (c) => c.text('OK'));
+
+    const response = await app.fetch(
+      new Request('http://localhost/', {
+        headers: { Origin: 'https://malicious.com' },
+      })
+    );
+
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull();
+  });
+
+  it('rejects requests with no origin (prevents CORS bypass)', async () => {
+    const app = new Hono();
+    app.use('*', cors);
+    app.get('/', (c) => c.text('OK'));
+
+    // Requests without Origin header don't get CORS headers
+    // Server-to-server requests still work, just without CORS headers
+    const response = await app.fetch(new Request('http://localhost/'));
+
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull();
+    // Request still succeeds - just no CORS headers
+    expect(response.status).toBe(200);
+  });
+
+  it('handles preflight OPTIONS request from allowed origin', async () => {
     const app = new Hono();
     app.use('*', cors);
     app.get('/', (c) => c.text('OK'));
@@ -31,13 +87,14 @@ describe('cors middleware', () => {
       new Request('http://localhost/', {
         method: 'OPTIONS',
         headers: {
-          Origin: 'https://example.com',
+          Origin: 'https://8004.dev',
           'Access-Control-Request-Method': 'POST',
         },
       })
     );
 
     expect(response.status).toBe(204);
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://8004.dev');
     expect(response.headers.get('Access-Control-Allow-Methods')).toContain('GET');
     expect(response.headers.get('Access-Control-Allow-Methods')).toContain('POST');
     expect(response.headers.get('Access-Control-Allow-Methods')).toContain('OPTIONS');

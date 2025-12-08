@@ -10,11 +10,12 @@ import {
   updateQueueStatus,
   upsertClassification,
 } from '@/db/queries';
-import { bodyLimit, cors, requestId, securityHeaders } from '@/lib/middleware';
+import { apiKeyAuth, bodyLimit, cors, requestId, securityHeaders } from '@/lib/middleware';
 import { handleError } from '@/lib/utils/errors';
 import { parseAgentId } from '@/lib/utils/validation';
-import { agents, chains, health, search, taxonomy } from '@/routes';
+import { agents, chains, health, search, stats, taxonomy } from '@/routes';
 import { createClassifierService } from '@/services/classifier';
+import { createEASIndexerService } from '@/services/eas-indexer';
 import { createSDKService } from '@/services/sdk';
 import type { ClassificationJob, Env, Variables } from '@/types';
 import { Hono } from 'hono';
@@ -27,6 +28,7 @@ app.use('*', requestId());
 app.use('*', securityHeaders());
 app.use('*', cors);
 app.use('*', bodyLimit());
+app.use('*', apiKeyAuth());
 
 // Global error handler
 app.onError(handleError);
@@ -36,6 +38,7 @@ app.route('/api/v1/health', health);
 app.route('/api/v1/agents', agents);
 app.route('/api/v1/search', search);
 app.route('/api/v1/chains', chains);
+app.route('/api/v1/stats', stats);
 app.route('/api/v1/taxonomy', taxonomy);
 
 // Root endpoint
@@ -126,6 +129,29 @@ async function processClassificationJob(job: ClassificationJob, env: Env): Promi
   }
 }
 
+/**
+ * Scheduled handler for EAS attestation indexer
+ */
+async function syncEASAttestations(env: Env): Promise<void> {
+  console.log('Starting EAS attestation sync...');
+
+  const indexer = createEASIndexerService(env.DB);
+  const results = await indexer.syncAll();
+
+  for (const [chainId, result] of results) {
+    if (result.success) {
+      console.log(
+        `Chain ${chainId}: Processed ${result.attestationsProcessed} attestations, ` +
+          `${result.newFeedbackCount} new feedback entries`
+      );
+    } else {
+      console.error(`Chain ${chainId}: Sync failed - ${result.error}`);
+    }
+  }
+
+  console.log('EAS attestation sync complete');
+}
+
 // Export for Cloudflare Workers
 export default {
   fetch: app.fetch,
@@ -144,5 +170,13 @@ export default {
         message.retry();
       }
     }
+  },
+
+  /**
+   * Scheduled handler for periodic tasks
+   */
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+    // Sync EAS attestations every hour
+    ctx.waitUntil(syncEASAttestations(env));
   },
 };

@@ -26,6 +26,9 @@ export interface Env {
   CACHE_TTL: string;
   RATE_LIMIT_RPM: string;
   CLASSIFICATION_MODEL: string;
+
+  // Optional API key for authenticated access
+  API_KEY?: string;
 }
 
 /**
@@ -33,4 +36,8 @@ export interface Env {
  */
 export interface Variables {
   requestId: string;
+  /** Whether request is authenticated with valid API key */
+  isAuthenticated?: boolean;
+  /** API key tier for rate limiting */
+  apiKeyTier?: 'anonymous' | 'standard' | 'premium';
 }
