@@ -1,0 +1,97 @@
+/**
+ * Error handling utilities
+ * @module lib/utils/errors
+ */
+
+import type { ErrorCode, ErrorResponse } from '@/types';
+import type { Context } from 'hono';
+
+/**
+ * Application error class with code and status
+ */
+export class AppError extends Error {
+  constructor(
+    public code: ErrorCode,
+    public status: number,
+    message: string
+  ) {
+    super(message);
+    this.name = 'AppError';
+  }
+}
+
+/**
+ * Create a standardized error response
+ */
+export function createErrorResponse(
+  code: ErrorCode,
+  message: string,
+  requestId?: string
+): ErrorResponse {
+  return {
+    success: false,
+    error: message,
+    code,
+    requestId,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+/**
+ * Send an error response
+ */
+export function errorResponse(
+  c: Context,
+  status: number,
+  code: ErrorCode,
+  message: string
+): Response {
+  const requestId = c.get('requestId') as string | undefined;
+  const body = createErrorResponse(code, message, requestId);
+  return c.json(body, status as 400 | 401 | 403 | 404 | 429 | 500 | 503);
+}
+
+/**
+ * Create common error responses
+ */
+export const errors = {
+  notFound: (c: Context, resource = 'Resource') =>
+    errorResponse(c, 404, 'NOT_FOUND', `${resource} not found`),
+
+  badRequest: (c: Context, message: string) => errorResponse(c, 400, 'BAD_REQUEST', message),
+
+  validationError: (c: Context, message: string) =>
+    errorResponse(c, 400, 'VALIDATION_ERROR', message),
+
+  rateLimitExceeded: (c: Context) =>
+    errorResponse(c, 429, 'RATE_LIMIT_EXCEEDED', 'Rate limit exceeded. Please try again later.'),
+
+  internalError: (c: Context, message = 'An unexpected error occurred') =>
+    errorResponse(c, 500, 'INTERNAL_ERROR', message),
+
+  serviceUnavailable: (c: Context, service: string) =>
+    errorResponse(c, 503, 'SERVICE_UNAVAILABLE', `${service} is temporarily unavailable`),
+} as const;
+
+/**
+ * Global error handler for Hono
+ */
+export function handleError(error: Error, c: Context): Response {
+  // Handle AppError instances
+  if (error instanceof AppError) {
+    return errorResponse(c, error.status, error.code, error.message);
+  }
+
+  // Handle Zod validation errors
+  if (error.name === 'ZodError') {
+    const zodError = error as { errors?: Array<{ message: string }> };
+    const message = zodError.errors?.[0]?.message ?? 'Validation failed';
+    return errorResponse(c, 400, 'VALIDATION_ERROR', message);
+  }
+
+  // Log unexpected errors
+  console.error('Unhandled error:', error);
+
+  // Return generic error for unknown errors
+  return errorResponse(c, 500, 'INTERNAL_ERROR', 'An unexpected error occurred');
+}

@@ -1,0 +1,719 @@
+openapi: 3.1.0
+info:
+  title: 8004 Backend API
+  description: |
+    Backend service for 8004.dev - the ERC-8004 Agent Explorer.
+    Provides a unified REST API for agent data, semantic search, and OASF classification.
+  version: 1.0.0
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  contact:
+    name: Agent0 Lab
+    url: https://github.com/agent0lab/8004-backend
+
+servers:
+  - url: https://api.8004.dev
+    description: Production
+  - url: http://localhost:8787
+    description: Local development
+
+tags:
+  - name: Health
+    description: Health check endpoints
+  - name: Agents
+    description: Agent listing and details
+  - name: Classification
+    description: OASF classification endpoints
+  - name: Search
+    description: Semantic search endpoints
+  - name: Chains
+    description: Chain statistics
+  - name: Taxonomy
+    description: OASF taxonomy data
+
+paths:
+  /api/v1/health:
+    get:
+      tags: [Health]
+      summary: Health check
+      description: Returns service health status and version information
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/v1/agents:
+    get:
+      tags: [Agents]
+      summary: List agents
+      description: Get a list of agents with optional filtering and search
+      operationId: listAgents
+      parameters:
+        - name: q
+          in: query
+          description: Search query for semantic search
+          schema:
+            type: string
+        - name: chainId
+          in: query
+          description: Filter by chain ID
+          schema:
+            type: integer
+            enum: [11155111, 84532, 80002]
+        - name: limit
+          in: query
+          description: Maximum number of results
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          description: Offset for pagination
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: active
+          in: query
+          description: Filter by active status
+          schema:
+            type: boolean
+        - name: mcp
+          in: query
+          description: Filter by MCP support
+          schema:
+            type: boolean
+        - name: a2a
+          in: query
+          description: Filter by A2A support
+          schema:
+            type: boolean
+        - name: skills
+          in: query
+          description: Filter by OASF skills (comma-separated)
+          schema:
+            type: string
+        - name: domains
+          in: query
+          description: Filter by OASF domains (comma-separated)
+          schema:
+            type: string
+        - name: minScore
+          in: query
+          description: Minimum search score (0-1)
+          schema:
+            type: number
+            minimum: 0
+            maximum: 1
+            default: 0.3
+      responses:
+        '200':
+          description: List of agents
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentListResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+
+  /api/v1/agents/{agentId}:
+    get:
+      tags: [Agents]
+      summary: Get agent details
+      description: Get detailed information about a specific agent
+      operationId: getAgent
+      parameters:
+        - $ref: '#/components/parameters/agentId'
+      responses:
+        '200':
+          description: Agent details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentDetailResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+
+  /api/v1/agents/{agentId}/classify:
+    get:
+      tags: [Classification]
+      summary: Get agent classification
+      description: Get OASF classification for an agent
+      operationId: getClassification
+      parameters:
+        - $ref: '#/components/parameters/agentId'
+      responses:
+        '200':
+          description: Classification result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassificationResponse'
+        '202':
+          description: Classification in progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassificationPendingResponse'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+
+    post:
+      tags: [Classification]
+      summary: Request agent classification
+      description: Queue an agent for OASF classification
+      operationId: requestClassification
+      parameters:
+        - $ref: '#/components/parameters/agentId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force:
+                  type: boolean
+                  default: false
+                  description: Force re-classification even if already classified
+      responses:
+        '202':
+          description: Classification queued or in progress
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ClassificationQueuedResponse'
+                  - $ref: '#/components/schemas/ClassificationPendingResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+
+  /api/v1/search:
+    post:
+      tags: [Search]
+      summary: Semantic search
+      description: Search for agents using natural language
+      operationId: searchAgents
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequest'
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+
+  /api/v1/chains:
+    get:
+      tags: [Chains]
+      summary: Get chain statistics
+      description: Get agent statistics for all supported chains
+      operationId: getChainStats
+      responses:
+        '200':
+          description: Chain statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChainStatsResponse'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+
+  /api/v1/taxonomy:
+    get:
+      tags: [Taxonomy]
+      summary: Get OASF taxonomy
+      description: Get the OASF taxonomy tree for skills and domains
+      operationId: getTaxonomy
+      parameters:
+        - name: type
+          in: query
+          description: Type of taxonomy to retrieve
+          schema:
+            type: string
+            enum: [skills, domains, all]
+            default: all
+      responses:
+        '200':
+          description: Taxonomy data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxonomyResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+
+components:
+  parameters:
+    agentId:
+      name: agentId
+      in: path
+      required: true
+      description: Agent ID in format chainId:tokenId (e.g., 11155111:1)
+      schema:
+        type: string
+        pattern: '^\d+:\d+$'
+
+  schemas:
+    # Base response types
+    SuccessResponse:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+          const: true
+
+    ErrorResponse:
+      type: object
+      required: [success, error, code]
+      properties:
+        success:
+          type: boolean
+          const: false
+        error:
+          type: string
+        code:
+          type: string
+          enum: [NOT_FOUND, VALIDATION_ERROR, INTERNAL_ERROR, RATE_LIMIT_EXCEEDED, BAD_REQUEST]
+        requestId:
+          type: string
+
+    # Health
+    HealthResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              required: [status, timestamp, version]
+              properties:
+                status:
+                  type: string
+                  enum: [ok]
+                timestamp:
+                  type: string
+                  format: date-time
+                version:
+                  type: string
+                services:
+                  type: object
+                  properties:
+                    database:
+                      type: string
+                      enum: [ok, error]
+                    cache:
+                      type: string
+                      enum: [ok, error]
+                    search:
+                      type: string
+                      enum: [ok, error]
+                    classifier:
+                      type: string
+                      enum: [ok, error]
+
+    # Agent types
+    AgentSummary:
+      type: object
+      required: [id, chainId, tokenId, name, description, active, hasMcp, hasA2a, x402Support]
+      properties:
+        id:
+          type: string
+          description: Agent ID (chainId:tokenId)
+        chainId:
+          type: integer
+        tokenId:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        image:
+          type: string
+          format: uri
+        active:
+          type: boolean
+        hasMcp:
+          type: boolean
+        hasA2a:
+          type: boolean
+        x402Support:
+          type: boolean
+        oasf:
+          $ref: '#/components/schemas/ClassificationData'
+        searchScore:
+          type: number
+          description: Search relevance score (0-1)
+
+    AgentDetail:
+      allOf:
+        - $ref: '#/components/schemas/AgentSummary'
+        - type: object
+          properties:
+            endpoints:
+              type: object
+              properties:
+                mcp:
+                  type: object
+                  properties:
+                    url:
+                      type: string
+                      format: uri
+                    version:
+                      type: string
+                a2a:
+                  type: object
+                  properties:
+                    url:
+                      type: string
+                      format: uri
+                    version:
+                      type: string
+            registration:
+              type: object
+              properties:
+                chainId:
+                  type: integer
+                tokenId:
+                  type: string
+                contractAddress:
+                  type: string
+                metadataUri:
+                  type: string
+                owner:
+                  type: string
+                registeredAt:
+                  type: string
+                  format: date-time
+            mcpTools:
+              type: array
+              items:
+                type: string
+            a2aSkills:
+              type: array
+              items:
+                type: string
+
+    AgentListResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [data, meta]
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/AgentSummary'
+            meta:
+              type: object
+              required: [total, hasMore]
+              properties:
+                total:
+                  type: integer
+                hasMore:
+                  type: boolean
+                nextCursor:
+                  type: string
+
+    AgentDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/AgentDetail'
+
+    # Classification types
+    SkillClassification:
+      type: object
+      required: [slug, confidence]
+      properties:
+        slug:
+          type: string
+          description: OASF skill slug
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        reasoning:
+          type: string
+
+    DomainClassification:
+      type: object
+      required: [slug, confidence]
+      properties:
+        slug:
+          type: string
+          description: OASF domain slug
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        reasoning:
+          type: string
+
+    ClassificationData:
+      type: object
+      required: [skills, domains, confidence, classifiedAt, modelVersion]
+      properties:
+        skills:
+          type: array
+          items:
+            $ref: '#/components/schemas/SkillClassification'
+        domains:
+          type: array
+          items:
+            $ref: '#/components/schemas/DomainClassification'
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        classifiedAt:
+          type: string
+          format: date-time
+        modelVersion:
+          type: string
+
+    ClassificationResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/ClassificationData'
+
+    ClassificationPendingResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [status, estimatedTime]
+          properties:
+            status:
+              type: string
+              enum: [pending, processing]
+            estimatedTime:
+              type: integer
+              description: Estimated time to completion in seconds
+
+    ClassificationQueuedResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [status, agentId]
+          properties:
+            status:
+              type: string
+              enum: [queued, already_classified]
+            agentId:
+              type: string
+
+    # Search types
+    SearchRequest:
+      type: object
+      required: [query]
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 500
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+        minScore:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.3
+        filters:
+          type: object
+          properties:
+            chainIds:
+              type: array
+              items:
+                type: integer
+            active:
+              type: boolean
+            mcp:
+              type: boolean
+            a2a:
+              type: boolean
+            skills:
+              type: array
+              items:
+                type: string
+            domains:
+              type: array
+              items:
+                type: string
+
+    SearchResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [data, meta]
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/AgentSummary'
+            meta:
+              type: object
+              required: [query, total, hasMore]
+              properties:
+                query:
+                  type: string
+                total:
+                  type: integer
+                hasMore:
+                  type: boolean
+                nextCursor:
+                  type: string
+
+    # Chain types
+    ChainStats:
+      type: object
+      required: [chainId, name, agentCount, activeCount]
+      properties:
+        chainId:
+          type: integer
+        name:
+          type: string
+        agentCount:
+          type: integer
+        activeCount:
+          type: integer
+
+    ChainStatsResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/ChainStats'
+
+    # Taxonomy types
+    TaxonomyCategory:
+      type: object
+      required: [slug, name]
+      properties:
+        slug:
+          type: string
+        name:
+          type: string
+        children:
+          type: array
+          items:
+            type: object
+            required: [slug, name]
+            properties:
+              slug:
+                type: string
+              name:
+                type: string
+
+    TaxonomyResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              properties:
+                version:
+                  type: string
+                skills:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/TaxonomyCategory'
+                domains:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/TaxonomyCategory'
+
+  responses:
+    NotFoundError:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: Resource not found
+            code: NOT_FOUND
+
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: Invalid request parameters
+            code: VALIDATION_ERROR
+
+    RateLimitError:
+      description: Rate limit exceeded
+      headers:
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+          description: Request limit per window
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+          description: Remaining requests in current window
+        X-RateLimit-Reset:
+          schema:
+            type: integer
+          description: Unix timestamp when the rate limit resets
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds until the rate limit resets
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: Rate limit exceeded
+            code: RATE_LIMIT_EXCEEDED

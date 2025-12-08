@@ -1,0 +1,48 @@
+import path from 'node:path';
+import { defineWorkersConfig } from '@cloudflare/vitest-pool-workers/config';
+
+export default defineWorkersConfig({
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
+  test: {
+    globals: true,
+    include: ['test/**/*.test.ts'],
+    setupFiles: ['./test/setup.ts'],
+    poolOptions: {
+      workers: {
+        wrangler: {
+          configPath: './wrangler.toml',
+        },
+        miniflare: {
+          kvNamespaces: ['CACHE'],
+          d1Databases: ['DB'],
+          queueProducers: {
+            CLASSIFICATION_QUEUE: {
+              queueName: 'test-classification-queue',
+            },
+          },
+        },
+      },
+    },
+    coverage: {
+      provider: 'istanbul',
+      reporter: ['text', 'json', 'json-summary', 'html', 'lcov'],
+      reportsDirectory: './coverage',
+      include: ['src/**/*.ts'],
+      exclude: ['src/**/*.d.ts', 'src/types/**/*.ts'],
+      thresholds: {
+        // Note: 100% coverage is the goal, but some code paths are difficult
+        // to test in Cloudflare Workers environment:
+        // - Queue consumer (index.ts:68-150) - requires complex mocking
+        // - Classifier integration (classifier.ts:94-158) - Anthropic SDK can't be mocked
+        lines: 85,
+        functions: 90,
+        branches: 75,
+        statements: 85,
+      },
+    },
+  },
+});

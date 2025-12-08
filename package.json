@@ -1,0 +1,52 @@
+{
+  "name": "8004-backend",
+  "version": "1.0.0",
+  "description": "Backend service for 8004.dev - Unified REST API for ERC-8004 agent explorer",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "wrangler deploy --dry-run --outdir=dist",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "db:migrate": "wrangler d1 execute 8004-backend-db --file=./migrations/0001_init.sql",
+    "db:migrate:local": "wrangler d1 execute 8004-backend-db --local --file=./migrations/0001_init.sql"
+  },
+  "keywords": ["erc-8004", "agents", "cloudflare-workers", "hono", "oasf"],
+  "author": "Agent0 Lab",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agent0lab/8004-backend.git"
+  },
+  "bugs": {
+    "url": "https://github.com/agent0lab/8004-backend/issues"
+  },
+  "homepage": "https://github.com/agent0lab/8004-backend#readme",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "agent0-sdk": "^0.31.0",
+    "hono": "^4.6.12",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@cloudflare/vitest-pool-workers": "^0.5.33",
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "@vitest/coverage-istanbul": "2.1.9",
+    "@vitest/coverage-v8": "^2.1.8",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "wrangler": "^3.93.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "pnpm@9.15.1"
+}
