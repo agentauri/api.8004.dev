@@ -20,14 +20,10 @@ This is the backend service for **8004.dev**, providing a unified REST API that 
 
 ### Test Coverage
 
-- **High code coverage required**: Target 85% statements, 90% functions, 75% branches
+- **70% branch coverage required**: CI pipeline enforces minimum 70% branch coverage
 - Run `pnpm run test:coverage` to verify coverage before committing
 - Coverage reports are generated in `coverage/` directory
-- CI pipeline will fail if coverage drops below thresholds
-
-**Note**: Some code paths are difficult to test in Cloudflare Workers environment:
-- Queue consumer (`index.ts:68-150`) - requires complex mocking not available in Workers
-- Classifier integration (`classifier.ts:94-158`) - Anthropic SDK can't be mocked in Workers runtime
+- CI pipeline will fail if branch coverage drops below 70%
 
 ### Open Source Ready
 
@@ -88,13 +84,16 @@ api.8004.dev/
 │   │   ├── search.ts         # /api/v1/search endpoint
 │   │   ├── classify.ts       # /api/v1/agents/:id/classify
 │   │   ├── chains.ts         # /api/v1/chains endpoint
+│   │   ├── stats.ts          # /api/v1/stats endpoint
 │   │   ├── taxonomy.ts       # /api/v1/taxonomy endpoint
 │   │   └── health.ts         # /api/v1/health endpoint
 │   ├── services/
 │   │   ├── sdk.ts            # agent0-sdk integration
 │   │   ├── search.ts         # search-service client
 │   │   ├── classifier.ts     # OASF classification with Claude
-│   │   └── cache.ts          # KV cache utilities
+│   │   ├── cache.ts          # KV cache utilities
+│   │   ├── reputation.ts     # Agent reputation aggregation
+│   │   └── eas-indexer.ts    # EAS attestation indexer
 │   ├── db/
 │   │   ├── schema.ts         # D1 schema types
 │   │   └── queries.ts        # Database queries
@@ -111,7 +110,8 @@ api.8004.dev/
 │       ├── classification.ts # OASF classification types
 │       └── env.ts            # Environment bindings
 ├── migrations/
-│   └── 0001_init.sql         # D1 schema migration
+│   ├── 0001_init.sql         # D1 schema migration (classifications)
+│   └── 0002_reputation.sql   # Reputation system tables
 ├── wrangler.toml             # Cloudflare Workers config
 ├── package.json
 ├── tsconfig.json
@@ -134,7 +134,7 @@ pnpm run typecheck
 # Run tests
 pnpm run test
 
-# Run tests with coverage (must be 100%)
+# Run tests with coverage (70% branches minimum)
 pnpm run test:coverage
 
 # Deploy to production
@@ -179,6 +179,7 @@ RATE_LIMIT_RPM             # Default: 100
 | POST | `/api/v1/agents/:agentId/classify` | Request classification |
 | POST | `/api/v1/search` | Semantic search |
 | GET | `/api/v1/chains` | Chain statistics |
+| GET | `/api/v1/stats` | Platform statistics |
 | GET | `/api/v1/taxonomy` | OASF taxonomy tree |
 
 ## Code Style & Conventions
@@ -300,6 +301,42 @@ CREATE TABLE classification_queue (
   created_at TEXT DEFAULT (datetime('now')),
   processed_at TEXT
 );
+
+-- Agent feedback from EAS attestations
+CREATE TABLE agent_feedback (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL,
+  chain_id INTEGER NOT NULL,
+  score INTEGER NOT NULL,         -- 1-5 rating
+  tags TEXT,                      -- JSON array of feedback tags
+  context TEXT,                   -- Optional feedback context
+  feedback_uri TEXT,              -- Link to attestation
+  submitter TEXT NOT NULL,        -- Wallet address
+  eas_uid TEXT UNIQUE,            -- EAS attestation UID
+  submitted_at TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Aggregated agent reputation
+CREATE TABLE agent_reputation (
+  agent_id TEXT PRIMARY KEY,
+  average_score REAL NOT NULL,
+  total_count INTEGER NOT NULL,
+  low_count INTEGER DEFAULT 0,    -- Score 1-2
+  medium_count INTEGER DEFAULT 0, -- Score 3
+  high_count INTEGER DEFAULT 0,   -- Score 4-5
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- EAS sync state per chain
+CREATE TABLE eas_sync_state (
+  chain_id INTEGER PRIMARY KEY,
+  last_block INTEGER DEFAULT 0,
+  last_timestamp TEXT,
+  attestations_synced INTEGER DEFAULT 0,
+  last_error TEXT,
+  updated_at TEXT DEFAULT (datetime('now'))
+);
 ```
 
 ## Caching Strategy
@@ -364,8 +401,6 @@ Taxonomy source: https://schema.oasf.outshift.com
 
 ## Related Documentation
 
-- [8004 Backend Spec](./docs/8004_BACKEND_SPEC.md) - Full API specification
-- [OASF Classification Spec](./docs/OASF_CLASSIFICATION_SERVICE_SPEC.md) - Classifier details
 - [Semantic Search Standard](./docs/AG0_SEMANTIC_SEARCH_STANDARD.md) - Search API standard
 - [agent0-ts SDK](https://github.com/agent0lab/agent0-ts) - SDK documentation
 - [OASF Schema](https://docs.agntcy.org/oasf/) - OASF taxonomy docs
