@@ -30,10 +30,10 @@ export const agentIdSchema = z.string().regex(/^\d+:\d+$/, {
  * Parse agent ID into components
  */
 export function parseAgentId(agentId: string): { chainId: number; tokenId: string } {
-  const [chainIdStr, tokenId] = agentId.split(':');
+  const [chainIdStr = '0', tokenId = '0'] = agentId.split(':');
   return {
-    chainId: Number.parseInt(chainIdStr!, 10),
-    tokenId: tokenId!,
+    chainId: Number.parseInt(chainIdStr, 10),
+    tokenId,
   };
 }
 

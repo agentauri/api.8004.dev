@@ -3,8 +3,8 @@
  * @module services/sdk
  */
 
-import { SDK } from 'agent0-sdk';
 import type { AgentDetail, AgentSummary, ChainStats, Env, SupportedChainId } from '@/types';
+import { SDK } from 'agent0-sdk';
 
 /**
  * Chain configuration
@@ -79,16 +79,19 @@ export function createSDKService(env: Env): SDKService {
   const sdkInstances = new Map<number, SDK>();
 
   function getSDK(chainId: number): SDK {
-    if (!sdkInstances.has(chainId)) {
-      const config = getChainConfig(chainId);
-      if (!config) throw new Error(`Unsupported chain: ${chainId}`);
-      const rpcUrl = env[config.rpcEnvKey];
-      sdkInstances.set(chainId, new SDK({ chainId, rpcUrl }));
-    }
-    return sdkInstances.get(chainId)!;
+    const existing = sdkInstances.get(chainId);
+    if (existing) return existing;
+
+    const config = getChainConfig(chainId);
+    if (!config) throw new Error(`Unsupported chain: ${chainId}`);
+    const rpcUrl = env[config.rpcEnvKey];
+    const sdk = new SDK({ chainId, rpcUrl });
+    sdkInstances.set(chainId, sdk);
+    return sdk;
   }
 
   return {
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Multi-chain pagination logic requires this complexity
     async getAgents(params: GetAgentsParams): Promise<GetAgentsResult> {
       const { chainIds, limit = 20, cursor, active, hasMcp, hasA2a } = params;
 
@@ -145,7 +148,10 @@ export function createSDKService(env: Env): SDKService {
           nextCursor: result.nextCursor,
         };
       } catch (error) {
-        console.error('SDK searchAgents error:', error instanceof Error ? error.message : String(error));
+        console.error(
+          'SDK searchAgents error:',
+          error instanceof Error ? error.message : String(error)
+        );
         // Return empty result on error to avoid breaking the API
         return { items: [], nextCursor: undefined };
       }
