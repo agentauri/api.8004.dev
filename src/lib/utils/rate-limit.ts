@@ -95,9 +95,10 @@ export function rateLimit(config: RateLimitConfig): MiddlewareHandler<{
     }
 
     // Store updated entry
+    // Note: KV requires minimum 60 second TTL
     const ttl = entry.resetAt - now;
     await kv.put(key, JSON.stringify(entry), {
-      expirationTtl: Math.max(ttl, 1),
+      expirationTtl: Math.max(ttl, 60),
     });
 
     await next();
