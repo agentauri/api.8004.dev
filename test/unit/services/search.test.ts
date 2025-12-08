@@ -39,8 +39,9 @@ describe('createSearchService', () => {
       const service = createSearchService(baseUrl);
       await service.search({ query: 'test query' });
 
+      // agent0lab uses /api/search, not /api/v1/search
       expect(mockFetch).toHaveBeenCalledWith(
-        `${baseUrl}/api/v1/search`,
+        `${baseUrl}/api/search`,
         expect.objectContaining({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -245,8 +246,9 @@ describe('createSearchService', () => {
       const service = createSearchService('https://search.example.com/');
       await service.search({ query: 'test' });
 
+      // agent0lab uses /api/search
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://search.example.com/api/v1/search',
+        'https://search.example.com/api/search',
         expect.any(Object)
       );
     });
@@ -263,8 +265,9 @@ describe('createSearchService', () => {
       const result = await service.healthCheck();
 
       expect(result).toBe(true);
+      // agent0lab uses /health, not /api/v1/health
       expect(mockFetch).toHaveBeenCalledWith(
-        `${baseUrl}/api/v1/health`,
+        `${baseUrl}/health`,
         expect.objectContaining({ method: 'GET' })
       );
     });

@@ -1,59 +1,66 @@
 /**
  * Agent0 SDK mock
  * @module test/mocks/agent0-sdk
+ *
+ * This mock replaces the real agent0-sdk during tests to avoid
+ * node:https compatibility issues with the workerd environment.
  */
 
 import { vi } from 'vitest';
 
 /**
- * Mock agent data
+ * Mock SDK agent list response (matches SDK format, not our transformed format)
  */
-export const mockAgents = [
-  {
-    id: '11155111:1',
-    chainId: 11155111,
-    tokenId: '1',
-    name: 'Test Agent 1',
-    description: 'A test agent on Sepolia',
-    active: true,
-    hasMcp: true,
-    hasA2a: false,
-    x402Support: false,
-  },
-  {
-    id: '84532:1',
-    chainId: 84532,
-    tokenId: '1',
-    name: 'Test Agent 2',
-    description: 'A test agent on Base Sepolia',
-    active: true,
-    hasMcp: false,
-    hasA2a: true,
-    x402Support: true,
-  },
-];
+export const mockSDKAgentList = {
+  items: [
+    {
+      agentId: '11155111:1',
+      name: 'Test Agent 1',
+      description: 'A test agent on Sepolia',
+      image: 'https://example.com/agent1.png',
+      active: true,
+      mcp: true,
+      a2a: false,
+      x402support: false,
+      owners: ['0x1234567890123456789012345678901234567890'],
+    },
+    {
+      agentId: '84532:1',
+      name: 'Test Agent 2',
+      description: 'A test agent on Base Sepolia',
+      image: 'https://example.com/agent2.png',
+      active: true,
+      mcp: false,
+      a2a: true,
+      x402support: true,
+      owners: ['0x0987654321098765432109876543210987654321'],
+    },
+  ],
+  nextCursor: undefined,
+};
 
 /**
- * Mock agent detail
+ * Mock SDK agent detail response
  */
-export const mockAgentDetail = {
-  ...mockAgents[0],
-  endpoints: {
-    mcp: {
-      url: 'https://example.com/mcp',
-      version: '1.0.0',
-    },
-  },
-  registration: {
-    chainId: 11155111,
-    tokenId: '1',
-    contractAddress: '0x1234567890123456789012345678901234567890',
-    metadataUri: 'ipfs://Qm...',
-    owner: '0x0987654321098765432109876543210987654321',
-    registeredAt: new Date().toISOString(),
-  },
+export const mockSDKAgentDetail = {
+  agentId: '11155111:1',
+  chainId: 11155111,
+  name: 'Test Agent 1',
+  description: 'A test agent on Sepolia',
+  image: 'https://example.com/agent1.png',
+  active: true,
+  mcp: true,
+  a2a: false,
+  x402support: false,
+  owners: ['0x1234567890123456789012345678901234567890'],
   mcpTools: ['tool1', 'tool2'],
   a2aSkills: [],
+  extras: {
+    mcpEndpoint: 'https://example.com/mcp',
+    contractAddress: '0x1234567890123456789012345678901234567890',
+    metadataUri: 'ipfs://QmTest...',
+    registeredAt: '2024-01-01T00:00:00.000Z',
+  },
 };
 
 /**
@@ -66,12 +73,50 @@ export const mockChainStats = [
 ];
 
 /**
- * Create mock SDK
+ * Mock SDK class that matches the real agent0-sdk interface
+ */
+export class SDK {
+  chainId: number;
+  rpcUrl: string;
+
+  constructor(options: { chainId: number; rpcUrl: string }) {
+    this.chainId = options.chainId;
+    this.rpcUrl = options.rpcUrl;
+  }
+
+  /**
+   * Search agents with optional filters
+   * @param searchParams - Search parameters
+   * @param _sort - Sort order (unused in mock)
+   * @param limit - Maximum number of results
+   * @param cursor - Pagination cursor
+   */
+  searchAgents = vi
+    .fn()
+    .mockImplementation(
+      async (
+        _searchParams?: Record<string, unknown>,
+        _sort?: unknown,
+        _limit?: number,
+        _cursor?: string
+      ) => {
+        return { ...mockSDKAgentList };
+      }
+    );
+
+  /**
+   * Get single agent by ID
+   * @param agentId - Agent ID in format chainId:tokenId
+   */
+  getAgent = vi.fn().mockImplementation(async (_agentId: string) => {
+    return { ...mockSDKAgentDetail };
+  });
+}
+
+/**
+ * Legacy helper for backward compatibility
+ * @deprecated Use SDK class directly
  */
 export function createMockSDK() {
-  return {
-    searchAgents: vi.fn().mockResolvedValue(mockAgents),
-    getAgent: vi.fn().mockResolvedValue(mockAgentDetail),
-    getStats: vi.fn().mockResolvedValue({ totalAgents: 100, activeAgents: 75 }),
-  };
+  return new SDK({ chainId: 11155111, rpcUrl: 'https://rpc.example.com' });
 }

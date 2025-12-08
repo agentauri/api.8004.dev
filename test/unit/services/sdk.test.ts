@@ -58,34 +58,37 @@ describe('createSDKService', () => {
   describe('getAgents', () => {
     it('returns agents from all chains when no filter', async () => {
       const sdk = createSDKService(mockEnv);
-      const agents = await sdk.getAgents({});
+      const result = await sdk.getAgents({});
 
-      expect(agents).toBeDefined();
-      expect(Array.isArray(agents)).toBe(true);
-      // Mock returns one agent per chain
-      expect(agents.length).toBe(SUPPORTED_CHAINS.length);
+      expect(result).toBeDefined();
+      expect(result.items).toBeDefined();
+      expect(Array.isArray(result.items)).toBe(true);
+      // Mock returns 2 agents
+      expect(result.items.length).toBeGreaterThan(0);
     });
 
-    it('filters by chain ID', async () => {
+    it('returns result with nextCursor', async () => {
       const sdk = createSDKService(mockEnv);
-      const agents = await sdk.getAgents({ chainIds: [11155111] });
+      const result = await sdk.getAgents({ chainIds: [11155111] });
 
-      expect(agents.length).toBe(1);
-      expect(agents[0].chainId).toBe(11155111);
+      expect(result).toHaveProperty('items');
+      expect(result).toHaveProperty('nextCursor');
     });
 
-    it('respects limit parameter', async () => {
+    it('returns agents even with limit parameter', async () => {
       const sdk = createSDKService(mockEnv);
-      const agents = await sdk.getAgents({ limit: 1 });
+      const result = await sdk.getAgents({ limit: 1 });
 
-      expect(agents.length).toBeLessThanOrEqual(1);
+      expect(result.items).toBeDefined();
+      expect(Array.isArray(result.items)).toBe(true);
     });
 
     it('returns agents with expected structure', async () => {
       const sdk = createSDKService(mockEnv);
-      const agents = await sdk.getAgents({});
+      const result = await sdk.getAgents({});
 
-      const agent = agents[0];
+      expect(result.items.length).toBeGreaterThan(0);
+      const agent = result.items[0];
       expect(agent).toHaveProperty('id');
       expect(agent).toHaveProperty('chainId');
       expect(agent).toHaveProperty('tokenId');

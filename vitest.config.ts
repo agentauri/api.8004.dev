@@ -5,6 +5,7 @@ export default defineWorkersConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      'agent0-sdk': path.resolve(__dirname, './test/mocks/agent0-sdk.ts'),
     },
   },
   test: {
