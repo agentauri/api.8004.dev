@@ -3,6 +3,7 @@
  * @module services/sdk
  */
 
+import { SDKError } from '@/lib/utils/errors';
 import type { AgentDetail, AgentSummary, ChainStats, Env, SupportedChainId } from '@/types';
 import { SDK } from 'agent0-sdk';
 
@@ -91,7 +92,6 @@ export function createSDKService(env: Env): SDKService {
   }
 
   return {
-    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Multi-chain pagination logic requires this complexity
     async getAgents(params: GetAgentsParams): Promise<GetAgentsResult> {
       const { chainIds, limit = 20, cursor, active, hasMcp, hasA2a } = params;
 
@@ -148,12 +148,8 @@ export function createSDKService(env: Env): SDKService {
           nextCursor: result.nextCursor,
         };
       } catch (error) {
-        console.error(
-          'SDK searchAgents error:',
-          error instanceof Error ? error.message : String(error)
-        );
-        // Return empty result on error to avoid breaking the API
-        return { items: [], nextCursor: undefined };
+        // Throw SDKError to propagate to route handlers for proper 503 response
+        throw new SDKError('searchAgents', error);
       }
     },
 
@@ -206,8 +202,8 @@ export function createSDKService(env: Env): SDKService {
           a2aSkills: agent.a2aSkills,
         };
       } catch (error) {
-        console.error('SDK getAgent error:', error);
-        return null;
+        // Throw SDKError to propagate to route handlers for proper 503 response
+        throw new SDKError('getAgent', error);
       }
     },
 
@@ -231,15 +227,17 @@ export function createSDKService(env: Env): SDKService {
             name: chain.name,
             agentCount: allAgents.items.length,
             activeCount: activeAgents.items.length,
+            status: 'ok',
           });
         } catch (error) {
           console.error(`SDK getChainStats error for chain ${chain.chainId}:`, error);
-          // Add with zero counts on error
+          // Include error status so consumers know data is unreliable
           results.push({
             chainId: chain.chainId,
             name: chain.name,
             agentCount: 0,
             activeCount: 0,
+            status: 'error',
           });
         }
       }

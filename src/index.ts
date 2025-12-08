@@ -10,7 +10,7 @@ import {
   updateQueueStatus,
   upsertClassification,
 } from '@/db/queries';
-import { cors, requestId, securityHeaders } from '@/lib/middleware';
+import { bodyLimit, cors, requestId, securityHeaders } from '@/lib/middleware';
 import { handleError } from '@/lib/utils/errors';
 import { parseAgentId } from '@/lib/utils/validation';
 import { agents, chains, health, search, taxonomy } from '@/routes';
@@ -26,6 +26,7 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 app.use('*', requestId());
 app.use('*', securityHeaders());
 app.use('*', cors);
+app.use('*', bodyLimit());
 
 // Global error handler
 app.onError(handleError);

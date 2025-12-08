@@ -6,7 +6,7 @@
 import { enqueueClassification, getClassification, getQueueStatus } from '@/db/queries';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
-import { classifyRequestSchema } from '@/lib/utils/validation';
+import { classifyRequestSchema, parseClassificationRow } from '@/lib/utils/validation';
 import { CACHE_KEYS, CACHE_TTL, createCacheService } from '@/services/cache';
 import type {
   ClassificationPendingResponse,
@@ -44,16 +44,11 @@ classify.get('/', async (c) => {
 
   // Check database
   const classificationRow = await getClassification(c.env.DB, agentId);
-  if (classificationRow) {
+  const parsed = parseClassificationRow(classificationRow);
+  if (parsed) {
     const response: ClassificationResponse = {
       success: true,
-      data: {
-        skills: JSON.parse(classificationRow.skills),
-        domains: JSON.parse(classificationRow.domains),
-        confidence: classificationRow.confidence,
-        classifiedAt: classificationRow.classified_at,
-        modelVersion: classificationRow.model_version,
-      },
+      data: parsed,
     };
 
     // Cache the result

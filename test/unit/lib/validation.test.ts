@@ -10,6 +10,7 @@ import {
   classifyRequestSchema,
   listAgentsQuerySchema,
   parseAgentId,
+  parseClassificationRow,
   searchRequestSchema,
   taxonomyQuerySchema,
   validateBody,
@@ -194,5 +195,79 @@ describe('validateQuery', () => {
   it('throws on invalid query', () => {
     const query = { type: 'invalid' };
     expect(() => validateQuery(query, taxonomyQuerySchema)).toThrow();
+  });
+});
+
+describe('parseClassificationRow', () => {
+  it('returns undefined for null input', () => {
+    expect(parseClassificationRow(null)).toBeUndefined();
+  });
+
+  it('returns undefined for undefined input', () => {
+    expect(parseClassificationRow(undefined)).toBeUndefined();
+  });
+
+  it('parses valid classification row', () => {
+    const row = {
+      skills: JSON.stringify([{ slug: 'nlp', confidence: 0.9 }]),
+      domains: JSON.stringify([{ slug: 'finance', confidence: 0.8 }]),
+      confidence: 0.85,
+      classified_at: '2024-01-01T00:00:00Z',
+      model_version: 'claude-3-haiku-20240307',
+    };
+
+    const result = parseClassificationRow(row);
+
+    expect(result).toEqual({
+      skills: [{ slug: 'nlp', confidence: 0.9 }],
+      domains: [{ slug: 'finance', confidence: 0.8 }],
+      confidence: 0.85,
+      classifiedAt: '2024-01-01T00:00:00Z',
+      modelVersion: 'claude-3-haiku-20240307',
+    });
+  });
+
+  it('returns undefined for invalid JSON in skills', () => {
+    const row = {
+      skills: 'invalid json',
+      domains: JSON.stringify([]),
+      confidence: 0.85,
+      classified_at: '2024-01-01T00:00:00Z',
+      model_version: 'claude-3-haiku-20240307',
+    };
+
+    expect(parseClassificationRow(row)).toBeUndefined();
+  });
+
+  it('returns undefined for invalid JSON in domains', () => {
+    const row = {
+      skills: JSON.stringify([]),
+      domains: 'invalid json',
+      confidence: 0.85,
+      classified_at: '2024-01-01T00:00:00Z',
+      model_version: 'claude-3-haiku-20240307',
+    };
+
+    expect(parseClassificationRow(row)).toBeUndefined();
+  });
+
+  it('handles empty arrays', () => {
+    const row = {
+      skills: '[]',
+      domains: '[]',
+      confidence: 0.5,
+      classified_at: '2024-01-01T00:00:00Z',
+      model_version: 'claude-3-haiku-20240307',
+    };
+
+    const result = parseClassificationRow(row);
+
+    expect(result).toEqual({
+      skills: [],
+      domains: [],
+      confidence: 0.5,
+      classifiedAt: '2024-01-01T00:00:00Z',
+      modelVersion: 'claude-3-haiku-20240307',
+    });
   });
 });

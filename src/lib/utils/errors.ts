@@ -21,6 +21,21 @@ export class AppError extends Error {
 }
 
 /**
+ * SDK service error - thrown when SDK operations fail
+ * Routes should catch this and return 503 Service Unavailable
+ */
+export class SDKError extends Error {
+  constructor(
+    public operation: string,
+    public originalError: unknown
+  ) {
+    const message = originalError instanceof Error ? originalError.message : String(originalError);
+    super(`SDK ${operation} failed: ${message}`);
+    this.name = 'SDKError';
+  }
+}
+
+/**
  * Create a standardized error response
  */
 export function createErrorResponse(
@@ -80,6 +95,17 @@ export function handleError(error: Error, c: Context): Response {
   // Handle AppError instances
   if (error instanceof AppError) {
     return errorResponse(c, error.status, error.code, error.message);
+  }
+
+  // Handle SDK errors - return 503 Service Unavailable
+  if (error instanceof SDKError) {
+    console.error(`SDKError [${error.operation}]:`, error.originalError);
+    return errorResponse(
+      c,
+      503,
+      'SERVICE_UNAVAILABLE',
+      'Agent registry service is temporarily unavailable'
+    );
   }
 
   // Handle Zod validation errors

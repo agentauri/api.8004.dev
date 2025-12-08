@@ -125,3 +125,53 @@ export async function validateBody<T>(request: Request, schema: z.ZodSchema<T>):
 export function validateQuery<T>(query: Record<string, string>, schema: z.ZodSchema<T>): T {
   return schema.parse(query);
 }
+
+/**
+ * OASF classification data structure
+ * Note: skills/domains are typed as arrays for JSON parsing safety
+ * They should contain SkillClassification[] and DomainClassification[]
+ */
+export interface ParsedClassification {
+  skills: Array<{ slug: string; confidence: number; reasoning?: string }>;
+  domains: Array<{ slug: string; confidence: number; reasoning?: string }>;
+  confidence: number;
+  classifiedAt: string;
+  modelVersion: string;
+}
+
+/**
+ * Database classification row type (subset of AgentClassificationRow)
+ */
+export interface ClassificationRowData {
+  skills: string;
+  domains: string;
+  confidence: number;
+  classified_at: string;
+  model_version: string;
+}
+
+/**
+ * Safely parse classification data from database row
+ * Protects against corrupted JSON data
+ * @param row - Database classification row or null
+ * @returns Parsed classification or undefined if row is null or JSON is invalid
+ */
+export function parseClassificationRow(
+  row: ClassificationRowData | null | undefined
+): ParsedClassification | undefined {
+  if (!row) return undefined;
+
+  try {
+    return {
+      skills: JSON.parse(row.skills),
+      domains: JSON.parse(row.domains),
+      confidence: row.confidence,
+      classifiedAt: row.classified_at,
+      modelVersion: row.model_version,
+    };
+  } catch (error) {
+    // Log error for debugging but don't crash
+    console.error('Failed to parse classification JSON:', error);
+    return undefined;
+  }
+}

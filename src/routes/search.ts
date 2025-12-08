@@ -6,7 +6,12 @@
 import { getClassification } from '@/db/queries';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
-import { type SearchRequestBody, parseAgentId, searchRequestSchema } from '@/lib/utils/validation';
+import {
+  type SearchRequestBody,
+  parseAgentId,
+  parseClassificationRow,
+  searchRequestSchema,
+} from '@/lib/utils/validation';
 import { CACHE_TTL, createCacheService } from '@/services/cache';
 import { createSDKService } from '@/services/sdk';
 import { createSearchService } from '@/services/search';
@@ -63,15 +68,7 @@ search.post('/', async (c) => {
 
       // Get classification if available
       const classificationRow = await getClassification(c.env.DB, result.agentId);
-      const oasf = classificationRow
-        ? {
-            skills: JSON.parse(classificationRow.skills),
-            domains: JSON.parse(classificationRow.domains),
-            confidence: classificationRow.confidence,
-            classifiedAt: classificationRow.classified_at,
-            modelVersion: classificationRow.model_version,
-          }
-        : undefined;
+      const oasf = parseClassificationRow(classificationRow);
 
       return {
         id: result.agentId,

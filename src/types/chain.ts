@@ -15,6 +15,8 @@ export interface ChainStats {
   agentCount: number;
   /** Number of active agents */
   activeCount: number;
+  /** Status of the stats fetch - 'ok' or 'error' if RPC/subgraph failed */
+  status?: 'ok' | 'error';
 }
 
 /**

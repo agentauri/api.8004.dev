@@ -16,7 +16,8 @@ async function checkDatabase(db: D1Database): Promise<ServiceStatus> {
   try {
     await db.prepare('SELECT 1').first();
     return 'ok';
-  } catch {
+  } catch (error) {
+    console.error('Database health check failed:', error instanceof Error ? error.message : error);
     return 'error';
   }
 }
@@ -29,7 +30,8 @@ async function checkSearchService(url: string): Promise<ServiceStatus> {
     const searchService = createSearchService(url);
     const healthy = await searchService.healthCheck();
     return healthy ? 'ok' : 'error';
-  } catch {
+  } catch (error) {
+    console.error('Search service health check failed:', error instanceof Error ? error.message : error);
     return 'error';
   }
 }

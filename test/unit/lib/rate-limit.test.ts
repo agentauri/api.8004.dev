@@ -108,7 +108,7 @@ describe('rateLimit middleware', () => {
     expect(res3.status).toBe(200);
   });
 
-  it('uses X-Forwarded-For when CF-Connecting-IP is not available', async () => {
+  it('ignores X-Forwarded-For for security (only trusts CF-Connecting-IP)', async () => {
     const app = new Hono<{ Bindings: { CACHE: typeof mockKV } }>();
     app.use('*', rateLimit({ limit: 10, window: 60 }));
     app.get('/', (c) => c.text('OK'));
@@ -119,9 +119,9 @@ describe('rateLimit middleware', () => {
     const response = await app.fetch(request, { CACHE: mockKV });
 
     expect(response.status).toBe(200);
-    // Should use first IP from X-Forwarded-For
+    // X-Forwarded-For is ignored for security - falls back to anonymous
     expect(mockKV.put).toHaveBeenCalledWith(
-      expect.stringContaining('5.6.7.8'),
+      expect.stringContaining('anonymous'),
       expect.any(String),
       expect.any(Object)
     );
