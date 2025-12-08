@@ -35,7 +35,9 @@ const FEEDBACK_SCHEMA_UID = '0x0000000000000000000000000000000000000000000000000
  * Throws an error if the placeholder value is still in use
  */
 function validateSchemaConfig(): void {
-  if (FEEDBACK_SCHEMA_UID === '0x0000000000000000000000000000000000000000000000000000000000000000') {
+  if (
+    FEEDBACK_SCHEMA_UID === '0x0000000000000000000000000000000000000000000000000000000000000000'
+  ) {
     console.warn(
       'EAS Indexer: Using placeholder schema UID. No attestations will be matched. ' +
         'Deploy the feedback schema to EAS and update FEEDBACK_SCHEMA_UID before production use.'
@@ -232,6 +234,7 @@ export function createEASIndexerService(db: D1Database): EASIndexerService {
   const reputationService = createReputationService(db);
 
   return {
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: EAS sync requires sequential processing with multiple conditions
     async syncChain(chainId: number): Promise<SyncResult> {
       const endpoint = EAS_GRAPHQL_ENDPOINTS[chainId];
       if (!endpoint) {

@@ -59,14 +59,17 @@ const chainsSchema = z
       .map((s) => Number.parseInt(s, 10))
   )
   .refine(
-    (arr) => arr.every((id) => SUPPORTED_CHAIN_IDS.includes(id as (typeof SUPPORTED_CHAIN_IDS)[number])),
+    (arr) =>
+      arr.every((id) => SUPPORTED_CHAIN_IDS.includes(id as (typeof SUPPORTED_CHAIN_IDS)[number])),
     { message: `All chain IDs must be one of: ${SUPPORTED_CHAIN_IDS.join(', ')}` }
   );
 
 /**
  * Valid sort fields for agent listing
  */
-export const sortFieldSchema = z.enum(['relevance', 'name', 'createdAt', 'reputation']).default('relevance');
+export const sortFieldSchema = z
+  .enum(['relevance', 'name', 'createdAt', 'reputation'])
+  .default('relevance');
 
 /**
  * Sort order schema

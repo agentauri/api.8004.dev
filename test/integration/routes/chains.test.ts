@@ -133,9 +133,9 @@ describe('GET /api/v1/chains', () => {
     await waitOnExecutionContext(ctx);
 
     const body = await response.json();
-    body.data.forEach((chain: { explorerUrl: string }) => {
+    for (const chain of body.data as Array<{ explorerUrl: string }>) {
       expect(chain.explorerUrl).toMatch(/^https:\/\//);
-    });
+    }
   });
 
   it('includes chain names', async () => {

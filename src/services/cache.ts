@@ -83,7 +83,10 @@ export function createCacheService(kv: KVNamespace, defaultTtl: number): CacheSe
       try {
         return JSON.parse(value) as T;
       } catch (error) {
-        console.error(`Cache parse error for key ${key}:`, error instanceof Error ? error.message : error);
+        console.error(
+          `Cache parse error for key ${key}:`,
+          error instanceof Error ? error.message : error
+        );
         return null;
       }
     },

@@ -7,8 +7,8 @@ import { getClassification, getClassificationsBatch, getReputationsBatch } from 
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import {
-  agentIdSchema,
   type ListAgentsQuery,
+  agentIdSchema,
   listAgentsQuerySchema,
   parseAgentId,
   parseClassificationRow,
@@ -35,23 +35,26 @@ function sortAgents(
 
   return [...agents].sort((a, b) => {
     switch (sortField) {
-      case 'relevance':
+      case 'relevance': {
         // For relevance, use searchScore if available, otherwise by id
         const scoreA = a.searchScore ?? 0;
         const scoreB = b.searchScore ?? 0;
         return (scoreB - scoreA) * multiplier;
+      }
       case 'name':
         return a.name.localeCompare(b.name) * multiplier;
-      case 'createdAt':
+      case 'createdAt': {
         // Sort by tokenId as proxy for creation order (lower tokenId = older)
         const tokenA = Number.parseInt(a.tokenId, 10) || 0;
         const tokenB = Number.parseInt(b.tokenId, 10) || 0;
         return (tokenA - tokenB) * multiplier;
-      case 'reputation':
+      }
+      case 'reputation': {
         // Sort by reputation score (agents without reputation go last)
         const repA = a.reputationScore ?? -1;
         const repB = b.reputationScore ?? -1;
         return (repA - repB) * multiplier;
+      }
       default:
         return 0;
     }

@@ -31,7 +31,10 @@ async function checkSearchService(url: string): Promise<ServiceStatus> {
     const healthy = await searchService.healthCheck();
     return healthy ? 'ok' : 'error';
   } catch (error) {
-    console.error('Search service health check failed:', error instanceof Error ? error.message : error);
+    console.error(
+      'Search service health check failed:',
+      error instanceof Error ? error.message : error
+    );
     return 'error';
   }
 }

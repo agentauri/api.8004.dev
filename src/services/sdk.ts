@@ -4,7 +4,14 @@
  */
 
 import { SDKError } from '@/lib/utils/errors';
-import type { AgentDetail, AgentSummary, ChainStats, Env, SupportedChainId, TrustMethod } from '@/types';
+import type {
+  AgentDetail,
+  AgentSummary,
+  ChainStats,
+  Env,
+  SupportedChainId,
+  TrustMethod,
+} from '@/types';
 import { SDK } from 'agent0-sdk';
 
 /**
@@ -184,6 +191,7 @@ export function createSDKService(env: Env): SDKService {
       }
     },
 
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Agent detail mapping requires multiple conditional field extractions
     async getAgent(chainId: number, tokenId: string): Promise<AgentDetail | null> {
       const config = getChainConfig(chainId);
       if (!config) return null;

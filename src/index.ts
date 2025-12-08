@@ -133,14 +133,14 @@ async function processClassificationJob(job: ClassificationJob, env: Env): Promi
  * Scheduled handler for EAS attestation indexer
  */
 async function syncEASAttestations(env: Env): Promise<void> {
-  console.log('Starting EAS attestation sync...');
+  console.info('Starting EAS attestation sync...');
 
   const indexer = createEASIndexerService(env.DB);
   const results = await indexer.syncAll();
 
   for (const [chainId, result] of results) {
     if (result.success) {
-      console.log(
+      console.info(
         `Chain ${chainId}: Processed ${result.attestationsProcessed} attestations, ` +
           `${result.newFeedbackCount} new feedback entries`
       );
@@ -149,7 +149,7 @@ async function syncEASAttestations(env: Env): Promise<void> {
     }
   }
 
-  console.log('EAS attestation sync complete');
+  console.info('EAS attestation sync complete');
 }
 
 // Export for Cloudflare Workers
@@ -175,7 +175,7 @@ export default {
   /**
    * Scheduled handler for periodic tasks
    */
-  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     // Sync EAS attestations every hour
     ctx.waitUntil(syncEASAttestations(env));
   },

@@ -191,10 +191,7 @@ describe('handleError', () => {
     expect(body.error).toContain('temporarily unavailable');
 
     // Verify error was logged
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('SDKError'),
-      expect.anything()
-    );
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('SDKError'), expect.anything());
 
     consoleSpy.mockRestore();
   });

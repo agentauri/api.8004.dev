@@ -271,7 +271,10 @@ describe('rateLimitByTier', () => {
   });
 
   it('uses standard config for anonymous tier', async () => {
-    const app = new Hono<{ Bindings: { CACHE: typeof mockKV }; Variables: { apiKeyTier?: string } }>();
+    const app = new Hono<{
+      Bindings: { CACHE: typeof mockKV };
+      Variables: { apiKeyTier?: string };
+    }>();
     app.use('*', rateLimitByTier());
     app.get('/', (c) => c.text('OK'));
 
@@ -286,7 +289,10 @@ describe('rateLimitByTier', () => {
   });
 
   it('uses higher config for authenticated tier', async () => {
-    const app = new Hono<{ Bindings: { CACHE: typeof mockKV }; Variables: { apiKeyTier?: string } }>();
+    const app = new Hono<{
+      Bindings: { CACHE: typeof mockKV };
+      Variables: { apiKeyTier?: string };
+    }>();
 
     // Middleware to set authenticated tier
     app.use('*', async (c, next) => {
@@ -307,7 +313,10 @@ describe('rateLimitByTier', () => {
   });
 
   it('uses custom keyPrefix', async () => {
-    const app = new Hono<{ Bindings: { CACHE: typeof mockKV }; Variables: { apiKeyTier?: string } }>();
+    const app = new Hono<{
+      Bindings: { CACHE: typeof mockKV };
+      Variables: { apiKeyTier?: string };
+    }>();
     app.use('*', rateLimitByTier({ keyPrefix: 'custom-prefix' }));
     app.get('/', (c) => c.text('OK'));
 

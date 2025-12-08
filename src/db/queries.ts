@@ -336,7 +336,10 @@ export async function getReputationsBatch(
   const placeholders = agentIds.map(() => '?').join(',');
   const query = `SELECT * FROM agent_reputation WHERE agent_id IN (${placeholders})`;
 
-  const result = await db.prepare(query).bind(...agentIds).all<AgentReputationRow>();
+  const result = await db
+    .prepare(query)
+    .bind(...agentIds)
+    .all<AgentReputationRow>();
 
   const reputationsMap = new Map<string, AgentReputationRow>();
   for (const row of result.results) {
