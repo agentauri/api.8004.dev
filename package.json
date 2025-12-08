@@ -33,6 +33,7 @@
     "@anthropic-ai/sdk": "^0.32.1",
     "agent0-sdk": "^0.31.0",
     "hono": "^4.6.12",
+    "viem": "^2.41.2",
     "zod": "^3.23.8"
   },
   "devDependencies": {

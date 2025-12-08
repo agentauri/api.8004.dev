@@ -6,6 +6,7 @@
 import { getEasSyncState, updateEasSyncState } from '@/db/queries';
 import type { NewFeedback } from '@/db/schema';
 import { fetchWithTimeout } from '@/lib/utils/fetch';
+import { decodeAbiParameters } from 'viem';
 import { createReputationService } from './reputation';
 
 /**
@@ -18,31 +19,60 @@ const EAS_GRAPHQL_ENDPOINTS: Record<number, string> = {
 };
 
 /**
- * EAS schema UID for agent feedback attestations
- * This should match the deployed feedback schema on each chain
+ * EAS schema UIDs for agent feedback attestations per chain
  *
- * IMPORTANT: This is a placeholder value. Before deploying to production:
- * 1. Deploy the feedback schema to EAS on each supported chain
- * 2. Replace this value with the actual schema UID
- * 3. Schema format: (string agentId, uint8 score, string[] tags, string context)
+ * Schema format: (string agentId, uint8 score, string[] tags, string context)
  *
- * @see https://easscan.org/schema/create
+ * To deploy the schema on each chain:
+ * 1. Go to the respective easscan.org schema creation page
+ * 2. Create schema with: string agentId, uint8 score, string[] tags, string context
+ * 3. Set revocable: true, resolver: 0x0
+ * 4. Update the UID below with the deployed schema UID
+ *
+ * @see https://sepolia.easscan.org/schema/create
+ * @see https://base-sepolia.easscan.org/schema/create
+ * @see https://polygon-amoy.easscan.org/schema/create
  */
-const FEEDBACK_SCHEMA_UID = '0x0000000000000000000000000000000000000000000000000000000000000000';
+const FEEDBACK_SCHEMA_UIDS: Record<number, string> = {
+  // TODO: Replace with actual deployed schema UIDs
+  11155111: '0x0000000000000000000000000000000000000000000000000000000000000000', // Ethereum Sepolia
+  84532: '0x0000000000000000000000000000000000000000000000000000000000000000', // Base Sepolia
+  80002: '0x0000000000000000000000000000000000000000000000000000000000000000', // Polygon Amoy
+};
+
+const PLACEHOLDER_SCHEMA_UID = '0x0000000000000000000000000000000000000000000000000000000000000000';
 
 /**
- * Validates that the EAS schema UID has been configured
- * Throws an error if the placeholder value is still in use
+ * ABI definition for feedback attestation schema
  */
-function validateSchemaConfig(): void {
-  if (
-    FEEDBACK_SCHEMA_UID === '0x0000000000000000000000000000000000000000000000000000000000000000'
-  ) {
+const FEEDBACK_SCHEMA_ABI = [
+  { name: 'agentId', type: 'string' },
+  { name: 'score', type: 'uint8' },
+  { name: 'tags', type: 'string[]' },
+  { name: 'context', type: 'string' },
+] as const;
+
+/**
+ * Validates that the EAS schema UID has been configured for a chain
+ */
+function validateSchemaConfig(chainId: number): void {
+  const schemaUid = FEEDBACK_SCHEMA_UIDS[chainId];
+  if (!schemaUid || schemaUid === PLACEHOLDER_SCHEMA_UID) {
     console.warn(
-      'EAS Indexer: Using placeholder schema UID. No attestations will be matched. ' +
-        'Deploy the feedback schema to EAS and update FEEDBACK_SCHEMA_UID before production use.'
+      `EAS Indexer: Chain ${chainId} using placeholder schema UID. No attestations will be matched. Deploy the feedback schema to EAS and update FEEDBACK_SCHEMA_UIDS before production use.`
     );
   }
+}
+
+/**
+ * Get schema UID for a chain
+ */
+function getSchemaUid(chainId: number): string | null {
+  const schemaUid = FEEDBACK_SCHEMA_UIDS[chainId];
+  if (!schemaUid || schemaUid === PLACEHOLDER_SCHEMA_UID) {
+    return null;
+  }
+  return schemaUid;
 }
 
 /**
@@ -128,52 +158,40 @@ const ATTESTATIONS_QUERY = `
 `;
 
 /**
- * Decode attestation data from hex
- * The data format depends on the schema - this is a placeholder implementation
- *
- * IMPORTANT: This function requires implementation before production use.
+ * Decode attestation data from hex using viem's ABI decoder
  *
  * The expected schema format is:
  * (string agentId, uint8 score, string[] tags, string context)
- *
- * Implementation steps:
- * 1. Add viem or ethers.js as a dependency
- * 2. Define the schema ABI
- * 3. Use decodeAbiParameters to parse the hex data
- *
- * Example implementation with viem:
- * ```typescript
- * import { decodeAbiParameters } from 'viem';
- *
- * const decoded = decodeAbiParameters(
- *   [
- *     { name: 'agentId', type: 'string' },
- *     { name: 'score', type: 'uint8' },
- *     { name: 'tags', type: 'string[]' },
- *     { name: 'context', type: 'string' },
- *   ],
- *   hexData as `0x${string}`
- * );
- * ```
  */
 function decodeAttestationData(hexData: string): FeedbackAttestationData | null {
   try {
-    // Remove 0x prefix if present
-    const data = hexData.startsWith('0x') ? hexData.slice(2) : hexData;
+    // Ensure hex data has 0x prefix
+    const normalizedData = hexData.startsWith('0x') ? hexData : `0x${hexData}`;
 
     // Minimum length check (at least some data should be present)
-    if (data.length < 64) {
-      console.warn('Attestation data too short to decode:', data.substring(0, 20));
+    if (normalizedData.length < 66) {
+      // 0x + 64 chars minimum
+      console.warn('Attestation data too short to decode:', normalizedData.substring(0, 20));
       return null;
     }
 
-    // PLACEHOLDER: Real implementation needs ABI decoding
-    // This will always return null until implemented
-    console.warn(
-      'decodeAttestationData: ABI decoding not implemented. ' +
-        'Add viem/ethers.js and implement proper decoding before production use.'
-    );
-    return null;
+    const decoded = decodeAbiParameters(FEEDBACK_SCHEMA_ABI, normalizedData as `0x${string}`);
+
+    const [agentId, score, tags, context] = decoded;
+
+    // Validate score is in valid range (1-5)
+    const scoreNum = Number(score);
+    if (scoreNum < 1 || scoreNum > 5) {
+      console.warn(`Invalid score value: ${scoreNum}. Expected 1-5.`);
+      return null;
+    }
+
+    return {
+      agentId,
+      score: scoreNum,
+      tags: [...tags],
+      context: context || undefined,
+    };
   } catch (error) {
     console.error('Failed to decode attestation data:', error);
     return null;
@@ -250,7 +268,19 @@ export function createEASIndexerService(db: D1Database): EASIndexerService {
 
       try {
         // Warn if schema UID is not configured
-        validateSchemaConfig();
+        validateSchemaConfig(chainId);
+
+        // Get schema UID for this chain
+        const schemaUid = getSchemaUid(chainId);
+        if (!schemaUid) {
+          return {
+            chainId,
+            success: true, // Not an error, just no schema configured
+            attestationsProcessed: 0,
+            newFeedbackCount: 0,
+            lastBlock: 0,
+          };
+        }
 
         // Get last sync state
         const syncState = await getEasSyncState(db, chainId);
@@ -268,7 +298,7 @@ export function createEASIndexerService(db: D1Database): EASIndexerService {
         while (hasMore) {
           const attestations = await fetchAttestations(
             endpoint,
-            FEEDBACK_SCHEMA_UID,
+            schemaUid,
             take,
             skip,
             lastTimestamp
