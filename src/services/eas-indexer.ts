@@ -248,10 +248,31 @@ async function fetchAttestations(
 }
 
 /**
+ * Configuration options for EAS indexer (primarily for testing)
+ */
+export interface EASIndexerConfig {
+  /**
+   * Override schema UIDs (for testing)
+   */
+  schemaUids?: Record<number, string>;
+}
+
+/**
  * Create EAS indexer service
  */
-export function createEASIndexerService(db: D1Database): EASIndexerService {
+export function createEASIndexerService(
+  db: D1Database,
+  config?: EASIndexerConfig
+): EASIndexerService {
   const reputationService = createReputationService(db);
+
+  // Allow overriding schema UIDs for testing
+  const getConfiguredSchemaUid = (chainId: number): string | null => {
+    if (config?.schemaUids?.[chainId]) {
+      return config.schemaUids[chainId];
+    }
+    return getSchemaUid(chainId);
+  };
 
   return {
     // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: EAS sync requires sequential processing with multiple conditions
@@ -273,7 +294,7 @@ export function createEASIndexerService(db: D1Database): EASIndexerService {
         validateSchemaConfig(chainId);
 
         // Get schema UID for this chain
-        const schemaUid = getSchemaUid(chainId);
+        const schemaUid = getConfiguredSchemaUid(chainId);
         if (!schemaUid) {
           return {
             chainId,

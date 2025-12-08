@@ -112,6 +112,177 @@ describe('EASIndexerService', () => {
     mockFetch.mockReset();
   });
 
+  describe('syncChain with configured schema', () => {
+    const TEST_SCHEMA_UID = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
+
+    it('fetches and processes attestations when schema is configured', async () => {
+      const encodedData = encodeFeedbackData('11155111:1', 5, ['helpful'], 'Great agent');
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            attestations: [
+              {
+                id: '0xattestation1',
+                attester: '0xuser1',
+                recipient: '0x0',
+                refUID: '0x0',
+                revocationTime: 0,
+                expirationTime: 0,
+                time: 1700000000,
+                txid: '0xtx1',
+                data: encodedData,
+                schemaId: TEST_SCHEMA_UID,
+              },
+            ],
+          },
+        }),
+      });
+
+      // Second fetch returns empty to end pagination
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { attestations: [] } }),
+      });
+
+      const service = createEASIndexerService(env.DB, {
+        schemaUids: { 11155111: TEST_SCHEMA_UID },
+      });
+      const result = await service.syncChain(11155111);
+
+      expect(result.success).toBe(true);
+      expect(result.attestationsProcessed).toBe(1);
+      expect(result.newFeedbackCount).toBe(1);
+      expect(mockFetch).toHaveBeenCalled();
+    });
+
+    it('handles empty attestations response', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { attestations: [] } }),
+      });
+
+      const service = createEASIndexerService(env.DB, {
+        schemaUids: { 11155111: TEST_SCHEMA_UID },
+      });
+      const result = await service.syncChain(11155111);
+
+      expect(result.success).toBe(true);
+      expect(result.attestationsProcessed).toBe(0);
+      expect(result.newFeedbackCount).toBe(0);
+    });
+
+    it('handles GraphQL errors gracefully', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          errors: [{ message: 'GraphQL error occurred' }],
+        }),
+      });
+
+      const service = createEASIndexerService(env.DB, {
+        schemaUids: { 11155111: TEST_SCHEMA_UID },
+      });
+      const result = await service.syncChain(11155111);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('GraphQL error');
+    });
+
+    it('handles HTTP errors gracefully', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+      });
+
+      const service = createEASIndexerService(env.DB, {
+        schemaUids: { 11155111: TEST_SCHEMA_UID },
+      });
+      const result = await service.syncChain(11155111);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('500');
+    });
+
+    it('skips attestations with invalid data', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            attestations: [
+              {
+                id: '0xattestation1',
+                attester: '0xuser1',
+                recipient: '0x0',
+                refUID: '0x0',
+                revocationTime: 0,
+                expirationTime: 0,
+                time: 1700000000,
+                txid: '0xtx1',
+                data: '0xinvaliddata',
+                schemaId: TEST_SCHEMA_UID,
+              },
+            ],
+          },
+        }),
+      });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { attestations: [] } }),
+      });
+
+      const service = createEASIndexerService(env.DB, {
+        schemaUids: { 11155111: TEST_SCHEMA_UID },
+      });
+      const result = await service.syncChain(11155111);
+
+      expect(result.success).toBe(true);
+      expect(result.attestationsProcessed).toBe(1);
+      expect(result.newFeedbackCount).toBe(0); // Invalid data not counted
+    });
+
+    it('paginates through multiple pages', async () => {
+      const encodedData = encodeFeedbackData('11155111:1', 4, ['fast'], 'Good');
+
+      // First page - full batch (triggers pagination)
+      const firstPageAttestations = Array.from({ length: 100 }, (_, i) => ({
+        id: `0xattestation${i}`,
+        attester: '0xuser1',
+        recipient: '0x0',
+        refUID: '0x0',
+        revocationTime: 0,
+        expirationTime: 0,
+        time: 1700000000 + i,
+        txid: `0xtx${i}`,
+        data: encodedData,
+        schemaId: TEST_SCHEMA_UID,
+      }));
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { attestations: firstPageAttestations } }),
+      });
+
+      // Second page - empty (ends pagination)
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { attestations: [] } }),
+      });
+
+      const service = createEASIndexerService(env.DB, {
+        schemaUids: { 11155111: TEST_SCHEMA_UID },
+      });
+      const result = await service.syncChain(11155111);
+
+      expect(result.success).toBe(true);
+      expect(result.attestationsProcessed).toBe(100);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('syncChain', () => {
     it('returns error for unsupported chain', async () => {
       const service = createEASIndexerService(env.DB);
