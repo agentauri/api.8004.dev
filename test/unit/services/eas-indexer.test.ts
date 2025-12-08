@@ -4,12 +4,108 @@
  */
 
 import { env } from 'cloudflare:test';
-import { createEASIndexerService } from '@/services/eas-indexer';
+import { createEASIndexerService, decodeAttestationData } from '@/services/eas-indexer';
+import { encodeAbiParameters } from 'viem';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock fetch
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
+
+/**
+ * Helper to encode feedback attestation data for testing
+ */
+function encodeFeedbackData(
+  agentId: string,
+  score: number,
+  tags: string[],
+  context: string
+): string {
+  return encodeAbiParameters(
+    [
+      { name: 'agentId', type: 'string' },
+      { name: 'score', type: 'uint8' },
+      { name: 'tags', type: 'string[]' },
+      { name: 'context', type: 'string' },
+    ],
+    [agentId, score, tags, context]
+  );
+}
+
+describe('decodeAttestationData', () => {
+  it('decodes valid attestation data correctly', () => {
+    const encoded = encodeFeedbackData('11155111:1', 5, ['helpful', 'accurate'], 'Great agent!');
+    const result = decodeAttestationData(encoded);
+
+    expect(result).not.toBeNull();
+    expect(result?.agentId).toBe('11155111:1');
+    expect(result?.score).toBe(5);
+    expect(result?.tags).toEqual(['helpful', 'accurate']);
+    expect(result?.context).toBe('Great agent!');
+  });
+
+  it('handles empty tags array', () => {
+    const encoded = encodeFeedbackData('84532:42', 3, [], 'Average experience');
+    const result = decodeAttestationData(encoded);
+
+    expect(result).not.toBeNull();
+    expect(result?.agentId).toBe('84532:42');
+    expect(result?.score).toBe(3);
+    expect(result?.tags).toEqual([]);
+    expect(result?.context).toBe('Average experience');
+  });
+
+  it('handles empty context', () => {
+    const encoded = encodeFeedbackData('80002:100', 4, ['fast'], '');
+    const result = decodeAttestationData(encoded);
+
+    expect(result).not.toBeNull();
+    expect(result?.context).toBeUndefined();
+  });
+
+  it('handles hex data without 0x prefix', () => {
+    const encoded = encodeFeedbackData('11155111:1', 5, ['test'], 'context');
+    // Remove 0x prefix
+    const withoutPrefix = encoded.slice(2);
+    const result = decodeAttestationData(withoutPrefix);
+
+    expect(result).not.toBeNull();
+    expect(result?.agentId).toBe('11155111:1');
+  });
+
+  it('returns null for score below valid range', () => {
+    const encoded = encodeFeedbackData('11155111:1', 0, ['test'], 'context');
+    const result = decodeAttestationData(encoded);
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null for score above valid range', () => {
+    const encoded = encodeFeedbackData('11155111:1', 6, ['test'], 'context');
+    const result = decodeAttestationData(encoded);
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null for data too short', () => {
+    const result = decodeAttestationData('0x1234');
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null for invalid hex data', () => {
+    const result = decodeAttestationData('0xnotvalidhex');
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null for malformed ABI data', () => {
+    // Valid hex but not valid ABI encoding
+    const result = decodeAttestationData(`0x${'00'.repeat(100)}`);
+
+    expect(result).toBeNull();
+  });
+});
 
 describe('EASIndexerService', () => {
   beforeEach(() => {

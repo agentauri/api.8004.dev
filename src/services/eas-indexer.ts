@@ -162,8 +162,10 @@ const ATTESTATIONS_QUERY = `
  *
  * The expected schema format is:
  * (string agentId, uint8 score, string[] tags, string context)
+ *
+ * @public Exported for testing
  */
-function decodeAttestationData(hexData: string): FeedbackAttestationData | null {
+export function decodeAttestationData(hexData: string): FeedbackAttestationData | null {
   try {
     // Ensure hex data has 0x prefix
     const normalizedData = hexData.startsWith('0x') ? hexData : `0x${hexData}`;
