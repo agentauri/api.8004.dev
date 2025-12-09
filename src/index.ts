@@ -20,7 +20,7 @@ import {
 } from '@/lib/middleware';
 import { handleError } from '@/lib/utils/errors';
 import { parseAgentId } from '@/lib/utils/validation';
-import { agents, chains, health, search, stats, taxonomy } from '@/routes';
+import { agents, chains, health, openapi, search, stats, taxonomy } from '@/routes';
 import { createClassifierService } from '@/services/classifier';
 import { createEASIndexerService } from '@/services/eas-indexer';
 import { createSDKService } from '@/services/sdk';
@@ -55,6 +55,7 @@ app.use('/api/v1/taxonomy/*', requireApiKey());
 
 // Mount routes
 app.route('/api/v1/health', health);
+app.route('/api/v1/openapi.json', openapi);
 app.route('/api/v1/agents', agents);
 app.route('/api/v1/search', search);
 app.route('/api/v1/chains', chains);
@@ -66,7 +67,8 @@ app.get('/', (c) => {
   return c.json({
     name: '8004-backend',
     version: '1.0.0',
-    docs: '/api/v1/health',
+    docs: '/api/v1/openapi.json',
+    health: '/api/v1/health',
   });
 });
 

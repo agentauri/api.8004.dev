@@ -31,6 +31,7 @@
   "homepage": "https://github.com/agent0lab/8004-backend#readme",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
+    "@hono/zod-openapi": "0.16.4",
     "agent0-sdk": "^0.31.0",
     "hono": "^4.6.12",
     "viem": "^2.41.2",
