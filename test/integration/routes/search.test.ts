@@ -203,7 +203,7 @@ describe('POST /api/v1/search', () => {
     const fetchCall = mockFetch.mock.calls.find((call) => call[0].includes('/search'));
     if (fetchCall) {
       const body = JSON.parse(fetchCall[1].body);
-      expect(body.limit).toBe(10);
+      expect(body.topK).toBe(10);
       expect(body.minScore).toBe(0.5);
       expect(body.filters).toBeDefined();
     }
