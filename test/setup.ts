@@ -248,10 +248,7 @@ export interface TestRouteOptions {
 /**
  * Helper to make HTTP requests in tests - eliminates boilerplate
  */
-export async function testRoute(
-  path: string,
-  options: TestRouteOptions = {}
-): Promise<Response> {
+export async function testRoute(path: string, options: TestRouteOptions = {}): Promise<Response> {
   const init: RequestInit = { method: options.method ?? 'GET' };
 
   if (options.body) {

@@ -6,8 +6,8 @@
 import { SDKError } from '@/lib/utils/errors';
 import { SUPPORTED_CHAINS, createSDKService, getChainConfig } from '@/services/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createMockEnv } from '../../setup';
 import { mockConfig } from '../../mocks/agent0-sdk';
+import { createMockEnv } from '../../setup';
 
 describe('SUPPORTED_CHAINS', () => {
   it.each([
@@ -135,7 +135,7 @@ describe('createSDKService', () => {
 });
 
 describe('SDK error paths', () => {
-  const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  vi.spyOn(console, 'error').mockImplementation(() => {});
   const mockEnv = createMockEnv();
 
   beforeEach(() => {

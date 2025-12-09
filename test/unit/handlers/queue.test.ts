@@ -8,13 +8,13 @@ import { enqueueClassification } from '@/db/queries';
 import type { ClassificationJob, Env } from '@/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  createMockQueueMessage,
-  createMockExecutionContext,
-  createMockSDKService,
   createMockClassifierService,
   createMockEASIndexerService,
+  createMockExecutionContext,
+  createMockQueueMessage,
+  createMockSDKService,
 } from '../../mocks/services';
-import { createMockEnv, createMockAgent } from '../../setup';
+import { createMockAgent, createMockEnv } from '../../setup';
 
 // Helper to create test environment with D1
 const testEnv = (): Env => ({ ...createMockEnv(), DB: env.DB });
@@ -30,7 +30,7 @@ describe('App exports', () => {
 
 describe('Queue handler', () => {
   const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-  const consoleInfoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+  vi.spyOn(console, 'info').mockImplementation(() => {});
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -49,9 +49,15 @@ describe('Queue handler', () => {
     }));
 
     const appModule = await import('@/index');
-    const msg = createMockQueueMessage<ClassificationJob>({ agentId: '11155111:999', force: false });
+    const msg = createMockQueueMessage<ClassificationJob>({
+      agentId: '11155111:999',
+      force: false,
+    });
 
-    await appModule.default.queue({ messages: [msg] } as unknown as MessageBatch<ClassificationJob>, testEnv());
+    await appModule.default.queue(
+      { messages: [msg] } as unknown as MessageBatch<ClassificationJob>,
+      testEnv()
+    );
 
     expect(msg.ack).toHaveBeenCalled();
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('No queue entry found'));
@@ -63,9 +69,9 @@ describe('Queue handler', () => {
     vi.doMock('@/services/sdk', () => ({
       createSDKService: () =>
         createMockSDKService({
-          getAgent: vi.fn().mockResolvedValue(
-            createMockAgent({ mcpTools: ['tool1'], a2aSkills: [] })
-          ),
+          getAgent: vi
+            .fn()
+            .mockResolvedValue(createMockAgent({ mcpTools: ['tool1'], a2aSkills: [] })),
         }),
       SUPPORTED_CHAINS: [],
       getChainConfig: vi.fn(),
@@ -78,7 +84,10 @@ describe('Queue handler', () => {
     const appModule = await import('@/index');
     const msg = createMockQueueMessage<ClassificationJob>({ agentId: '11155111:1', force: false });
 
-    await appModule.default.queue({ messages: [msg] } as unknown as MessageBatch<ClassificationJob>, testEnv());
+    await appModule.default.queue(
+      { messages: [msg] } as unknown as MessageBatch<ClassificationJob>,
+      testEnv()
+    );
 
     expect(msg.ack).toHaveBeenCalled();
     expect(msg.retry).not.toHaveBeenCalled();
@@ -88,16 +97,21 @@ describe('Queue handler', () => {
     await enqueueClassification(env.DB, '11155111:404');
 
     vi.doMock('@/services/sdk', () => ({
-      createSDKService: () =>
-        createMockSDKService({ getAgent: vi.fn().mockResolvedValue(null) }),
+      createSDKService: () => createMockSDKService({ getAgent: vi.fn().mockResolvedValue(null) }),
       SUPPORTED_CHAINS: [],
       getChainConfig: vi.fn(),
     }));
 
     const appModule = await import('@/index');
-    const msg = createMockQueueMessage<ClassificationJob>({ agentId: '11155111:404', force: false });
+    const msg = createMockQueueMessage<ClassificationJob>({
+      agentId: '11155111:404',
+      force: false,
+    });
 
-    await appModule.default.queue({ messages: [msg] } as unknown as MessageBatch<ClassificationJob>, testEnv());
+    await appModule.default.queue(
+      { messages: [msg] } as unknown as MessageBatch<ClassificationJob>,
+      testEnv()
+    );
 
     expect(msg.retry).toHaveBeenCalled();
     expect(msg.ack).not.toHaveBeenCalled();
@@ -110,7 +124,9 @@ describe('Queue handler', () => {
     vi.doMock('@/services/sdk', () => ({
       createSDKService: () =>
         createMockSDKService({
-          getAgent: vi.fn().mockResolvedValue(createMockAgent({ id: '11155111:500', tokenId: '500' })),
+          getAgent: vi
+            .fn()
+            .mockResolvedValue(createMockAgent({ id: '11155111:500', tokenId: '500' })),
         }),
       SUPPORTED_CHAINS: [],
       getChainConfig: vi.fn(),
@@ -124,9 +140,15 @@ describe('Queue handler', () => {
     }));
 
     const appModule = await import('@/index');
-    const msg = createMockQueueMessage<ClassificationJob>({ agentId: '11155111:500', force: false });
+    const msg = createMockQueueMessage<ClassificationJob>({
+      agentId: '11155111:500',
+      force: false,
+    });
 
-    await appModule.default.queue({ messages: [msg] } as unknown as MessageBatch<ClassificationJob>, testEnv());
+    await appModule.default.queue(
+      { messages: [msg] } as unknown as MessageBatch<ClassificationJob>,
+      testEnv()
+    );
 
     expect(msg.retry).toHaveBeenCalled();
     expect(msg.ack).not.toHaveBeenCalled();

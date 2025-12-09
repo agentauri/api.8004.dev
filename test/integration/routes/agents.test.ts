@@ -5,11 +5,11 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  testRoute,
-  setupMockFetch,
+  insertMockClassification,
   mockHealthyResponse,
   mockSearchResponse,
-  insertMockClassification,
+  setupMockFetch,
+  testRoute,
 } from '../../setup';
 
 const mockFetch = setupMockFetch();
@@ -205,8 +205,26 @@ describe('Agents sorting', () => {
         Promise.resolve({
           query: 'test',
           results: [
-            { rank: 1, vectorId: 'v1', agentId: '11155111:1', chainId: 11155111, name: 'Low Score', description: '', score: 0.5, metadata: {} },
-            { rank: 2, vectorId: 'v2', agentId: '11155111:2', chainId: 11155111, name: 'High Score', description: '', score: 0.95, metadata: {} },
+            {
+              rank: 1,
+              vectorId: 'v1',
+              agentId: '11155111:1',
+              chainId: 11155111,
+              name: 'Low Score',
+              description: '',
+              score: 0.5,
+              metadata: {},
+            },
+            {
+              rank: 2,
+              vectorId: 'v2',
+              agentId: '11155111:2',
+              chainId: 11155111,
+              name: 'High Score',
+              description: '',
+              score: 0.95,
+              metadata: {},
+            },
           ],
           total: 2,
           pagination: { hasMore: false, limit: 20 },
@@ -218,7 +236,10 @@ describe('Agents sorting', () => {
     const response = await testRoute('/api/v1/agents?q=test&sort=relevance&order=desc');
 
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { success: boolean; data: Array<{ searchScore?: number }> };
+    const body = (await response.json()) as {
+      success: boolean;
+      data: Array<{ searchScore?: number }>;
+    };
     expect(body.success).toBe(true);
     expect(body.data.length).toBe(2);
     if (body.data[0]?.searchScore && body.data[1]?.searchScore) {

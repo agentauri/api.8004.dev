@@ -4,12 +4,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  testRoute,
-  setupMockFetch,
-  mockHealthyResponse,
-  mockEASResponse,
-} from '../../setup';
+import { mockEASResponse, mockHealthyResponse, setupMockFetch, testRoute } from '../../setup';
 
 const mockFetch = setupMockFetch();
 
@@ -62,16 +57,18 @@ describe('GET /api/v1/health', () => {
 
   it('returns degraded when classifier API key is invalid', async () => {
     // This test needs custom env, use the longer form
-    const { createExecutionContext, env, waitOnExecutionContext } = await import(
-      'cloudflare:test'
-    );
+    const { createExecutionContext, env, waitOnExecutionContext } = await import('cloudflare:test');
     const app = (await import('@/index')).default;
 
     const request = new Request('http://localhost/api/v1/health');
     const ctx = createExecutionContext();
     const response = await app.fetch(
       request,
-      { ...env, ANTHROPIC_API_KEY: 'invalid-api-key', SEARCH_SERVICE_URL: 'https://search.example.com' },
+      {
+        ...env,
+        ANTHROPIC_API_KEY: 'invalid-api-key',
+        SEARCH_SERVICE_URL: 'https://search.example.com',
+      },
       ctx
     );
     await waitOnExecutionContext(ctx);
