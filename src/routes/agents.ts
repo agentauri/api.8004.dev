@@ -139,7 +139,10 @@ agents.get('/', async (c) => {
 
   // Resolve chain IDs: prefer 'chainIds[]' (URL array), then 'chainIds', then 'chains' (CSV), then 'chainId' (single)
   const chainIds =
-    query['chainIds[]'] ?? query.chainIds ?? query.chains ?? (query.chainId ? [query.chainId] : undefined);
+    query['chainIds[]'] ??
+    query.chainIds ??
+    query.chains ??
+    (query.chainId ? [query.chainId] : undefined);
 
   // If search query provided, use semantic search
   if (query.q) {

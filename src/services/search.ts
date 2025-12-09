@@ -219,7 +219,7 @@ export function createSearchService(searchServiceUrl: string): SearchService {
     }));
 
     // Determine if there are more results
-    const hasMore = data.pagination?.hasMore ?? (offset + results.length < data.total);
+    const hasMore = data.pagination?.hasMore ?? offset + results.length < data.total;
 
     // Generate nextCursor if there are more results
     // Use server-provided cursor if available, otherwise generate offset-based cursor
