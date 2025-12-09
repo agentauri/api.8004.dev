@@ -3,14 +3,10 @@
  * @module test/integration/routes/search
  */
 
-import { createExecutionContext, env, waitOnExecutionContext } from 'cloudflare:test';
-import app from '@/index';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { insertMockClassification } from '../../setup';
+import { insertMockClassification, setupMockFetch, testRoute } from '../../setup';
 
-// Mock fetch for search service
-const mockFetch = vi.fn();
-vi.stubGlobal('fetch', mockFetch);
+const mockFetch = setupMockFetch();
 
 describe('POST /api/v1/search', () => {
   beforeEach(() => {
@@ -52,25 +48,12 @@ describe('POST /api/v1/search', () => {
         }),
     });
 
-    const request = new Request('http://localhost/api/v1/search', {
+    const response = await testRoute('/api/v1/search', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: 'AI assistant' }),
+      body: { query: 'AI assistant' },
     });
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
 
     expect(response.status).toBe(200);
-
     const body = await response.json();
     expect(body.success).toBe(true);
     expect(body.data).toHaveLength(2);
@@ -103,22 +86,10 @@ describe('POST /api/v1/search', () => {
         }),
     });
 
-    const request = new Request('http://localhost/api/v1/search', {
+    const response = await testRoute('/api/v1/search', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: 'test' }),
+      body: { query: 'test' },
     });
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
 
     const body = await response.json();
     expect(body.data[0].searchScore).toBe(0.92);
@@ -151,22 +122,10 @@ describe('POST /api/v1/search', () => {
         }),
     });
 
-    const request = new Request('http://localhost/api/v1/search', {
+    const response = await testRoute('/api/v1/search', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: 'test' }),
+      body: { query: 'test' },
     });
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
 
     const body = await response.json();
     expect(body.data[0].oasf).toBeDefined();
@@ -175,50 +134,36 @@ describe('POST /api/v1/search', () => {
   });
 
   it('returns 400 for missing query', async () => {
-    const request = new Request('http://localhost/api/v1/search', {
+    const response = await testRoute('/api/v1/search', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
+      body: {},
     });
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
 
     expect(response.status).toBe(400);
-
     const body = await response.json();
     expect(body.success).toBe(false);
     expect(body.code).toBe('VALIDATION_ERROR');
   });
 
   it('returns 400 for invalid JSON body', async () => {
+    // For invalid JSON we need to use the raw approach
+    const { createExecutionContext, env, waitOnExecutionContext } = await import('cloudflare:test');
+    const app = (await import('@/index')).default;
+    const { TEST_API_KEY, createMockEnv } = await import('../../setup');
+
     const request = new Request('http://localhost/api/v1/search', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': TEST_API_KEY,
+      },
       body: 'not json',
     });
     const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
+    const response = await app.fetch(request, createMockEnv() as unknown as typeof env, ctx);
     await waitOnExecutionContext(ctx);
 
     expect(response.status).toBe(400);
-
     const body = await response.json();
     expect(body.success).toBe(false);
     expect(body.code).toBe('BAD_REQUEST');
@@ -238,10 +183,9 @@ describe('POST /api/v1/search', () => {
         }),
     });
 
-    const request = new Request('http://localhost/api/v1/search', {
+    const response = await testRoute('/api/v1/search', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+      body: {
         query: 'test',
         limit: 10,
         minScore: 0.5,
@@ -250,19 +194,8 @@ describe('POST /api/v1/search', () => {
           active: true,
           mcp: true,
         },
-      }),
-    });
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
       },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
+    });
 
     expect(response.status).toBe(200);
 
@@ -290,22 +223,10 @@ describe('POST /api/v1/search', () => {
         }),
     });
 
-    const request = new Request('http://localhost/api/v1/search', {
+    const response = await testRoute('/api/v1/search', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: 'test', minScore: 0.8 }),
+      body: { query: 'test', minScore: 0.8 },
     });
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
 
     expect(response.status).toBe(200);
   });

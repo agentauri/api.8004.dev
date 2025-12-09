@@ -3,17 +3,13 @@
  * @module test/integration/routes/taxonomy
  */
 
-import { createExecutionContext, env, waitOnExecutionContext } from 'cloudflare:test';
-import app from '@/index';
 import { OASF_VERSION } from '@/lib/oasf/taxonomy';
 import { describe, expect, it } from 'vitest';
+import { testRoute } from '../../setup';
 
 describe('GET /api/v1/taxonomy', () => {
   it('returns all taxonomy by default', async () => {
-    const request = new Request('http://localhost/api/v1/taxonomy');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(request, env, ctx);
-    await waitOnExecutionContext(ctx);
+    const response = await testRoute('/api/v1/taxonomy');
 
     expect(response.status).toBe(200);
 
@@ -25,10 +21,7 @@ describe('GET /api/v1/taxonomy', () => {
   });
 
   it('returns skills only when type=skill', async () => {
-    const request = new Request('http://localhost/api/v1/taxonomy?type=skill');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(request, env, ctx);
-    await waitOnExecutionContext(ctx);
+    const response = await testRoute('/api/v1/taxonomy?type=skill');
 
     expect(response.status).toBe(200);
 
@@ -39,10 +32,7 @@ describe('GET /api/v1/taxonomy', () => {
   });
 
   it('returns domains only when type=domain', async () => {
-    const request = new Request('http://localhost/api/v1/taxonomy?type=domain');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(request, env, ctx);
-    await waitOnExecutionContext(ctx);
+    const response = await testRoute('/api/v1/taxonomy?type=domain');
 
     expect(response.status).toBe(200);
 
@@ -53,10 +43,7 @@ describe('GET /api/v1/taxonomy', () => {
   });
 
   it('rejects invalid type parameter', async () => {
-    const request = new Request('http://localhost/api/v1/taxonomy?type=invalid');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(request, env, ctx);
-    await waitOnExecutionContext(ctx);
+    const response = await testRoute('/api/v1/taxonomy?type=invalid');
 
     expect(response.status).toBe(400);
 
@@ -66,10 +53,7 @@ describe('GET /api/v1/taxonomy', () => {
   });
 
   it('includes rate limit headers', async () => {
-    const request = new Request('http://localhost/api/v1/taxonomy');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(request, env, ctx);
-    await waitOnExecutionContext(ctx);
+    const response = await testRoute('/api/v1/taxonomy');
 
     expect(response.headers.get('X-RateLimit-Limit')).toBeDefined();
     expect(response.headers.get('X-RateLimit-Remaining')).toBeDefined();
@@ -78,17 +62,11 @@ describe('GET /api/v1/taxonomy', () => {
 
   it('caches responses', async () => {
     // First request
-    const request1 = new Request('http://localhost/api/v1/taxonomy');
-    const ctx1 = createExecutionContext();
-    const response1 = await app.fetch(request1, env, ctx1);
-    await waitOnExecutionContext(ctx1);
+    const response1 = await testRoute('/api/v1/taxonomy');
     const body1 = await response1.json();
 
     // Second request (should hit cache)
-    const request2 = new Request('http://localhost/api/v1/taxonomy');
-    const ctx2 = createExecutionContext();
-    const response2 = await app.fetch(request2, env, ctx2);
-    await waitOnExecutionContext(ctx2);
+    const response2 = await testRoute('/api/v1/taxonomy');
     const body2 = await response2.json();
 
     expect(body1).toEqual(body2);
