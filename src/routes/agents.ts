@@ -268,6 +268,7 @@ agents.get('/', async (c) => {
     active: query.active,
     hasMcp: query.mcp,
     hasA2a: query.a2a,
+    hasX402: query.x402,
   });
 
   // Batch fetch classifications and reputations for all agents (N+1 fix)
@@ -278,7 +279,7 @@ agents.get('/', async (c) => {
   ]);
 
   // Enrich with classifications and reputations from batch result
-  const enrichedAgents = agentsResult.items.map((agent) => {
+  let enrichedAgents = agentsResult.items.map((agent) => {
     const classificationRow = classificationsMap.get(agent.id);
     const oasf = parseClassificationRow(classificationRow);
     const reputationRow = reputationsMap.get(agent.id);
@@ -290,6 +291,15 @@ agents.get('/', async (c) => {
       reputationCount: reputationRow?.feedback_count,
     };
   });
+
+  // Apply domains filtering (post-fetch since SDK doesn't support it)
+  if (query.domains?.length) {
+    enrichedAgents = enrichedAgents.filter((agent) => {
+      if (!agent.oasf?.domains) return false;
+      const agentDomains = agent.oasf.domains.map((d) => d.slug);
+      return query.domains?.some((d) => agentDomains.includes(d));
+    });
+  }
 
   // Apply reputation filtering
   const filteredAgents = filterByReputation(enrichedAgents, query.minRep, query.maxRep);

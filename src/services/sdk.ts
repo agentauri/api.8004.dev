@@ -79,6 +79,7 @@ export interface GetAgentsParams {
   active?: boolean;
   hasMcp?: boolean;
   hasA2a?: boolean;
+  hasX402?: boolean;
 }
 
 /**
@@ -130,7 +131,7 @@ export function createSDKService(env: Env): SDKService {
 
   return {
     async getAgents(params: GetAgentsParams): Promise<GetAgentsResult> {
-      const { chainIds, limit = 20, cursor, active, hasMcp, hasA2a } = params;
+      const { chainIds, limit = 20, cursor, active, hasMcp, hasA2a, hasX402 } = params;
 
       // Determine which chains to query
       const chainsToQuery = chainIds
@@ -149,6 +150,7 @@ export function createSDKService(env: Env): SDKService {
         if (active !== undefined) searchParams.active = active;
         if (hasMcp !== undefined) searchParams.mcp = hasMcp;
         if (hasA2a !== undefined) searchParams.a2a = hasA2a;
+        if (hasX402 !== undefined) searchParams.x402support = hasX402;
 
         // Search with multi-chain support and cursor-based pagination
         const result = await sdk.searchAgents(
