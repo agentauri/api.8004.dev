@@ -927,7 +927,7 @@ openapi.get('/', (c) => {
  * Note: Returns JSON structure with YAML content-type hint.
  * Full YAML serialization would require an additional dependency.
  */
-openapi.get('/yaml', (c) => {
+openapi.get('/yaml', (_c) => {
   const spec = generateOpenAPISpec();
   return new Response(JSON.stringify(spec, null, 2), {
     headers: { 'Content-Type': 'application/x-yaml' },
