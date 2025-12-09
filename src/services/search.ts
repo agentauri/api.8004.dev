@@ -16,6 +16,8 @@ export interface SearchParams {
   limit?: number;
   /** Minimum similarity score (0-1) */
   minScore?: number;
+  /** Pagination cursor */
+  cursor?: string;
   /** Optional filters */
   filters?: SearchFilters;
 }
@@ -42,12 +44,15 @@ interface SearchRequestBody {
   query: string;
   limit: number;
   offset?: number;
+  cursor?: string;
   minScore?: number;
   filters?: {
     equals?: Record<string, unknown>;
     in?: Record<string, unknown[]>;
     capabilities?: string[];
+    domains?: string[];
     chainId?: number;
+    mode?: 'AND' | 'OR';
   };
   includeMetadata?: boolean;
 }
@@ -88,13 +93,14 @@ export function createSearchService(searchServiceUrl: string): SearchService {
   return {
     // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This function handles complex filter logic that is intentionally comprehensive
     async search(params: SearchParams): Promise<SearchServiceResult> {
-      const { query, limit = 20, minScore = 0.3, filters } = params;
+      const { query, limit = 20, minScore = 0.3, cursor, filters } = params;
 
       // Build request body following AG0 Semantic Search Standard
       const body: SearchRequestBody = {
         query,
         limit,
         minScore,
+        cursor,
         includeMetadata: true,
       };
 
@@ -112,6 +118,10 @@ export function createSearchService(searchServiceUrl: string): SearchService {
           body.filters.capabilities = filters.skills;
         }
 
+        if (filters.domains?.length) {
+          body.filters.domains = filters.domains;
+        }
+
         if (filters.active !== undefined) {
           body.filters.equals = { ...body.filters.equals, active: filters.active };
         }
@@ -122,6 +132,14 @@ export function createSearchService(searchServiceUrl: string): SearchService {
 
         if (filters.a2a !== undefined) {
           body.filters.equals = { ...body.filters.equals, a2a: filters.a2a };
+        }
+
+        if (filters.x402 !== undefined) {
+          body.filters.equals = { ...body.filters.equals, x402: filters.x402 };
+        }
+
+        if (filters.filterMode) {
+          body.filters.mode = filters.filterMode;
         }
       }
 

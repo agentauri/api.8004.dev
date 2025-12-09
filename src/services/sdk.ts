@@ -270,12 +270,12 @@ export function createSDKService(env: Env): SDKService {
         try {
           const sdk = getSDK(chain.chainId);
 
-          // Search all agents on this chain
-          const allAgents = await sdk.searchAgents({ chains: [chain.chainId] }, undefined, 1000);
+          // Search all agents on this chain (only need 1 result, using meta.totalResults for count)
+          const allAgents = await sdk.searchAgents({ chains: [chain.chainId] }, undefined, 1);
           const activeAgents = await sdk.searchAgents(
             { chains: [chain.chainId], active: true },
             undefined,
-            1000
+            1
           );
 
           results.push({
@@ -283,8 +283,8 @@ export function createSDKService(env: Env): SDKService {
             name: chain.name,
             shortName: chain.shortName,
             explorerUrl: chain.explorerUrl,
-            agentCount: allAgents.items.length,
-            activeCount: activeAgents.items.length,
+            agentCount: allAgents.meta?.totalResults ?? allAgents.items.length,
+            activeCount: activeAgents.meta?.totalResults ?? activeAgents.items.length,
             status: 'ok',
           });
         } catch (error) {

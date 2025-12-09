@@ -23,6 +23,8 @@ export interface SearchFilters {
   skills?: string[];
   /** Filter by OASF domains */
   domains?: string[];
+  /** Filter mode: AND (all filters must match) or OR (any filter matches) */
+  filterMode?: 'AND' | 'OR';
 }
 
 /**

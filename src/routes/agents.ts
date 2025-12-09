@@ -19,7 +19,14 @@ import { resolveClassification, toOASFClassification } from '@/services/oasf-res
 import { createReputationService } from '@/services/reputation';
 import { createSDKService } from '@/services/sdk';
 import { createSearchService } from '@/services/search';
-import type { AgentDetailResponse, AgentListResponse, AgentSummary, Env, Variables } from '@/types';
+import type {
+  AgentDetailResponse,
+  AgentListResponse,
+  AgentSummary,
+  Env,
+  OASFSource,
+  Variables,
+} from '@/types';
 import { Hono } from 'hono';
 import { classify } from './classify';
 import { reputation } from './reputation';
@@ -134,13 +141,16 @@ agents.get('/', async (c) => {
       query: query.q,
       limit: query.limit,
       minScore: query.minScore,
+      cursor: query.cursor,
       filters: {
         chainIds,
         active: query.active,
         mcp: query.mcp,
         a2a: query.a2a,
+        x402: query.x402,
         skills: query.skills,
         domains: query.domains,
+        filterMode: query.filterMode,
       },
     });
 
@@ -177,7 +187,12 @@ agents.get('/', async (c) => {
           hasA2a: agent?.hasA2a ?? false,
           x402Support: agent?.x402Support ?? false,
           supportedTrust: agent?.supportedTrust ?? [],
+          operators: agent?.operators ?? [],
+          ens: agent?.ens,
+          did: agent?.did,
+          walletAddress: agent?.walletAddress,
           oasf,
+          oasfSource: (oasf ? 'llm-classification' : 'none') as OASFSource,
           searchScore: result.score,
           reputationScore: reputationRow?.average_score,
           reputationCount: reputationRow?.feedback_count,
@@ -197,6 +212,7 @@ agents.get('/', async (c) => {
         if (searchResult) {
           const { tokenId } = parseAgentId(searchResult.agentId);
           const reputationRow = reputationsMap.get(searchResult.agentId);
+          const fallbackOasf = parseClassificationRow(classificationsMap.get(searchResult.agentId));
           return {
             id: searchResult.agentId,
             chainId: searchResult.chainId,
@@ -209,7 +225,12 @@ agents.get('/', async (c) => {
             hasA2a: false,
             x402Support: false,
             supportedTrust: [],
-            oasf: parseClassificationRow(classificationsMap.get(searchResult.agentId)),
+            operators: [],
+            ens: undefined,
+            did: undefined,
+            walletAddress: undefined,
+            oasf: fallbackOasf,
+            oasfSource: (fallbackOasf ? 'llm-classification' : 'none') as OASFSource,
             searchScore: searchResult.score,
             reputationScore: reputationRow?.average_score,
             reputationCount: reputationRow?.feedback_count,
@@ -264,6 +285,7 @@ agents.get('/', async (c) => {
     return {
       ...agent,
       oasf,
+      oasfSource: (oasf ? 'llm-classification' : 'none') as OASFSource,
       reputationScore: reputationRow?.average_score,
       reputationCount: reputationRow?.feedback_count,
     };

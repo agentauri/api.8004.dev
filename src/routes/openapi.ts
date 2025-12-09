@@ -116,6 +116,12 @@ function generateOpenAPISpec(): object {
               schema: { type: 'boolean' },
             },
             {
+              name: 'x402',
+              in: 'query',
+              description: 'Filter by x402 payment support',
+              schema: { type: 'boolean' },
+            },
+            {
               name: 'skills',
               in: 'query',
               description: 'Filter by OASF skill slugs (comma-separated)',
@@ -126,6 +132,12 @@ function generateOpenAPISpec(): object {
               in: 'query',
               description: 'Filter by OASF domain slugs (comma-separated)',
               schema: { type: 'string', example: 'technology/software_development' },
+            },
+            {
+              name: 'filterMode',
+              in: 'query',
+              description: 'How to combine filters: AND (all must match) or OR (any can match)',
+              schema: { type: 'string', enum: ['AND', 'OR'], default: 'AND' },
             },
             {
               name: 'minScore',
@@ -528,6 +540,14 @@ function generateOpenAPISpec(): object {
               type: 'array',
               items: { type: 'string', enum: ['x402', 'eas'] },
             },
+            operators: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'List of operator addresses',
+            },
+            ens: { type: 'string', description: 'ENS name if registered' },
+            did: { type: 'string', description: 'DID identifier if registered' },
+            walletAddress: { type: 'string', description: 'Primary wallet address' },
             oasf: { $ref: '#/components/schemas/OASFClassification' },
             oasfSource: {
               type: 'string',
@@ -725,8 +745,10 @@ function generateOpenAPISpec(): object {
                 active: { type: 'boolean' },
                 mcp: { type: 'boolean' },
                 a2a: { type: 'boolean' },
+                x402: { type: 'boolean' },
                 skills: { type: 'array', items: { type: 'string' } },
                 domains: { type: 'array', items: { type: 'string' } },
+                filterMode: { type: 'string', enum: ['AND', 'OR'] },
               },
             },
             minScore: { type: 'number', minimum: 0, maximum: 1, default: 0.3 },

@@ -15,7 +15,7 @@ import {
 import { CACHE_TTL, createCacheService } from '@/services/cache';
 import { createSDKService } from '@/services/sdk';
 import { createSearchService } from '@/services/search';
-import type { Env, SearchResponse, Variables } from '@/types';
+import type { Env, OASFSource, SearchResponse, Variables } from '@/types';
 import { Hono } from 'hono';
 
 const search = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -56,6 +56,7 @@ search.post('/', async (c) => {
     query: body.query,
     limit: body.limit,
     minScore: body.minScore,
+    cursor: body.cursor,
     filters: body.filters,
   });
 
@@ -86,7 +87,12 @@ search.post('/', async (c) => {
         hasA2a: agent?.hasA2a ?? false,
         x402Support: agent?.x402Support ?? false,
         supportedTrust: agent?.supportedTrust ?? [],
+        operators: agent?.operators ?? [],
+        ens: agent?.ens,
+        did: agent?.did,
+        walletAddress: agent?.walletAddress,
         oasf,
+        oasfSource: (oasf ? 'llm-classification' : 'none') as OASFSource,
         searchScore: result.score,
       };
     })
