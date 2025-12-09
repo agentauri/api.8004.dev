@@ -29,10 +29,11 @@ describe('App exports', () => {
 });
 
 describe('Queue handler', () => {
-  const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-  vi.spyOn(console, 'info').mockImplementation(() => {});
+  let consoleSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
+    consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'info').mockImplementation(() => {});
     vi.clearAllMocks();
     vi.resetModules();
   });
@@ -157,10 +158,12 @@ describe('Queue handler', () => {
 });
 
 describe('Scheduled handler', () => {
-  const consoleInfoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
-  const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  let consoleInfoSpy: ReturnType<typeof vi.spyOn>;
+  let consoleSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
+    consoleInfoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.clearAllMocks();
     vi.resetModules();
   });

@@ -95,11 +95,11 @@ describe('GET /api/v1/health', () => {
 });
 
 describe('Health check error logging', () => {
-  const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     mockFetch.mockReset();
-    consoleErrorSpy.mockClear();
   });
 
   afterEach(() => {
