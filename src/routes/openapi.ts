@@ -924,13 +924,14 @@ openapi.get('/', (c) => {
 /**
  * GET /api/v1/openapi.yaml
  * Returns OpenAPI 3.1.0 specification in YAML format
+ * Note: Returns JSON structure with YAML content-type hint.
+ * Full YAML serialization would require an additional dependency.
  */
 openapi.get('/yaml', (c) => {
-  // For YAML, we return JSON with content-type hint
-  // Client can convert if needed - full YAML would require a dependency
   const spec = generateOpenAPISpec();
-  c.header('Content-Type', 'application/x-yaml');
-  return c.json(spec);
+  return new Response(JSON.stringify(spec, null, 2), {
+    headers: { 'Content-Type': 'application/x-yaml' },
+  });
 });
 
 export { openapi };
