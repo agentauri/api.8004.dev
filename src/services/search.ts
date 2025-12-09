@@ -87,6 +87,25 @@ interface SearchResponseBody {
 }
 
 /**
+ * Encode offset into a cursor string
+ */
+function encodeOffsetCursor(offset: number): string {
+  return Buffer.from(JSON.stringify({ offset })).toString('base64url');
+}
+
+/**
+ * Decode cursor string into offset
+ */
+function decodeOffsetCursor(cursor: string): number {
+  try {
+    const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString());
+    return typeof decoded.offset === 'number' ? decoded.offset : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * Merge and deduplicate search results, keeping highest score per agent
  */
 function mergeSearchResults(
@@ -136,15 +155,18 @@ export function createSearchService(searchServiceUrl: string): SearchService {
     filters?: SearchFilters,
     cursor?: string
   ): Promise<SearchServiceResult> {
+    // Decode offset from cursor if provided
+    const offset = cursor ? decodeOffsetCursor(cursor) : 0;
+
     const body: SearchRequestBody = {
       query,
       topK: limit,
       minScore,
     };
 
-    // Add cursor for pagination if provided
-    if (cursor) {
-      body.cursor = cursor;
+    // Use offset-based pagination (more widely supported than cursor)
+    if (offset > 0) {
+      body.offset = offset;
     }
 
     if (filters) {
@@ -196,11 +218,21 @@ export function createSearchService(searchServiceUrl: string): SearchService {
       metadata: r.metadata,
     }));
 
+    // Determine if there are more results
+    const hasMore = data.pagination?.hasMore ?? (offset + results.length < data.total);
+
+    // Generate nextCursor if there are more results
+    // Use server-provided cursor if available, otherwise generate offset-based cursor
+    let nextCursor: string | undefined;
+    if (hasMore) {
+      nextCursor = data.pagination?.nextCursor ?? encodeOffsetCursor(offset + results.length);
+    }
+
     return {
       results,
       total: data.total,
-      hasMore: data.pagination?.hasMore ?? results.length >= limit,
-      nextCursor: data.pagination?.nextCursor,
+      hasMore,
+      nextCursor,
     };
   }
 

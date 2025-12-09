@@ -92,8 +92,10 @@ export const listAgentsQuerySchema = z
     q: z.string().min(1).optional(),
     chainId: chainIdSchema.optional(),
     chains: chainsSchema.optional(),
-    // Alias for chains - supports chainIds[]=X&chainIds[]=Y format
+    // Alias for chains - supports chainIds=X,Y format
     chainIds: chainsSchema.optional(),
+    // Alias with brackets - supports chainIds[]=X&chainIds[]=Y format (URL standard array notation)
+    'chainIds[]': chainsSchema.optional(),
     active: stringBooleanSchema.optional(),
     mcp: stringBooleanSchema.optional(),
     a2a: stringBooleanSchema.optional(),

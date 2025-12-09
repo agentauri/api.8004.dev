@@ -137,8 +137,9 @@ agents.get('/', async (c) => {
 
   const sdk = createSDKService(c.env);
 
-  // Resolve chain IDs: prefer 'chainIds' (array format), then 'chains' (CSV), then 'chainId' (single)
-  const chainIds = query.chainIds ?? query.chains ?? (query.chainId ? [query.chainId] : undefined);
+  // Resolve chain IDs: prefer 'chainIds[]' (URL array), then 'chainIds', then 'chains' (CSV), then 'chainId' (single)
+  const chainIds =
+    query['chainIds[]'] ?? query.chainIds ?? query.chains ?? (query.chainId ? [query.chainId] : undefined);
 
   // If search query provided, use semantic search
   if (query.q) {
