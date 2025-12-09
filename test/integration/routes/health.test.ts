@@ -3,7 +3,7 @@
  * @module test/integration/routes/health
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { mockEASResponse, mockHealthyResponse, setupMockFetch, testRoute } from '../../setup';
 
 const mockFetch = setupMockFetch();
@@ -94,40 +94,31 @@ describe('GET /api/v1/health', () => {
   });
 });
 
-describe('Health check error logging', () => {
-  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
-
+describe('Health check error handling', () => {
   beforeEach(() => {
-    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     mockFetch.mockReset();
   });
 
-  afterEach(() => {
-    consoleErrorSpy.mockRestore();
-  });
-
-  it('logs search service error message when health check fails', async () => {
+  it('returns 503 when search service throws Error', async () => {
     mockFetch.mockRejectedValue(new Error('Connection timeout'));
 
     const response = await testRoute('/api/v1/health');
 
     expect(response.status).toBe(503);
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      'Search service health check failed:',
-      'Connection timeout'
-    );
+    const body = (await response.json()) as { status: string; services: { searchService: string } };
+    expect(body.status).toBe('degraded');
+    expect(body.services.searchService).toBe('error');
   });
 
-  it('logs non-Error objects when search service throws', async () => {
+  it('returns 503 when search service throws non-Error', async () => {
     mockFetch.mockRejectedValue('Network failure');
 
     const response = await testRoute('/api/v1/health');
 
     expect(response.status).toBe(503);
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      'Search service health check failed:',
-      'Network failure'
-    );
+    const body = (await response.json()) as { status: string; services: { searchService: string } };
+    expect(body.status).toBe('degraded');
+    expect(body.services.searchService).toBe('error');
   });
 });
 
