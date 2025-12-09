@@ -9,6 +9,16 @@
 import { vi } from 'vitest';
 
 /**
+ * Configuration for SDK mock behavior
+ * Tests can modify these to simulate errors
+ */
+export const mockConfig = {
+  searchAgentsError: null as Error | null,
+  getAgentError: null as Error | null,
+  chainErrorMap: new Map<number, Error>(),
+};
+
+/**
  * Mock SDK agent list response (matches SDK format, not our transformed format)
  */
 export const mockSDKAgentList = {
@@ -86,29 +96,27 @@ export class SDK {
 
   /**
    * Search agents with optional filters
-   * @param searchParams - Search parameters
-   * @param _sort - Sort order (unused in mock)
-   * @param limit - Maximum number of results
-   * @param cursor - Pagination cursor
    */
-  searchAgents = vi
-    .fn()
-    .mockImplementation(
-      async (
-        _searchParams?: Record<string, unknown>,
-        _sort?: unknown,
-        _limit?: number,
-        _cursor?: string
-      ) => {
-        return { ...mockSDKAgentList };
-      }
-    );
+  searchAgents = vi.fn().mockImplementation(async () => {
+    // Check for chain-specific error
+    const chainError = mockConfig.chainErrorMap.get(this.chainId);
+    if (chainError) {
+      throw chainError;
+    }
+    // Check for global error
+    if (mockConfig.searchAgentsError) {
+      throw mockConfig.searchAgentsError;
+    }
+    return { ...mockSDKAgentList };
+  });
 
   /**
    * Get single agent by ID
-   * @param agentId - Agent ID in format chainId:tokenId
    */
   getAgent = vi.fn().mockImplementation(async (_agentId: string) => {
+    if (mockConfig.getAgentError) {
+      throw mockConfig.getAgentError;
+    }
     return { ...mockSDKAgentDetail };
   });
 }

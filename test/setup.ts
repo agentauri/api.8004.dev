@@ -3,7 +3,10 @@
  * @module test/setup
  */
 
-import { env } from 'cloudflare:test';
+import { createExecutionContext, env, waitOnExecutionContext } from 'cloudflare:test';
+import app from '@/index';
+import type { Env } from '@/types';
+import { vi } from 'vitest';
 
 // Run migrations before tests
 beforeAll(async () => {
@@ -227,4 +230,104 @@ export async function insertMockReputation(
     .run();
 
   return { id, ...reputation };
+}
+
+// ============================================
+// HTTP Test Helpers
+// ============================================
+
+/**
+ * Options for testRoute helper
+ */
+export interface TestRouteOptions {
+  method?: string;
+  body?: unknown;
+  headers?: Record<string, string>;
+}
+
+/**
+ * Helper to make HTTP requests in tests - eliminates boilerplate
+ */
+export async function testRoute(
+  path: string,
+  options: TestRouteOptions = {}
+): Promise<Response> {
+  const init: RequestInit = { method: options.method ?? 'GET' };
+
+  if (options.body) {
+    init.body = JSON.stringify(options.body);
+    init.headers = { 'Content-Type': 'application/json', ...options.headers };
+  } else if (options.headers) {
+    init.headers = options.headers;
+  }
+
+  const request = new Request(`http://localhost${path}`, init);
+  const ctx = createExecutionContext();
+  const response = await app.fetch(request, createMockEnv() as unknown as Env, ctx);
+  await waitOnExecutionContext(ctx);
+  return response;
+}
+
+// ============================================
+// Mock Response Builders
+// ============================================
+
+/**
+ * Create a mock search service response
+ */
+export function mockSearchResponse(query: string, count = 2) {
+  return {
+    ok: true,
+    json: () =>
+      Promise.resolve({
+        query,
+        results: Array.from({ length: count }, (_, i) => ({
+          rank: i + 1,
+          vectorId: `v${i + 1}`,
+          agentId: `11155111:${i + 1}`,
+          chainId: 11155111,
+          name: `Agent ${i + 1}`,
+          description: `Test agent ${i + 1}`,
+          score: 0.9 - i * 0.05,
+          metadata: {},
+        })),
+        total: count,
+        pagination: { hasMore: false, limit: 20 },
+        requestId: 'test-id',
+        timestamp: new Date().toISOString(),
+      }),
+  };
+}
+
+/**
+ * Create a mock healthy service response
+ */
+export function mockHealthyResponse() {
+  return {
+    ok: true,
+    json: () => Promise.resolve({ status: 'ok' }),
+  };
+}
+
+/**
+ * Create a mock EAS GraphQL response
+ */
+export function mockEASResponse(attestations: unknown[] = []) {
+  return {
+    ok: true,
+    json: () =>
+      Promise.resolve({
+        data: { attestations },
+      }),
+  };
+}
+
+/**
+ * Setup mock fetch for all tests - call in beforeEach
+ */
+export function setupMockFetch() {
+  const mockFetch = vi.fn();
+  vi.stubGlobal('fetch', mockFetch);
+  mockFetch.mockResolvedValue(mockHealthyResponse());
+  return mockFetch;
 }

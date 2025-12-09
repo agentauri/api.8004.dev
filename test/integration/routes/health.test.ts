@@ -3,41 +3,26 @@
  * @module test/integration/routes/health
  */
 
-import { createExecutionContext, env, waitOnExecutionContext } from 'cloudflare:test';
-import app from '@/index';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  testRoute,
+  setupMockFetch,
+  mockHealthyResponse,
+  mockEASResponse,
+} from '../../setup';
 
-// Mock fetch for search service health check
-const mockFetch = vi.fn();
-vi.stubGlobal('fetch', mockFetch);
+const mockFetch = setupMockFetch();
 
 describe('GET /api/v1/health', () => {
   beforeEach(() => {
     mockFetch.mockReset();
+    mockFetch.mockResolvedValue(mockHealthyResponse());
   });
 
   it('returns 200 when all services are healthy', async () => {
-    // Mock search service health check
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ status: 'ok' }),
-    });
-
-    const request = new Request('http://localhost/api/v1/health');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
+    const response = await testRoute('/api/v1/health');
 
     expect(response.status).toBe(200);
-
     const body = await response.json();
     expect(body.status).toBe('ok');
     expect(body.version).toBe('1.0.0');
@@ -46,191 +31,119 @@ describe('GET /api/v1/health', () => {
   });
 
   it('returns degraded status when search service is down', async () => {
-    // Mock search service health check failure
     mockFetch.mockRejectedValue(new Error('Connection failed'));
 
-    const request = new Request('http://localhost/api/v1/health');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
+    const response = await testRoute('/api/v1/health');
 
     expect(response.status).toBe(503);
-
     const body = await response.json();
     expect(body.status).toBe('degraded');
     expect(body.services.searchService).toBe('error');
   });
 
   it('includes request ID header', async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ status: 'ok' }),
-    });
-
-    const request = new Request('http://localhost/api/v1/health');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
-
+    const response = await testRoute('/api/v1/health');
     expect(response.headers.get('X-Request-ID')).toBeDefined();
   });
 
   it('uses provided request ID', async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ status: 'ok' }),
-    });
-
     const requestId = 'test-request-id-123';
-    const request = new Request('http://localhost/api/v1/health', {
+    const response = await testRoute('/api/v1/health', {
       headers: { 'X-Request-ID': requestId },
     });
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
-
     expect(response.headers.get('X-Request-ID')).toBe(requestId);
   });
 
   it('includes security headers', async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ status: 'ok' }),
-    });
-
-    const request = new Request('http://localhost/api/v1/health');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
-
+    const response = await testRoute('/api/v1/health');
     expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
     expect(response.headers.get('X-Frame-Options')).toBe('DENY');
   });
 
-  it('returns degraded status when classifier API key is invalid', async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ status: 'ok' }),
-    });
+  it('returns degraded when classifier API key is invalid', async () => {
+    // This test needs custom env, use the longer form
+    const { createExecutionContext, env, waitOnExecutionContext } = await import(
+      'cloudflare:test'
+    );
+    const app = (await import('@/index')).default;
 
     const request = new Request('http://localhost/api/v1/health');
     const ctx = createExecutionContext();
     const response = await app.fetch(
       request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'invalid-api-key', // Not starting with sk-ant-
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
+      { ...env, ANTHROPIC_API_KEY: 'invalid-api-key', SEARCH_SERVICE_URL: 'https://search.example.com' },
       ctx
     );
     await waitOnExecutionContext(ctx);
 
     expect(response.status).toBe(503);
-
     const body = (await response.json()) as { status: string; services: { classifier: string } };
     expect(body.status).toBe('degraded');
     expect(body.services.classifier).toBe('error');
   });
 
   it('returns degraded status when search service returns unhealthy', async () => {
-    // Mock search service returning unhealthy status
     mockFetch.mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ status: 'error' }),
     });
 
-    const request = new Request('http://localhost/api/v1/health');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
+    const response = await testRoute('/api/v1/health');
 
     expect(response.status).toBe(503);
-
     const body = (await response.json()) as { status: string; services: { searchService: string } };
     expect(body.status).toBe('degraded');
     expect(body.services.searchService).toBe('error');
   });
 });
 
+describe('Health check error logging', () => {
+  const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+  beforeEach(() => {
+    mockFetch.mockReset();
+    consoleErrorSpy.mockClear();
+  });
+
+  afterEach(() => {
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('logs search service error message when health check fails', async () => {
+    mockFetch.mockRejectedValue(new Error('Connection timeout'));
+
+    const response = await testRoute('/api/v1/health');
+
+    expect(response.status).toBe(503);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      'Search service health check failed:',
+      'Connection timeout'
+    );
+  });
+
+  it('logs non-Error objects when search service throws', async () => {
+    mockFetch.mockRejectedValue('Network failure');
+
+    const response = await testRoute('/api/v1/health');
+
+    expect(response.status).toBe(503);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      'Search service health check failed:',
+      'Network failure'
+    );
+  });
+});
+
 describe('POST /api/v1/health/sync-eas', () => {
   beforeEach(() => {
     mockFetch.mockReset();
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ status: 'ok' }),
-    });
+    mockFetch.mockResolvedValue(mockEASResponse([]));
   });
 
   it('triggers EAS sync and returns summary', async () => {
-    // Mock EAS GraphQL endpoint
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          data: {
-            attestations: [],
-          },
-        }),
-    });
-
-    const request = new Request('http://localhost/api/v1/health/sync-eas', {
-      method: 'POST',
-    });
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
+    const response = await testRoute('/api/v1/health/sync-eas', { method: 'POST' });
 
     expect(response.status).toBe(200);
-
     const body = (await response.json()) as {
       success: boolean;
       data: Record<string, { success: boolean; attestationsProcessed: number }>;
@@ -242,38 +155,13 @@ describe('POST /api/v1/health/sync-eas', () => {
   });
 
   it('returns sync results for each chain', async () => {
-    // Mock EAS GraphQL endpoint with attestations
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          data: {
-            attestations: [],
-          },
-        }),
-    });
-
-    const request = new Request('http://localhost/api/v1/health/sync-eas', {
-      method: 'POST',
-    });
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
+    const response = await testRoute('/api/v1/health/sync-eas', { method: 'POST' });
 
     const body = (await response.json()) as {
       success: boolean;
       data: Record<string, { success: boolean; attestationsProcessed: number }>;
     };
 
-    // Should have entries for Sepolia, Base Sepolia, and Polygon Amoy
     expect(Object.keys(body.data).length).toBeGreaterThan(0);
   });
 });

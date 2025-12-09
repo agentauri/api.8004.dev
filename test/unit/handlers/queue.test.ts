@@ -1,26 +1,196 @@
 /**
  * Queue and scheduled handler tests
  * @module test/unit/handlers/queue
- *
- * Note: Full integration testing of queue consumer and scheduler
- * is covered in the integration tests. This file verifies exports.
  */
 
-import { describe, expect, it } from 'vitest';
+import { env } from 'cloudflare:test';
+import { enqueueClassification } from '@/db/queries';
+import type { ClassificationJob, Env } from '@/types';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  createMockQueueMessage,
+  createMockExecutionContext,
+  createMockSDKService,
+  createMockClassifierService,
+  createMockEASIndexerService,
+} from '../../mocks/services';
+import { createMockEnv, createMockAgent } from '../../setup';
+
+// Helper to create test environment with D1
+const testEnv = (): Env => ({ ...createMockEnv(), DB: env.DB });
 
 describe('App exports', () => {
-  it('exports fetch handler', async () => {
+  it('exports fetch, queue, and scheduled handlers', async () => {
     const appModule = await import('@/index');
     expect(typeof appModule.default.fetch).toBe('function');
-  });
-
-  it('exports queue handler', async () => {
-    const appModule = await import('@/index');
     expect(typeof appModule.default.queue).toBe('function');
+    expect(typeof appModule.default.scheduled).toBe('function');
+  });
+});
+
+describe('Queue handler', () => {
+  const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const consoleInfoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
   });
 
-  it('exports scheduled handler', async () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('acknowledges message when no queue entry exists', async () => {
+    vi.doMock('@/services/sdk', () => ({
+      createSDKService: () => createMockSDKService(),
+      SUPPORTED_CHAINS: [],
+      getChainConfig: vi.fn(),
+    }));
+
     const appModule = await import('@/index');
-    expect(typeof appModule.default.scheduled).toBe('function');
+    const msg = createMockQueueMessage<ClassificationJob>({ agentId: '11155111:999', force: false });
+
+    await appModule.default.queue({ messages: [msg] } as unknown as MessageBatch<ClassificationJob>, testEnv());
+
+    expect(msg.ack).toHaveBeenCalled();
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('No queue entry found'));
+  });
+
+  it('processes classification job and acks on success', async () => {
+    await enqueueClassification(env.DB, '11155111:1');
+
+    vi.doMock('@/services/sdk', () => ({
+      createSDKService: () =>
+        createMockSDKService({
+          getAgent: vi.fn().mockResolvedValue(
+            createMockAgent({ mcpTools: ['tool1'], a2aSkills: [] })
+          ),
+        }),
+      SUPPORTED_CHAINS: [],
+      getChainConfig: vi.fn(),
+    }));
+
+    vi.doMock('@/services/classifier', () => ({
+      createClassifierService: () => createMockClassifierService(),
+    }));
+
+    const appModule = await import('@/index');
+    const msg = createMockQueueMessage<ClassificationJob>({ agentId: '11155111:1', force: false });
+
+    await appModule.default.queue({ messages: [msg] } as unknown as MessageBatch<ClassificationJob>, testEnv());
+
+    expect(msg.ack).toHaveBeenCalled();
+    expect(msg.retry).not.toHaveBeenCalled();
+  });
+
+  it('retries message when agent not found', async () => {
+    await enqueueClassification(env.DB, '11155111:404');
+
+    vi.doMock('@/services/sdk', () => ({
+      createSDKService: () =>
+        createMockSDKService({ getAgent: vi.fn().mockResolvedValue(null) }),
+      SUPPORTED_CHAINS: [],
+      getChainConfig: vi.fn(),
+    }));
+
+    const appModule = await import('@/index');
+    const msg = createMockQueueMessage<ClassificationJob>({ agentId: '11155111:404', force: false });
+
+    await appModule.default.queue({ messages: [msg] } as unknown as MessageBatch<ClassificationJob>, testEnv());
+
+    expect(msg.retry).toHaveBeenCalled();
+    expect(msg.ack).not.toHaveBeenCalled();
+    expect(consoleSpy).toHaveBeenCalledWith('Classification job failed:', expect.any(Error));
+  });
+
+  it('retries message when classifier throws error', async () => {
+    await enqueueClassification(env.DB, '11155111:500');
+
+    vi.doMock('@/services/sdk', () => ({
+      createSDKService: () =>
+        createMockSDKService({
+          getAgent: vi.fn().mockResolvedValue(createMockAgent({ id: '11155111:500', tokenId: '500' })),
+        }),
+      SUPPORTED_CHAINS: [],
+      getChainConfig: vi.fn(),
+    }));
+
+    vi.doMock('@/services/classifier', () => ({
+      createClassifierService: () =>
+        createMockClassifierService({
+          classify: vi.fn().mockRejectedValue(new Error('Classification API error')),
+        }),
+    }));
+
+    const appModule = await import('@/index');
+    const msg = createMockQueueMessage<ClassificationJob>({ agentId: '11155111:500', force: false });
+
+    await appModule.default.queue({ messages: [msg] } as unknown as MessageBatch<ClassificationJob>, testEnv());
+
+    expect(msg.retry).toHaveBeenCalled();
+    expect(msg.ack).not.toHaveBeenCalled();
+    expect(consoleSpy).toHaveBeenCalledWith('Classification job failed:', expect.any(Error));
+  });
+});
+
+describe('Scheduled handler', () => {
+  const consoleInfoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+  const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('calls ctx.waitUntil with sync function', async () => {
+    vi.doMock('@/services/eas-indexer', () => ({
+      createEASIndexerService: () => createMockEASIndexerService(),
+      EAS_CONFIGS: [],
+    }));
+
+    const appModule = await import('@/index');
+    const { ctx, waitUntilPromises } = createMockExecutionContext();
+
+    await appModule.default.scheduled(
+      { scheduledTime: Date.now(), cron: '0 * * * *' } as ScheduledEvent,
+      testEnv(),
+      ctx
+    );
+
+    expect(ctx.waitUntil).toHaveBeenCalled();
+    await Promise.all(waitUntilPromises);
+
+    expect(consoleInfoSpy).toHaveBeenCalledWith('Starting EAS attestation sync...');
+    expect(consoleInfoSpy).toHaveBeenCalledWith('EAS attestation sync complete');
+  });
+
+  it('logs errors for failed chain syncs', async () => {
+    vi.doMock('@/services/eas-indexer', () => ({
+      createEASIndexerService: () =>
+        createMockEASIndexerService({
+          syncAll: vi.fn().mockResolvedValue(
+            new Map([
+              [11155111, { success: true, attestationsProcessed: 5, newFeedbackCount: 3 }],
+              [84532, { success: false, error: 'Connection timeout', attestationsProcessed: 0 }],
+            ])
+          ),
+        }),
+      EAS_CONFIGS: [],
+    }));
+
+    const appModule = await import('@/index');
+    const { ctx, waitUntilPromises } = createMockExecutionContext();
+
+    await appModule.default.scheduled({} as ScheduledEvent, testEnv(), ctx);
+    await Promise.all(waitUntilPromises);
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Chain 84532: Sync failed - Connection timeout')
+    );
   });
 });
