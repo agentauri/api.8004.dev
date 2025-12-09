@@ -45,6 +45,8 @@ interface SearchRequestBody {
   query: string;
   topK: number;
   minScore?: number;
+  cursor?: string;
+  offset?: number;
   filters?: {
     // Flat filters (agent0lab format)
     chainId?: number;
@@ -131,13 +133,19 @@ export function createSearchService(searchServiceUrl: string): SearchService {
     query: string,
     limit: number,
     minScore: number,
-    filters?: SearchFilters
+    filters?: SearchFilters,
+    cursor?: string
   ): Promise<SearchServiceResult> {
     const body: SearchRequestBody = {
       query,
       topK: limit,
       minScore,
     };
+
+    // Add cursor for pagination if provided
+    if (cursor) {
+      body.cursor = cursor;
+    }
 
     if (filters) {
       body.filters = {};
@@ -198,7 +206,7 @@ export function createSearchService(searchServiceUrl: string): SearchService {
 
   return {
     async search(params: SearchParams): Promise<SearchServiceResult> {
-      const { query, limit = 20, minScore = 0.3, filters } = params;
+      const { query, limit = 20, minScore = 0.3, cursor, filters } = params;
 
       // Check if OR mode with multiple boolean filters
       const booleanFilters: Array<'mcp' | 'a2a' | 'x402'> = [];
@@ -210,6 +218,7 @@ export function createSearchService(searchServiceUrl: string): SearchService {
 
       if (isOrMode) {
         // OR mode: run separate searches for each boolean filter and merge results
+        // Note: cursor pagination is not supported in OR mode as results are merged
         const baseFilters: SearchFilters = {
           chainIds: filters?.chainIds,
           active: filters?.active,
@@ -229,7 +238,7 @@ export function createSearchService(searchServiceUrl: string): SearchService {
       }
 
       // AND mode (default): single search with all filters
-      return executeSearch(query, limit, minScore, filters);
+      return executeSearch(query, limit, minScore, filters, cursor);
     },
 
     async healthCheck(): Promise<boolean> {
