@@ -29,6 +29,12 @@ export interface Env {
 
   // Optional API key for authenticated access
   API_KEY?: string;
+
+  // IPFS configuration (optional, with defaults)
+  /** IPFS gateway URL (default: https://ipfs.io/ipfs/) */
+  IPFS_GATEWAY_URL?: string;
+  /** IPFS fetch timeout in milliseconds (default: 10000) */
+  IPFS_TIMEOUT_MS?: string;
 }
 
 /**

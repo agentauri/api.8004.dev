@@ -14,6 +14,8 @@ import {
   parseClassificationRow,
 } from '@/lib/utils/validation';
 import { CACHE_KEYS, CACHE_TTL, createCacheService } from '@/services/cache';
+import { createIPFSService } from '@/services/ipfs';
+import { resolveClassification, toOASFClassification } from '@/services/oasf-resolver';
 import { createReputationService } from '@/services/reputation';
 import { createSDKService } from '@/services/sdk';
 import { createSearchService } from '@/services/search';
@@ -318,22 +320,51 @@ agents.get('/:agentId', async (c) => {
     return errors.notFound(c, 'Agent');
   }
 
-  // Get classification
-  const classificationRow = await getClassification(c.env.DB, agentId);
-  const oasf = parseClassificationRow(classificationRow);
+  // Create IPFS service for fetching metadata
+  const ipfsService = createIPFSService(cache, {
+    gatewayUrl: c.env.IPFS_GATEWAY_URL,
+    timeoutMs: c.env.IPFS_TIMEOUT_MS ? Number.parseInt(c.env.IPFS_TIMEOUT_MS, 10) : undefined,
+  });
 
-  // Get full reputation data
-  const reputationService = createReputationService(c.env.DB);
-  const reputation = await reputationService.getAgentReputation(agentId);
+  // Fetch IPFS metadata, classification, and reputation in parallel
+  const [ipfsMetadata, classificationRow, reputationData] = await Promise.all([
+    agent.registration.metadataUri
+      ? ipfsService.fetchMetadata(agent.registration.metadataUri, agentId)
+      : Promise.resolve(null),
+    getClassification(c.env.DB, agentId),
+    createReputationService(c.env.DB).getAgentReputation(agentId),
+  ]);
 
+  // Parse DB classification
+  const dbClassification = parseClassificationRow(classificationRow);
+
+  // Resolve OASF with priority (creator-defined > LLM > none)
+  const resolvedClassification = resolveClassification(ipfsMetadata, dbClassification);
+  const oasf = toOASFClassification(resolvedClassification);
+
+  // Build response with IPFS metadata and resolved OASF
   const response: AgentDetailResponse = {
     success: true,
     data: {
       ...agent,
       oasf,
-      reputation: reputation ?? undefined,
-      reputationScore: reputation?.averageScore,
-      reputationCount: reputation?.count,
+      oasfSource: resolvedClassification.source,
+      reputation: reputationData ?? undefined,
+      reputationScore: reputationData?.averageScore,
+      reputationCount: reputationData?.count,
+      // Include OASF endpoint from IPFS if available
+      endpoints: {
+        ...agent.endpoints,
+        oasf: ipfsMetadata?.oasfEndpoint,
+      },
+      // Include IPFS metadata (social links, external URL, attributes)
+      ipfsMetadata: ipfsMetadata
+        ? {
+            socialLinks: ipfsMetadata.socialLinks,
+            externalUrl: ipfsMetadata.externalUrl,
+            attributes: ipfsMetadata.attributes,
+          }
+        : undefined,
     },
   };
 

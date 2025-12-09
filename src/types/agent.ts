@@ -4,6 +4,7 @@
  */
 
 import type { OASFClassification } from './classification';
+import type { MetadataAttribute, OASFEndpoint, OASFSource, SocialLinks } from './ipfs';
 import type { AgentReputation } from './reputation';
 
 /**
@@ -44,12 +45,22 @@ export interface AgentSummary {
   supportedTrust: TrustMethod[];
   /** OASF classification data */
   oasf?: OASFClassification;
+  /** Source of OASF classification */
+  oasfSource?: OASFSource;
   /** Semantic search relevance score (0-1) */
   searchScore?: number;
   /** Average reputation score (0-100) */
   reputationScore?: number;
   /** Total feedback count */
   reputationCount?: number;
+  /** Operator addresses (can manage the agent) */
+  operators?: string[];
+  /** ENS name */
+  ens?: string;
+  /** DID identifier */
+  did?: string;
+  /** Agent's own wallet address */
+  walletAddress?: string;
 }
 
 /**
@@ -86,6 +97,8 @@ export interface AgentEndpoints {
   did?: string;
   /** Agent wallet address */
   agentWallet?: string;
+  /** OASF endpoint with creator-defined skills/domains */
+  oasf?: OASFEndpoint;
 }
 
 /**
@@ -107,6 +120,18 @@ export interface AgentRegistration {
 }
 
 /**
+ * IPFS metadata included in agent detail response
+ */
+export interface AgentIPFSMetadata {
+  /** Social media links */
+  socialLinks?: SocialLinks;
+  /** External URL (website, documentation) */
+  externalUrl?: string;
+  /** NFT-style attributes */
+  attributes?: MetadataAttribute[];
+}
+
+/**
  * Full agent details including endpoints and registration
  */
 export interface AgentDetail extends AgentSummary {
@@ -118,8 +143,14 @@ export interface AgentDetail extends AgentSummary {
   mcpTools: string[];
   /** List of A2A skill names */
   a2aSkills: string[];
+  /** List of MCP prompt names */
+  mcpPrompts?: string[];
+  /** List of MCP resource names */
+  mcpResources?: string[];
   /** Full reputation data */
   reputation?: AgentReputation;
+  /** Metadata fetched from IPFS */
+  ipfsMetadata?: AgentIPFSMetadata;
 }
 
 /**

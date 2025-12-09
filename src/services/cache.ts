@@ -48,6 +48,8 @@ export const CACHE_TTL = {
   TAXONOMY: 3600,
   /** Search results cache: 5 minutes */
   SEARCH: 300,
+  /** IPFS metadata cache: 1 hour (content is immutable) */
+  IPFS_METADATA: 3600,
 } as const;
 
 /**
@@ -61,6 +63,7 @@ export const CACHE_KEYS = {
   platformStats: () => 'platform:stats',
   taxonomy: (type: string) => `taxonomy:${type}`,
   search: (hash: string) => `search:${hash}`,
+  ipfsMetadata: (agentId: string) => `ipfs:metadata:${agentId}`,
 } as const;
 
 /**

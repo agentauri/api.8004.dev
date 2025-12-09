@@ -51,6 +51,8 @@ export interface OASFClassification {
   classifiedAt: string;
   /** Model version used for classification */
   modelVersion: string;
+  /** Source of classification: creator-defined (from IPFS) or llm-classification */
+  source?: 'creator-defined' | 'llm-classification';
 }
 
 /**

@@ -115,6 +115,10 @@ describe('CACHE_KEYS', () => {
   it('generates search key', () => {
     expect(CACHE_KEYS.search('abc123')).toBe('search:abc123');
   });
+
+  it('generates IPFS metadata key', () => {
+    expect(CACHE_KEYS.ipfsMetadata('11155111:1')).toBe('ipfs:metadata:11155111:1');
+  });
 });
 
 describe('CACHE_TTL', () => {
@@ -125,5 +129,6 @@ describe('CACHE_TTL', () => {
     expect(CACHE_TTL.CHAIN_STATS).toBe(900);
     expect(CACHE_TTL.TAXONOMY).toBe(3600);
     expect(CACHE_TTL.SEARCH).toBe(300);
+    expect(CACHE_TTL.IPFS_METADATA).toBe(3600);
   });
 });

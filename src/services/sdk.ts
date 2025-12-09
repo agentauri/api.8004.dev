@@ -178,6 +178,11 @@ export function createSDKService(env: Env): SDKService {
             hasA2a: agent.a2a,
             x402Support: agent.x402support,
             supportedTrust: deriveSupportedTrust(agent.x402support),
+            // Additional fields from SDK
+            operators: agent.operators || [],
+            ens: agent.ens || undefined,
+            did: agent.did || undefined,
+            walletAddress: agent.walletAddress || undefined,
           };
         });
 
@@ -216,6 +221,11 @@ export function createSDKService(env: Env): SDKService {
           hasA2a: agent.a2a,
           x402Support: agent.x402support,
           supportedTrust: deriveSupportedTrust(agent.x402support),
+          // Additional fields from SDK
+          operators: agent.operators || [],
+          ens: agent.ens || undefined,
+          did: agent.did || undefined,
+          walletAddress: agent.walletAddress || undefined,
           endpoints: {
             mcp: agent.mcp
               ? {
@@ -229,9 +239,9 @@ export function createSDKService(env: Env): SDKService {
                   version: '1.0.0',
                 }
               : undefined,
-            ens: (agent.extras?.ens as string) || undefined,
-            did: (agent.extras?.did as string) || undefined,
-            agentWallet: (agent.extras?.agentWallet as string) || undefined,
+            ens: agent.ens || (agent.extras?.ens as string) || undefined,
+            did: agent.did || (agent.extras?.did as string) || undefined,
+            agentWallet: agent.walletAddress || (agent.extras?.agentWallet as string) || undefined,
           },
           registration: {
             chainId,
@@ -243,6 +253,9 @@ export function createSDKService(env: Env): SDKService {
           },
           mcpTools: agent.mcpTools,
           a2aSkills: agent.a2aSkills,
+          // MCP prompts and resources
+          mcpPrompts: agent.mcpPrompts || [],
+          mcpResources: agent.mcpResources || [],
         };
       } catch (error) {
         // Throw SDKError to propagate to route handlers for proper 503 response
