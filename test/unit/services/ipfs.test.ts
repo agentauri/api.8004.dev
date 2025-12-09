@@ -6,10 +6,10 @@
 import { env } from 'cloudflare:test';
 import { createCacheService } from '@/services/cache';
 import {
-  convertIpfsUri,
-  createIPFSService,
   DEFAULT_IPFS_GATEWAY,
   DEFAULT_IPFS_TIMEOUT_MS,
+  convertIpfsUri,
+  createIPFSService,
   extractOasfEndpoint,
 } from '@/services/ipfs';
 import type { IPFSEndpoint } from '@/types/ipfs';
@@ -60,9 +60,7 @@ describe('extractOasfEndpoint', () => {
   });
 
   it('extracts OASF endpoint with uppercase type', () => {
-    const endpoints: IPFSEndpoint[] = [
-      { type: 'OASF', value: 'https://oasf.example.com' },
-    ];
+    const endpoints: IPFSEndpoint[] = [{ type: 'OASF', value: 'https://oasf.example.com' }];
     const result = extractOasfEndpoint(endpoints);
     expect(result).toEqual({
       url: 'https://oasf.example.com',
@@ -73,9 +71,7 @@ describe('extractOasfEndpoint', () => {
   });
 
   it('extracts OASF endpoint with lowercase type', () => {
-    const endpoints: IPFSEndpoint[] = [
-      { type: 'oasf', value: 'https://oasf.example.com' },
-    ];
+    const endpoints: IPFSEndpoint[] = [{ type: 'oasf', value: 'https://oasf.example.com' }];
     const result = extractOasfEndpoint(endpoints);
     expect(result).toEqual({
       url: 'https://oasf.example.com',
@@ -189,9 +185,7 @@ describe('createIPFSService', () => {
                 },
               },
             ],
-            attributes: [
-              { trait_type: 'Category', value: 'AI' },
-            ],
+            attributes: [{ trait_type: 'Category', value: 'AI' }],
           }),
       });
 
@@ -216,9 +210,7 @@ describe('createIPFSService', () => {
             },
           },
         ],
-        attributes: [
-          { trait_type: 'Category', value: 'AI' },
-        ],
+        attributes: [{ trait_type: 'Category', value: 'AI' }],
         oasfEndpoint: {
           url: 'https://oasf.example.com',
           skills: ['natural_language_processing/text_generation'],
@@ -344,9 +336,7 @@ describe('createIPFSService', () => {
         json: () =>
           Promise.resolve({
             name: 'No OASF Agent',
-            endpoints: [
-              { type: 'MCP', value: 'https://mcp.example.com' },
-            ],
+            endpoints: [{ type: 'MCP', value: 'https://mcp.example.com' }],
           }),
       });
 

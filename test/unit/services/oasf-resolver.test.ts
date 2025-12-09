@@ -3,13 +3,13 @@
  * @module test/unit/services/oasf-resolver
  */
 
+import type { ParsedClassification } from '@/lib/utils/validation';
 import {
   hasCreatorDefinedOasf,
   resolveClassification,
   toOASFClassification,
 } from '@/services/oasf-resolver';
 import type { IPFSMetadata } from '@/types/ipfs';
-import type { ParsedClassification } from '@/lib/utils/validation';
 import { describe, expect, it } from 'vitest';
 
 describe('hasCreatorDefinedOasf', () => {
@@ -355,7 +355,7 @@ describe('toOASFClassification', () => {
     const result = toOASFClassification(resolved);
 
     expect(result?.classifiedAt).toBeDefined();
-    expect(new Date(result!.classifiedAt).getTime()).toBeLessThanOrEqual(Date.now());
+    expect(new Date(result?.classifiedAt ?? '').getTime()).toBeLessThanOrEqual(Date.now());
   });
 
   it('uses OASF_VERSION if modelVersion not provided', () => {

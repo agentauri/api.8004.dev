@@ -5,9 +5,9 @@
 
 import { z } from 'zod';
 import { fetchWithTimeout } from '../lib/utils/fetch';
+import type { IPFSEndpoint, IPFSMetadata, OASFEndpoint, SocialLinks } from '../types/ipfs';
 import type { CacheService } from './cache';
 import { CACHE_KEYS, CACHE_TTL } from './cache';
-import type { IPFSEndpoint, IPFSMetadata, OASFEndpoint, SocialLinks } from '../types/ipfs';
 
 /**
  * Default IPFS gateway URL
@@ -107,7 +107,9 @@ export function convertIpfsUri(uri: string, gateway: string = DEFAULT_IPFS_GATEW
  * @param endpoints - Array of endpoints from registration file
  * @returns OASF endpoint or undefined
  */
-export function extractOasfEndpoint(endpoints: IPFSEndpoint[] | undefined): OASFEndpoint | undefined {
+export function extractOasfEndpoint(
+  endpoints: IPFSEndpoint[] | undefined
+): OASFEndpoint | undefined {
   if (!endpoints) return undefined;
 
   const oasfEndpoint = endpoints.find(
@@ -155,7 +157,10 @@ export interface IPFSServiceConfig {
  * @param config - Optional configuration
  * @returns IPFS service instance
  */
-export function createIPFSService(cache: CacheService, config: IPFSServiceConfig = {}): IPFSService {
+export function createIPFSService(
+  cache: CacheService,
+  config: IPFSServiceConfig = {}
+): IPFSService {
   const gatewayUrl = config.gatewayUrl || DEFAULT_IPFS_GATEWAY;
   const timeoutMs = config.timeoutMs || DEFAULT_IPFS_TIMEOUT_MS;
 
@@ -199,7 +204,10 @@ export function createIPFSService(cache: CacheService, config: IPFSServiceConfig
         // Validate with Zod (permissive)
         const parseResult = ipfsMetadataSchema.safeParse(rawData);
         if (!parseResult.success) {
-          console.warn(`IPFS metadata validation failed for ${agentId}:`, parseResult.error.message);
+          console.warn(
+            `IPFS metadata validation failed for ${agentId}:`,
+            parseResult.error.message
+          );
           // Still try to use the data with safe extraction
         }
 

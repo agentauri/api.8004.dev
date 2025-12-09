@@ -4,10 +4,14 @@
  * @module services/oasf-resolver
  */
 
-import type { DomainClassification, OASFClassification, SkillClassification } from '../types/classification';
-import type { IPFSMetadata, OASFSource } from '../types/ipfs';
+import { OASF_VERSION, validateDomainSlug, validateSkillSlug } from '../lib/oasf/taxonomy';
 import type { ParsedClassification } from '../lib/utils/validation';
-import { validateSkillSlug, validateDomainSlug, OASF_VERSION } from '../lib/oasf/taxonomy';
+import type {
+  DomainClassification,
+  OASFClassification,
+  SkillClassification,
+} from '../types/classification';
+import type { IPFSMetadata, OASFSource } from '../types/ipfs';
 
 /**
  * Resolved classification with source tracking
@@ -30,7 +34,9 @@ export interface ResolvedClassification {
 /**
  * Convert OASF classification to full classification response
  */
-export function toOASFClassification(resolved: ResolvedClassification): OASFClassification | undefined {
+export function toOASFClassification(
+  resolved: ResolvedClassification
+): OASFClassification | undefined {
   if (resolved.source === 'none') {
     return undefined;
   }
