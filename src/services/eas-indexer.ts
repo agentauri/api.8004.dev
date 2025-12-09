@@ -34,10 +34,9 @@ const EAS_GRAPHQL_ENDPOINTS: Record<number, string> = {
  * @see https://polygon-amoy.easscan.org/schema/create
  */
 const FEEDBACK_SCHEMA_UIDS: Record<number, string> = {
-  // TODO: Replace with actual deployed schema UIDs
-  11155111: '0x0000000000000000000000000000000000000000000000000000000000000000', // Ethereum Sepolia
-  84532: '0x0000000000000000000000000000000000000000000000000000000000000000', // Base Sepolia
-  80002: '0x0000000000000000000000000000000000000000000000000000000000000000', // Polygon Amoy
+  11155111: '0x38a8d2b73c84f64eab779c8f5718d24646299f77c89ae4f5f8e17dbe04460fa8', // Ethereum Sepolia
+  84532: '0x38a8d2b73c84f64eab779c8f5718d24646299f77c89ae4f5f8e17dbe04460fa8', // Base Sepolia
+  80002: '0x38a8d2b73c84f64eab779c8f5718d24646299f77c89ae4f5f8e17dbe04460fa8', // Polygon Amoy
 };
 
 const PLACEHOLDER_SCHEMA_UID = '0x0000000000000000000000000000000000000000000000000000000000000000';
@@ -269,7 +268,12 @@ export function createEASIndexerService(
   // Allow overriding schema UIDs for testing
   const getConfiguredSchemaUid = (chainId: number): string | null => {
     if (config?.schemaUids?.[chainId]) {
-      return config.schemaUids[chainId];
+      const overrideUid = config.schemaUids[chainId];
+      // Return null if override is placeholder UID
+      if (overrideUid === PLACEHOLDER_SCHEMA_UID) {
+        return null;
+      }
+      return overrideUid;
     }
     return getSchemaUid(chainId);
   };

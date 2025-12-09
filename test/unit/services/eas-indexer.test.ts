@@ -284,6 +284,8 @@ describe('EASIndexerService', () => {
   });
 
   describe('syncChain', () => {
+    const PLACEHOLDER_UID = '0x0000000000000000000000000000000000000000000000000000000000000000';
+
     it('returns error for unsupported chain', async () => {
       const service = createEASIndexerService(env.DB);
       const result = await service.syncChain(999999);
@@ -294,9 +296,10 @@ describe('EASIndexerService', () => {
     });
 
     it('returns early with success when schema UID is placeholder', async () => {
-      // Note: Schema UIDs are currently placeholders, so sync should return early
-      // without making any API calls
-      const service = createEASIndexerService(env.DB);
+      // Use config override to test placeholder behavior
+      const service = createEASIndexerService(env.DB, {
+        schemaUids: { 11155111: PLACEHOLDER_UID },
+      });
       const result = await service.syncChain(11155111);
 
       expect(result.success).toBe(true);
@@ -307,7 +310,13 @@ describe('EASIndexerService', () => {
     });
 
     it('handles all supported chains with placeholder schema UIDs', async () => {
-      const service = createEASIndexerService(env.DB);
+      const service = createEASIndexerService(env.DB, {
+        schemaUids: {
+          11155111: PLACEHOLDER_UID,
+          84532: PLACEHOLDER_UID,
+          80002: PLACEHOLDER_UID,
+        },
+      });
 
       // All chains should return early since schema UIDs are placeholders
       const chains = [11155111, 84532, 80002];
@@ -324,6 +333,12 @@ describe('EASIndexerService', () => {
 
   describe('syncAll', () => {
     it('syncs all supported chains', async () => {
+      // Mock fetch for all chains to return empty attestations
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ data: { attestations: [] } }),
+      });
+
       const service = createEASIndexerService(env.DB);
       const results = await service.syncAll();
 
@@ -335,7 +350,14 @@ describe('EASIndexerService', () => {
     });
 
     it('returns success for all chains when schema UIDs are placeholders', async () => {
-      const service = createEASIndexerService(env.DB);
+      const PLACEHOLDER_UID = '0x0000000000000000000000000000000000000000000000000000000000000000';
+      const service = createEASIndexerService(env.DB, {
+        schemaUids: {
+          11155111: PLACEHOLDER_UID,
+          84532: PLACEHOLDER_UID,
+          80002: PLACEHOLDER_UID,
+        },
+      });
       const results = await service.syncAll();
 
       // All chains should succeed (with 0 attestations since schema UIDs are placeholders)
@@ -348,6 +370,12 @@ describe('EASIndexerService', () => {
 
   describe('chain configuration', () => {
     it('correctly identifies supported chains', async () => {
+      // Mock fetch to return empty attestations
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ data: { attestations: [] } }),
+      });
+
       const service = createEASIndexerService(env.DB);
 
       // Supported chains should return success (not "unsupported chain" error)
