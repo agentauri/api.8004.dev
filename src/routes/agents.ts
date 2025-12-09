@@ -20,6 +20,7 @@ import { createSearchService } from '@/services/search';
 import type { AgentDetailResponse, AgentListResponse, AgentSummary, Env, Variables } from '@/types';
 import { Hono } from 'hono';
 import { classify } from './classify';
+import { reputation } from './reputation';
 
 /**
  * Sort agents based on query parameters
@@ -342,5 +343,8 @@ agents.get('/:agentId', async (c) => {
 
 // Mount classification routes
 agents.route('/:agentId/classify', classify);
+
+// Mount reputation routes
+agents.route('/:agentId/reputation', reputation);
 
 export { agents };

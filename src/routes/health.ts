@@ -3,6 +3,7 @@
  * @module routes/health
  */
 
+import { createEASIndexerService } from '@/services/eas-indexer';
 import { createSearchService } from '@/services/search';
 import type { Env, HealthResponse, ServiceStatus, Variables } from '@/types';
 import { Hono } from 'hono';
@@ -89,6 +90,31 @@ health.get('/', async (c) => {
 
   const httpStatus = response.status === 'ok' ? 200 : 503;
   return c.json(response, httpStatus);
+});
+
+/**
+ * POST /api/v1/health/sync-eas
+ * Manually trigger EAS attestation sync (admin only)
+ */
+health.post('/sync-eas', async (c) => {
+  const indexer = createEASIndexerService(c.env.DB);
+  const results = await indexer.syncAll();
+
+  const summary: Record<string, unknown> = {};
+  for (const [chainId, result] of results) {
+    summary[chainId.toString()] = {
+      success: result.success,
+      attestationsProcessed: result.attestationsProcessed,
+      newFeedbackCount: result.newFeedbackCount,
+      error: result.error,
+    };
+  }
+
+  return c.json({
+    success: true,
+    data: summary,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 export { health };
