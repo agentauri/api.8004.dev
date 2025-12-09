@@ -212,7 +212,7 @@ describe('resolveClassification', () => {
           skills: [
             'natural_language_processing/text_generation', // Valid
             'invalid_skill_that_does_not_exist', // Invalid
-            'code_generation/code_writing', // Valid
+            'code_generation/code_completion', // Valid
           ],
         },
       };
@@ -223,7 +223,7 @@ describe('resolveClassification', () => {
       expect(result.skills.map((s) => s.slug)).toContain(
         'natural_language_processing/text_generation'
       );
-      expect(result.skills.map((s) => s.slug)).toContain('code_generation/code_writing');
+      expect(result.skills.map((s) => s.slug)).toContain('code_generation/code_completion');
     });
 
     it('filters out invalid domains from IPFS', () => {
