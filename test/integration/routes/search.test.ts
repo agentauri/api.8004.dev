@@ -3,7 +3,7 @@
  * @module test/integration/routes/search
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { insertMockClassification, setupMockFetch, testRoute } from '../../setup';
 
 const mockFetch = setupMockFetch();

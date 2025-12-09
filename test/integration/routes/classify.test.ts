@@ -5,7 +5,12 @@
 
 import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { insertMockClassification, mockHealthyResponse, setupMockFetch, testRoute } from '../../setup';
+import {
+  insertMockClassification,
+  mockHealthyResponse,
+  setupMockFetch,
+  testRoute,
+} from '../../setup';
 
 const mockFetch = setupMockFetch();
 

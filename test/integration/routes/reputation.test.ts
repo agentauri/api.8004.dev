@@ -3,7 +3,6 @@
  * @module test/integration/routes/reputation
  */
 
-import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   insertMockFeedback,

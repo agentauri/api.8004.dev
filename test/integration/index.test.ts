@@ -6,6 +6,7 @@
 import { createExecutionContext, env, waitOnExecutionContext } from 'cloudflare:test';
 import app from '@/index';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { TEST_API_KEY, createMockEnv } from '../setup';
 
 // Mock fetch for search service
 const mockFetch = vi.fn();
@@ -121,19 +122,14 @@ describe('Global error handler', () => {
 
     const request = new Request('http://localhost/api/v1/search', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': TEST_API_KEY,
+      },
       body: JSON.stringify({ query: 'test' }),
     });
     const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
+    const response = await app.fetch(request, createMockEnv() as unknown as typeof env, ctx);
     await waitOnExecutionContext(ctx);
 
     expect(response.status).toBe(500);
@@ -301,18 +297,13 @@ describe('Rate limiting headers', () => {
 
   it('includes rate limit headers on agents endpoint', async () => {
     const request = new Request('http://localhost/api/v1/agents', {
-      headers: { 'CF-Connecting-IP': '1.2.3.4' },
+      headers: {
+        'CF-Connecting-IP': '1.2.3.4',
+        'X-API-Key': TEST_API_KEY,
+      },
     });
     const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
+    const response = await app.fetch(request, createMockEnv() as unknown as typeof env, ctx);
     await waitOnExecutionContext(ctx);
 
     expect(response.headers.get('X-RateLimit-Limit')).toBeDefined();
