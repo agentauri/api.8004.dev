@@ -279,9 +279,14 @@ export function createSDKService(env: Env): SDKService {
           let activeCount = 0;
           let cursor: string | undefined;
 
-          // Count all agents
+          // Count all agents - explicitly specify chain to ensure correct subgraph query
           do {
-            const result = await sdk.searchAgents({}, undefined, 1000, cursor);
+            const result = await sdk.searchAgents(
+              { chains: [chain.chainId] },
+              undefined,
+              1000,
+              cursor
+            );
             allCount += result.items.length;
             cursor = result.nextCursor;
           } while (cursor);
@@ -289,7 +294,12 @@ export function createSDKService(env: Env): SDKService {
           // Count active agents
           cursor = undefined;
           do {
-            const result = await sdk.searchAgents({ active: true }, undefined, 1000, cursor);
+            const result = await sdk.searchAgents(
+              { active: true, chains: [chain.chainId] },
+              undefined,
+              1000,
+              cursor
+            );
             activeCount += result.items.length;
             cursor = result.nextCursor;
           } while (cursor);
