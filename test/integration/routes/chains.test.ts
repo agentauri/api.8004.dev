@@ -3,36 +3,19 @@
  * @module test/integration/routes/chains
  */
 
-import { createExecutionContext, env, waitOnExecutionContext } from 'cloudflare:test';
-import app from '@/index';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { mockHealthyResponse, setupMockFetch, testRoute } from '../../setup';
 
-// Mock fetch for search service
-const mockFetch = vi.fn();
-vi.stubGlobal('fetch', mockFetch);
+const mockFetch = setupMockFetch();
 
 describe('GET /api/v1/chains', () => {
   beforeEach(() => {
     mockFetch.mockReset();
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ status: 'ok' }),
-    });
+    mockFetch.mockResolvedValue(mockHealthyResponse());
   });
 
   it('returns chain statistics', async () => {
-    const request = new Request('http://localhost/api/v1/chains');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
+    const response = await testRoute('/api/v1/chains');
 
     expect(response.status).toBe(200);
 
@@ -43,18 +26,7 @@ describe('GET /api/v1/chains', () => {
   });
 
   it('includes all supported chains', async () => {
-    const request = new Request('http://localhost/api/v1/chains');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
+    const response = await testRoute('/api/v1/chains');
 
     const body = await response.json();
     const chainIds = body.data.map((c: { chainId: number }) => c.chainId);
@@ -66,18 +38,7 @@ describe('GET /api/v1/chains', () => {
   });
 
   it('returns correct stats structure', async () => {
-    const request = new Request('http://localhost/api/v1/chains');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
+    const response = await testRoute('/api/v1/chains');
 
     const body = await response.json();
     const chain = body.data[0];
@@ -97,18 +58,7 @@ describe('GET /api/v1/chains', () => {
   });
 
   it('includes short names for all chains', async () => {
-    const request = new Request('http://localhost/api/v1/chains');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
+    const response = await testRoute('/api/v1/chains');
 
     const body = await response.json();
     const shortNames = body.data.map((c: { shortName: string }) => c.shortName);
@@ -119,18 +69,7 @@ describe('GET /api/v1/chains', () => {
   });
 
   it('includes explorer URLs for all chains', async () => {
-    const request = new Request('http://localhost/api/v1/chains');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
+    const response = await testRoute('/api/v1/chains');
 
     const body = await response.json();
     for (const chain of body.data as Array<{ explorerUrl: string }>) {
@@ -139,18 +78,7 @@ describe('GET /api/v1/chains', () => {
   });
 
   it('includes chain names', async () => {
-    const request = new Request('http://localhost/api/v1/chains');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
+    const response = await testRoute('/api/v1/chains');
 
     const body = await response.json();
     const names = body.data.map((c: { name: string }) => c.name);
@@ -161,35 +89,12 @@ describe('GET /api/v1/chains', () => {
   });
 
   it('includes request ID header', async () => {
-    const request = new Request('http://localhost/api/v1/chains');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
-
+    const response = await testRoute('/api/v1/chains');
     expect(response.headers.get('X-Request-ID')).toBeDefined();
   });
 
   it('includes security headers', async () => {
-    const request = new Request('http://localhost/api/v1/chains');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
+    const response = await testRoute('/api/v1/chains');
 
     expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
     expect(response.headers.get('X-Frame-Options')).toBe('DENY');
@@ -197,33 +102,11 @@ describe('GET /api/v1/chains', () => {
 
   it('uses caching', async () => {
     // First request
-    const request1 = new Request('http://localhost/api/v1/chains');
-    const ctx1 = createExecutionContext();
-    await app.fetch(
-      request1,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx1
-    );
-    await waitOnExecutionContext(ctx1);
+    const response1 = await testRoute('/api/v1/chains');
+    expect(response1.status).toBe(200);
 
     // Second request should use cache
-    const request2 = new Request('http://localhost/api/v1/chains');
-    const ctx2 = createExecutionContext();
-    const response2 = await app.fetch(
-      request2,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx2
-    );
-    await waitOnExecutionContext(ctx2);
-
+    const response2 = await testRoute('/api/v1/chains');
     expect(response2.status).toBe(200);
   });
 });

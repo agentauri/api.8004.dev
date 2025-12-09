@@ -3,39 +3,22 @@
  * @module test/integration/routes/classify
  */
 
-import { createExecutionContext, env, waitOnExecutionContext } from 'cloudflare:test';
-import app from '@/index';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { insertMockClassification } from '../../setup';
+import { env } from 'cloudflare:test';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { insertMockClassification, mockHealthyResponse, setupMockFetch, testRoute } from '../../setup';
 
-// Mock fetch for search service
-const mockFetch = vi.fn();
-vi.stubGlobal('fetch', mockFetch);
+const mockFetch = setupMockFetch();
 
 describe('GET /api/v1/agents/:agentId/classify', () => {
   beforeEach(() => {
     mockFetch.mockReset();
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ status: 'ok' }),
-    });
+    mockFetch.mockResolvedValue(mockHealthyResponse());
   });
 
   it('returns classification when exists', async () => {
     await insertMockClassification('11155111:1');
 
-    const request = new Request('http://localhost/api/v1/agents/11155111:1/classify');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
+    const response = await testRoute('/api/v1/agents/11155111:1/classify');
 
     expect(response.status).toBe(200);
 
@@ -49,18 +32,7 @@ describe('GET /api/v1/agents/:agentId/classify', () => {
   });
 
   it('returns 404 when classification does not exist', async () => {
-    const request = new Request('http://localhost/api/v1/agents/11155111:999/classify');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
+    const response = await testRoute('/api/v1/agents/11155111:999/classify');
 
     expect(response.status).toBe(404);
 
@@ -78,18 +50,7 @@ describe('GET /api/v1/agents/:agentId/classify', () => {
       .bind('queue-id-1', '11155111:2', 'pending')
       .run();
 
-    const request = new Request('http://localhost/api/v1/agents/11155111:2/classify');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
+    const response = await testRoute('/api/v1/agents/11155111:2/classify');
 
     expect(response.status).toBe(202);
 
@@ -107,18 +68,7 @@ describe('GET /api/v1/agents/:agentId/classify', () => {
       .bind('queue-id-2', '11155111:3', 'processing')
       .run();
 
-    const request = new Request('http://localhost/api/v1/agents/11155111:3/classify');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
+    const response = await testRoute('/api/v1/agents/11155111:3/classify');
 
     expect(response.status).toBe(202);
 
@@ -130,29 +80,14 @@ describe('GET /api/v1/agents/:agentId/classify', () => {
 describe('POST /api/v1/agents/:agentId/classify', () => {
   beforeEach(() => {
     mockFetch.mockReset();
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ status: 'ok' }),
-    });
+    mockFetch.mockResolvedValue(mockHealthyResponse());
   });
 
   it('queues classification for new agent', async () => {
-    const request = new Request('http://localhost/api/v1/agents/11155111:100/classify', {
+    const response = await testRoute('/api/v1/agents/11155111:100/classify', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
+      body: {},
     });
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
 
     expect(response.status).toBe(202);
 
@@ -165,22 +100,10 @@ describe('POST /api/v1/agents/:agentId/classify', () => {
   it('returns already_classified when exists and force is false', async () => {
     await insertMockClassification('11155111:101');
 
-    const request = new Request('http://localhost/api/v1/agents/11155111:101/classify', {
+    const response = await testRoute('/api/v1/agents/11155111:101/classify', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ force: false }),
+      body: { force: false },
     });
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
 
     expect(response.status).toBe(200);
 
@@ -192,22 +115,10 @@ describe('POST /api/v1/agents/:agentId/classify', () => {
   it('queues re-classification when force is true', async () => {
     await insertMockClassification('11155111:102');
 
-    const request = new Request('http://localhost/api/v1/agents/11155111:102/classify', {
+    const response = await testRoute('/api/v1/agents/11155111:102/classify', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ force: true }),
+      body: { force: true },
     });
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
 
     expect(response.status).toBe(202);
 
@@ -223,22 +134,10 @@ describe('POST /api/v1/agents/:agentId/classify', () => {
       .bind('queue-id-3', '11155111:103', 'pending')
       .run();
 
-    const request = new Request('http://localhost/api/v1/agents/11155111:103/classify', {
+    const response = await testRoute('/api/v1/agents/11155111:103/classify', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
+      body: {},
     });
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
 
     expect(response.status).toBe(202);
 
@@ -247,20 +146,9 @@ describe('POST /api/v1/agents/:agentId/classify', () => {
   });
 
   it('handles request without body', async () => {
-    const request = new Request('http://localhost/api/v1/agents/11155111:104/classify', {
+    const response = await testRoute('/api/v1/agents/11155111:104/classify', {
       method: 'POST',
     });
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
 
     expect(response.status).toBe(202);
 
