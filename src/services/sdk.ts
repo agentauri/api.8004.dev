@@ -153,12 +153,13 @@ export function createSDKService(env: Env): SDKService {
         if (hasX402 !== undefined) searchParams.x402support = hasX402;
 
         // Search with multi-chain support and cursor-based pagination
+        // Note: sort is required for proper cross-chain ordering (SDK doesn't sort if undefined)
         const result = await sdk.searchAgents(
           {
             ...searchParams,
             chains: chainIds || 'all',
           },
-          undefined,
+          ['createdAt:desc'],
           limit,
           cursor
         );
