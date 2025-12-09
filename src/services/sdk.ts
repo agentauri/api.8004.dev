@@ -270,21 +270,34 @@ export function createSDKService(env: Env): SDKService {
         try {
           const sdk = getSDK(chain.chainId);
 
-          // Search all agents on this chain (only need 1 result, using meta.totalResults for count)
-          const allAgents = await sdk.searchAgents({ chains: [chain.chainId] }, undefined, 1);
-          const activeAgents = await sdk.searchAgents(
-            { chains: [chain.chainId], active: true },
-            undefined,
-            1
-          );
+          // Fetch all agents with pagination (subgraph limit is 1000 per query)
+          // This scales automatically to any number of agents (5k, 10k, 100k...)
+          let allCount = 0;
+          let activeCount = 0;
+          let cursor: string | undefined;
+
+          // Count all agents
+          do {
+            const result = await sdk.searchAgents({}, undefined, 1000, cursor);
+            allCount += result.items.length;
+            cursor = result.nextCursor;
+          } while (cursor);
+
+          // Count active agents
+          cursor = undefined;
+          do {
+            const result = await sdk.searchAgents({ active: true }, undefined, 1000, cursor);
+            activeCount += result.items.length;
+            cursor = result.nextCursor;
+          } while (cursor);
 
           results.push({
             chainId: chain.chainId,
             name: chain.name,
             shortName: chain.shortName,
             explorerUrl: chain.explorerUrl,
-            agentCount: allAgents.meta?.totalResults ?? allAgents.items.length,
-            activeCount: activeAgents.meta?.totalResults ?? activeAgents.items.length,
+            agentCount: allCount,
+            activeCount: activeCount,
             status: 'ok',
           });
         } catch (error) {
