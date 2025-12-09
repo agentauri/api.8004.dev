@@ -10,7 +10,14 @@ import {
   updateQueueStatus,
   upsertClassification,
 } from '@/db/queries';
-import { apiKeyAuth, bodyLimit, cors, requestId, securityHeaders } from '@/lib/middleware';
+import {
+  apiKeyAuth,
+  bodyLimit,
+  cors,
+  requestId,
+  requireApiKey,
+  securityHeaders,
+} from '@/lib/middleware';
 import { handleError } from '@/lib/utils/errors';
 import { parseAgentId } from '@/lib/utils/validation';
 import { agents, chains, health, search, stats, taxonomy } from '@/routes';
@@ -32,6 +39,19 @@ app.use('*', apiKeyAuth());
 
 // Global error handler
 app.onError(handleError);
+
+// Protected routes (require API key)
+// Note: Both root and wildcard patterns needed for Hono
+app.use('/api/v1/agents', requireApiKey());
+app.use('/api/v1/agents/*', requireApiKey());
+app.use('/api/v1/search', requireApiKey());
+app.use('/api/v1/search/*', requireApiKey());
+app.use('/api/v1/chains', requireApiKey());
+app.use('/api/v1/chains/*', requireApiKey());
+app.use('/api/v1/stats', requireApiKey());
+app.use('/api/v1/stats/*', requireApiKey());
+app.use('/api/v1/taxonomy', requireApiKey());
+app.use('/api/v1/taxonomy/*', requireApiKey());
 
 // Mount routes
 app.route('/api/v1/health', health);

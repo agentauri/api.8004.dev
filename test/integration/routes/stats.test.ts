@@ -3,82 +3,44 @@
  * @module test/integration/routes/stats
  */
 
-import { createExecutionContext, env, waitOnExecutionContext } from 'cloudflare:test';
-import app from '@/index';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { mockHealthyResponse, setupMockFetch, testRoute } from '../../setup';
 
-// Mock fetch for search service
-const mockFetch = vi.fn();
-vi.stubGlobal('fetch', mockFetch);
+const mockFetch = setupMockFetch();
 
 describe('GET /api/v1/stats', () => {
   beforeEach(() => {
     mockFetch.mockReset();
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ status: 'ok' }),
-    });
+    mockFetch.mockResolvedValue(mockHealthyResponse());
   });
 
   it('returns platform statistics', async () => {
-    const request = new Request('http://localhost/api/v1/stats');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
+    const response = await testRoute('/api/v1/stats');
 
     expect(response.status).toBe(200);
-
     const body = await response.json();
     expect(body.success).toBe(true);
     expect(body.data).toBeDefined();
   });
 
-  it('returns correct stats structure', async () => {
-    const request = new Request('http://localhost/api/v1/stats');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
+  it('returns correct stats structure with inactive counts', async () => {
+    const response = await testRoute('/api/v1/stats');
 
     const body = await response.json();
     const data = body.data;
 
     expect(data).toHaveProperty('totalAgents');
     expect(data).toHaveProperty('activeAgents');
+    expect(data).toHaveProperty('inactiveAgents');
     expect(data).toHaveProperty('chainBreakdown');
     expect(typeof data.totalAgents).toBe('number');
     expect(typeof data.activeAgents).toBe('number');
+    expect(typeof data.inactiveAgents).toBe('number');
     expect(Array.isArray(data.chainBreakdown)).toBe(true);
   });
 
-  it('includes chain breakdown for all supported chains', async () => {
-    const request = new Request('http://localhost/api/v1/stats');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
+  it('includes chain breakdown with inactive counts for all chains', async () => {
+    const response = await testRoute('/api/v1/stats');
 
     const body = await response.json();
     const chainIds = body.data.chainBreakdown.map((c: { chainId: number }) => c.chainId);
@@ -87,21 +49,31 @@ describe('GET /api/v1/stats', () => {
     expect(chainIds).toContain(11155111); // Ethereum Sepolia
     expect(chainIds).toContain(84532); // Base Sepolia
     expect(chainIds).toContain(80002); // Polygon Amoy
+
+    // Each chain should have inactiveCount
+    for (const chain of body.data.chainBreakdown) {
+      expect(chain).toHaveProperty('inactiveCount');
+      expect(typeof chain.inactiveCount).toBe('number');
+    }
+  });
+
+  it('correctly calculates inactive counts', async () => {
+    const response = await testRoute('/api/v1/stats');
+
+    const body = await response.json();
+    const { totalAgents, activeAgents, inactiveAgents, chainBreakdown } = body.data;
+
+    // inactiveAgents should equal totalAgents - activeAgents
+    expect(inactiveAgents).toBe(totalAgents - activeAgents);
+
+    // Each chain's inactiveCount should equal agentCount - activeCount
+    for (const chain of chainBreakdown) {
+      expect(chain.inactiveCount).toBe(chain.agentCount - chain.activeCount);
+    }
   });
 
   it('aggregates totals from all chains', async () => {
-    const request = new Request('http://localhost/api/v1/stats');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
+    const response = await testRoute('/api/v1/stats');
 
     const body = await response.json();
     const { totalAgents, activeAgents, chainBreakdown } = body.data;
@@ -121,35 +93,12 @@ describe('GET /api/v1/stats', () => {
   });
 
   it('includes request ID header', async () => {
-    const request = new Request('http://localhost/api/v1/stats');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
-
+    const response = await testRoute('/api/v1/stats');
     expect(response.headers.get('X-Request-ID')).toBeDefined();
   });
 
   it('includes security headers', async () => {
-    const request = new Request('http://localhost/api/v1/stats');
-    const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
-    await waitOnExecutionContext(ctx);
+    const response = await testRoute('/api/v1/stats');
 
     expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
     expect(response.headers.get('X-Frame-Options')).toBe('DENY');
@@ -157,33 +106,11 @@ describe('GET /api/v1/stats', () => {
 
   it('uses caching', async () => {
     // First request
-    const request1 = new Request('http://localhost/api/v1/stats');
-    const ctx1 = createExecutionContext();
-    await app.fetch(
-      request1,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx1
-    );
-    await waitOnExecutionContext(ctx1);
+    const response1 = await testRoute('/api/v1/stats');
+    expect(response1.status).toBe(200);
 
     // Second request should use cache
-    const request2 = new Request('http://localhost/api/v1/stats');
-    const ctx2 = createExecutionContext();
-    const response2 = await app.fetch(
-      request2,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx2
-    );
-    await waitOnExecutionContext(ctx2);
-
+    const response2 = await testRoute('/api/v1/stats');
     expect(response2.status).toBe(200);
   });
 });

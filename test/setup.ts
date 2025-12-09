@@ -125,6 +125,11 @@ export async function insertMockClassification(
 }
 
 /**
+ * Test API key - used for authentication in tests
+ */
+export const TEST_API_KEY = 'test-api-key-for-8004-backend';
+
+/**
  * Create mock environment
  */
 export function createMockEnv() {
@@ -141,6 +146,7 @@ export function createMockEnv() {
     CACHE_TTL: '300',
     RATE_LIMIT_RPM: '100',
     CLASSIFICATION_MODEL: 'claude-3-haiku-20240307',
+    API_KEY: TEST_API_KEY,
   };
 }
 
@@ -243,19 +249,27 @@ export interface TestRouteOptions {
   method?: string;
   body?: unknown;
   headers?: Record<string, string>;
+  /** Set to true to skip sending API key (for testing 401 responses) */
+  skipAuth?: boolean;
 }
 
 /**
  * Helper to make HTTP requests in tests - eliminates boilerplate
+ * Automatically includes API key unless skipAuth is true
  */
 export async function testRoute(path: string, options: TestRouteOptions = {}): Promise<Response> {
   const init: RequestInit = { method: options.method ?? 'GET' };
 
+  // Build headers with API key by default
+  const headers: Record<string, string> = options.skipAuth
+    ? { ...options.headers }
+    : { 'X-API-Key': TEST_API_KEY, ...options.headers };
+
   if (options.body) {
     init.body = JSON.stringify(options.body);
-    init.headers = { 'Content-Type': 'application/json', ...options.headers };
-  } else if (options.headers) {
-    init.headers = options.headers;
+    init.headers = { 'Content-Type': 'application/json', ...headers };
+  } else if (Object.keys(headers).length > 0) {
+    init.headers = headers;
   }
 
   const request = new Request(`http://localhost${path}`, init);

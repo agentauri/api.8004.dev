@@ -35,13 +35,21 @@ stats.get('/', async (c) => {
   // Aggregate totals
   const totalAgents = chainStats.reduce((sum, chain) => sum + chain.agentCount, 0);
   const activeAgents = chainStats.reduce((sum, chain) => sum + chain.activeCount, 0);
+  const inactiveAgents = totalAgents - activeAgents;
+
+  // Add inactiveCount to each chain breakdown
+  const chainBreakdownWithInactive = chainStats.map((chain) => ({
+    ...chain,
+    inactiveCount: chain.agentCount - chain.activeCount,
+  }));
 
   const response: PlatformStatsResponse = {
     success: true,
     data: {
       totalAgents,
       activeAgents,
-      chainBreakdown: chainStats,
+      inactiveAgents,
+      chainBreakdown: chainBreakdownWithInactive,
     },
   };
 

@@ -19,6 +19,8 @@ export interface ChainStats {
   agentCount: number;
   /** Number of active agents */
   activeCount: number;
+  /** Number of inactive agents */
+  inactiveCount?: number;
   /** Status of the stats fetch - 'ok' or 'error' if RPC/subgraph failed */
   status?: 'ok' | 'error';
 }
@@ -51,6 +53,8 @@ export interface PlatformStats {
   totalAgents: number;
   /** Number of active agents across all chains */
   activeAgents: number;
+  /** Number of inactive agents across all chains */
+  inactiveAgents: number;
   /** Per-chain breakdown */
   chainBreakdown: ChainStats[];
 }
