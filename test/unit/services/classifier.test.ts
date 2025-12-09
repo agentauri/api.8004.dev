@@ -2,12 +2,12 @@
  * Classifier service tests
  * @module test/unit/services/classifier
  *
- * Note: Integration tests with the Anthropic API are covered in integration tests.
- * This file focuses on testing the pure functions that handle response parsing.
+ * Tests for the classifier service including response parsing and API integration.
  */
 
 import { calculateOverallConfidence, parseClassificationResponse } from '@/services/classifier';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mockClassificationResponse } from '../../mocks/anthropic';
 
 describe('parseClassificationResponse', () => {
   it('parses plain JSON response', () => {
@@ -214,5 +214,210 @@ describe('calculateOverallConfidence', () => {
     ];
     const result = calculateOverallConfidence(skills, []);
     expect(result).toBe(0.5);
+  });
+});
+
+describe('createClassifierService', () => {
+  let mockCreate: ReturnType<typeof vi.fn>;
+  let MockAnthropic: { new (): { messages: { create: ReturnType<typeof vi.fn> } } };
+
+  beforeEach(async () => {
+    vi.resetModules();
+    mockCreate = vi.fn();
+
+    // Create a class that will be used as the mock
+    MockAnthropic = class {
+      messages = {
+        create: mockCreate,
+      };
+    };
+
+    vi.doMock('@anthropic-ai/sdk', () => ({
+      default: MockAnthropic,
+    }));
+  });
+
+  afterEach(() => {
+    vi.resetModules();
+  });
+
+  describe('classify', () => {
+    it('successfully classifies an agent', async () => {
+      mockCreate.mockResolvedValue({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(mockClassificationResponse),
+          },
+        ],
+      });
+
+      // Import after mock is set up
+      const { createClassifierService: create } = await import('@/services/classifier');
+      const classifier = create('sk-ant-test-key', 'claude-3-haiku-20240307');
+      const result = await classifier.classify({
+        agentId: '11155111:1',
+        name: 'Test Agent',
+        description: 'A test agent for classification',
+      });
+
+      expect(result.skills).toHaveLength(1);
+      expect(result.skills[0].slug).toBe('natural_language_processing/text_generation');
+      expect(result.domains).toHaveLength(1);
+      expect(result.domains[0].slug).toBe('technology/software_development');
+      expect(result.confidence).toBeGreaterThan(0);
+      expect(result.modelVersion).toBe('claude-3-haiku-20240307');
+    });
+
+    it('handles agent with MCP tools', async () => {
+      mockCreate.mockResolvedValue({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(mockClassificationResponse),
+          },
+        ],
+      });
+
+      const { createClassifierService: create } = await import('@/services/classifier');
+      const classifier = create('sk-ant-test-key', 'claude-3-haiku-20240307');
+      const result = await classifier.classify({
+        agentId: '11155111:1',
+        name: 'Test Agent',
+        description: 'A test agent',
+        mcpTools: ['file_read', 'web_search'],
+      });
+
+      expect(result.skills).toBeDefined();
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model: 'claude-3-haiku-20240307',
+          max_tokens: 1024,
+        })
+      );
+    });
+
+    it('handles agent with A2A skills', async () => {
+      mockCreate.mockResolvedValue({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(mockClassificationResponse),
+          },
+        ],
+      });
+
+      const { createClassifierService: create } = await import('@/services/classifier');
+      const classifier = create('sk-ant-test-key', 'claude-3-haiku-20240307');
+      const result = await classifier.classify({
+        agentId: '11155111:1',
+        name: 'Test Agent',
+        description: 'A test agent',
+        a2aSkills: ['translation', 'summarization'],
+      });
+
+      expect(result.domains).toBeDefined();
+    });
+
+    it('throws error when response has no text content', async () => {
+      mockCreate.mockResolvedValue({
+        content: [
+          {
+            type: 'image',
+            source: { type: 'base64', data: '' },
+          },
+        ],
+      });
+
+      const { createClassifierService: create } = await import('@/services/classifier');
+      const classifier = create('sk-ant-test-key', 'claude-3-haiku-20240307');
+
+      await expect(
+        classifier.classify({
+          agentId: '11155111:1',
+          name: 'Test Agent',
+          description: 'A test agent',
+        })
+      ).rejects.toThrow('No text content in classification response');
+    });
+
+    it('throws error when response content is empty', async () => {
+      mockCreate.mockResolvedValue({
+        content: [],
+      });
+
+      const { createClassifierService: create } = await import('@/services/classifier');
+      const classifier = create('sk-ant-test-key', 'claude-3-haiku-20240307');
+
+      await expect(
+        classifier.classify({
+          agentId: '11155111:1',
+          name: 'Test Agent',
+          description: 'A test agent',
+        })
+      ).rejects.toThrow('No text content in classification response');
+    });
+
+    it('propagates API errors', async () => {
+      mockCreate.mockRejectedValue(new Error('API rate limit exceeded'));
+
+      const { createClassifierService: create } = await import('@/services/classifier');
+      const classifier = create('sk-ant-test-key', 'claude-3-haiku-20240307');
+
+      await expect(
+        classifier.classify({
+          agentId: '11155111:1',
+          name: 'Test Agent',
+          description: 'A test agent',
+        })
+      ).rejects.toThrow('API rate limit exceeded');
+    });
+  });
+
+  describe('healthCheck', () => {
+    it('returns true when API is healthy', async () => {
+      mockCreate.mockResolvedValue({
+        content: [
+          {
+            type: 'text',
+            text: 'ok',
+          },
+        ],
+      });
+
+      const { createClassifierService: create } = await import('@/services/classifier');
+      const classifier = create('sk-ant-test-key', 'claude-3-haiku-20240307');
+      const isHealthy = await classifier.healthCheck();
+
+      expect(isHealthy).toBe(true);
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          max_tokens: 10,
+          messages: [{ role: 'user', content: 'Reply with "ok"' }],
+        })
+      );
+    });
+
+    it('returns false when API call fails', async () => {
+      mockCreate.mockRejectedValue(new Error('Connection timeout'));
+
+      const { createClassifierService: create } = await import('@/services/classifier');
+      const classifier = create('sk-ant-test-key', 'claude-3-haiku-20240307');
+      const isHealthy = await classifier.healthCheck();
+
+      expect(isHealthy).toBe(false);
+    });
+
+    it('returns false when response content is empty', async () => {
+      mockCreate.mockResolvedValue({
+        content: [],
+      });
+
+      const { createClassifierService: create } = await import('@/services/classifier');
+      const classifier = create('sk-ant-test-key', 'claude-3-haiku-20240307');
+      const isHealthy = await classifier.healthCheck();
+
+      expect(isHealthy).toBe(false);
+    });
   });
 });

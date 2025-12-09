@@ -192,3 +192,88 @@ describe('GET /api/v1/health', () => {
     expect(body.services.searchService).toBe('error');
   });
 });
+
+describe('POST /api/v1/health/sync-eas', () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ status: 'ok' }),
+    });
+  });
+
+  it('triggers EAS sync and returns summary', async () => {
+    // Mock EAS GraphQL endpoint
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          data: {
+            attestations: [],
+          },
+        }),
+    });
+
+    const request = new Request('http://localhost/api/v1/health/sync-eas', {
+      method: 'POST',
+    });
+    const ctx = createExecutionContext();
+    const response = await app.fetch(
+      request,
+      {
+        ...env,
+        ANTHROPIC_API_KEY: 'sk-ant-test-key',
+        SEARCH_SERVICE_URL: 'https://search.example.com',
+      },
+      ctx
+    );
+    await waitOnExecutionContext(ctx);
+
+    expect(response.status).toBe(200);
+
+    const body = (await response.json()) as {
+      success: boolean;
+      data: Record<string, { success: boolean; attestationsProcessed: number }>;
+      timestamp: string;
+    };
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
+    expect(body.timestamp).toBeDefined();
+  });
+
+  it('returns sync results for each chain', async () => {
+    // Mock EAS GraphQL endpoint with attestations
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          data: {
+            attestations: [],
+          },
+        }),
+    });
+
+    const request = new Request('http://localhost/api/v1/health/sync-eas', {
+      method: 'POST',
+    });
+    const ctx = createExecutionContext();
+    const response = await app.fetch(
+      request,
+      {
+        ...env,
+        ANTHROPIC_API_KEY: 'sk-ant-test-key',
+        SEARCH_SERVICE_URL: 'https://search.example.com',
+      },
+      ctx
+    );
+    await waitOnExecutionContext(ctx);
+
+    const body = (await response.json()) as {
+      success: boolean;
+      data: Record<string, { success: boolean; attestationsProcessed: number }>;
+    };
+
+    // Should have entries for Sepolia, Base Sepolia, and Polygon Amoy
+    expect(Object.keys(body.data).length).toBeGreaterThan(0);
+  });
+});

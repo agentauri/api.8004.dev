@@ -156,6 +156,42 @@ describe('handleError', () => {
     expect(body.code).toBe('VALIDATION_ERROR');
   });
 
+  it('handles ZodError without errors array', async () => {
+    const app = new Hono();
+    app.onError(handleError);
+    app.get('/test', () => {
+      const error = new Error('Validation failed');
+      error.name = 'ZodError';
+      // No errors array - should use fallback message
+      throw error;
+    });
+
+    const res = await app.request('/test');
+    expect(res.status).toBe(400);
+
+    const body = await res.json();
+    expect(body.code).toBe('VALIDATION_ERROR');
+    expect(body.error).toBe('Validation failed');
+  });
+
+  it('handles ZodError with empty errors array', async () => {
+    const app = new Hono();
+    app.onError(handleError);
+    app.get('/test', () => {
+      const error = new Error('Validation failed');
+      error.name = 'ZodError';
+      (error as { errors?: Array<{ message: string }> }).errors = [];
+      throw error;
+    });
+
+    const res = await app.request('/test');
+    expect(res.status).toBe(400);
+
+    const body = await res.json();
+    expect(body.code).toBe('VALIDATION_ERROR');
+    expect(body.error).toBe('Validation failed');
+  });
+
   it('handles unknown errors', async () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 

@@ -226,13 +226,18 @@ describe('Queue consumer', () => {
     });
   });
 
-  // Note: Testing queue consumer requires more complex mocking
-  // The queue handler is exported from the default export
-
   it('exports queue handler', async () => {
     // Verify the default export has a queue handler
     expect(app).toBeDefined();
     expect(typeof app.fetch).toBe('function');
+    // The queue property is on the module default export
+    const appModule = await import('@/index');
+    expect(typeof appModule.default.queue).toBe('function');
+  });
+
+  it('exports scheduled handler', async () => {
+    const appModule = await import('@/index');
+    expect(typeof appModule.default.scheduled).toBe('function');
   });
 });
 
