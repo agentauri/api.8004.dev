@@ -109,4 +109,16 @@ describe('GET /api/v1/chains', () => {
     const response2 = await testRoute('/api/v1/chains');
     expect(response2.status).toBe(200);
   });
+
+  it('returns status field for each chain', async () => {
+    const response = await testRoute('/api/v1/chains');
+
+    const body = await response.json();
+    for (const chain of body.data as Array<{ status?: string }>) {
+      // Status should be 'ok', 'error', or 'cached'
+      if (chain.status) {
+        expect(['ok', 'error', 'cached']).toContain(chain.status);
+      }
+    }
+  });
 });

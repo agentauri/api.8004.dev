@@ -255,6 +255,193 @@ describe('createSearchService', () => {
         expect.any(Object)
       );
     });
+
+    it('uses AND mode by default', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            query: 'test',
+            results: [],
+            total: 0,
+            pagination: { hasMore: false, limit: 20 },
+            requestId: 'test-id',
+            timestamp: new Date().toISOString(),
+          }),
+      });
+
+      const service = createSearchService(baseUrl);
+      await service.search({
+        query: 'test',
+        filters: { mcp: true, a2a: true },
+      });
+
+      // Should only make one request with both filters (AND mode)
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.filters.mcp).toBe(true);
+      expect(body.filters.a2a).toBe(true);
+    });
+
+    it('runs separate searches for OR mode with multiple boolean filters', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            query: 'test',
+            results: [
+              {
+                rank: 1,
+                vectorId: 'v1',
+                agentId: '11155111:1',
+                chainId: 11155111,
+                name: 'Agent 1',
+                description: 'Test',
+                score: 0.9,
+                metadata: {},
+              },
+            ],
+            total: 1,
+            pagination: { hasMore: false, limit: 20 },
+            requestId: 'test-id',
+            timestamp: new Date().toISOString(),
+          }),
+      });
+
+      const service = createSearchService(baseUrl);
+      await service.search({
+        query: 'test',
+        filters: { mcp: true, a2a: true, filterMode: 'OR' },
+      });
+
+      // Should make two separate requests (one for mcp, one for a2a)
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+
+      // First call should have mcp=true only
+      const body1 = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body1.filters.mcp).toBe(true);
+      expect(body1.filters.a2a).toBeUndefined();
+
+      // Second call should have a2a=true only
+      const body2 = JSON.parse(mockFetch.mock.calls[1][1].body);
+      expect(body2.filters.a2a).toBe(true);
+      expect(body2.filters.mcp).toBeUndefined();
+    });
+
+    it('merges and deduplicates OR results by agentId', async () => {
+      // First call returns agent 1 and 2
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            query: 'test',
+            results: [
+              {
+                rank: 1,
+                vectorId: 'v1',
+                agentId: '11155111:1',
+                chainId: 11155111,
+                name: 'Agent 1',
+                description: 'Test',
+                score: 0.9,
+                metadata: {},
+              },
+              {
+                rank: 2,
+                vectorId: 'v2',
+                agentId: '11155111:2',
+                chainId: 11155111,
+                name: 'Agent 2',
+                description: 'Test',
+                score: 0.8,
+                metadata: {},
+              },
+            ],
+            total: 2,
+            pagination: { hasMore: false, limit: 20 },
+            requestId: 'test-id',
+            timestamp: new Date().toISOString(),
+          }),
+      });
+
+      // Second call returns agent 1 (duplicate) and 3
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            query: 'test',
+            results: [
+              {
+                rank: 1,
+                vectorId: 'v1',
+                agentId: '11155111:1',
+                chainId: 11155111,
+                name: 'Agent 1',
+                description: 'Test',
+                score: 0.95, // Higher score for duplicate
+                metadata: {},
+              },
+              {
+                rank: 2,
+                vectorId: 'v3',
+                agentId: '11155111:3',
+                chainId: 11155111,
+                name: 'Agent 3',
+                description: 'Test',
+                score: 0.7,
+                metadata: {},
+              },
+            ],
+            total: 2,
+            pagination: { hasMore: false, limit: 20 },
+            requestId: 'test-id',
+            timestamp: new Date().toISOString(),
+          }),
+      });
+
+      const service = createSearchService(baseUrl);
+      const result = await service.search({
+        query: 'test',
+        filters: { mcp: true, a2a: true, filterMode: 'OR' },
+      });
+
+      // Should have 3 unique agents
+      expect(result.results).toHaveLength(3);
+      expect(result.total).toBe(3);
+
+      // Agent 1 should have higher score (0.95, not 0.9)
+      const agent1 = result.results.find((r) => r.agentId === '11155111:1');
+      expect(agent1?.score).toBe(0.95);
+
+      // Results should be sorted by score descending
+      expect(result.results[0].agentId).toBe('11155111:1'); // 0.95
+      expect(result.results[1].agentId).toBe('11155111:2'); // 0.8
+      expect(result.results[2].agentId).toBe('11155111:3'); // 0.7
+    });
+
+    it('uses single search for OR mode with only one boolean filter', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            query: 'test',
+            results: [],
+            total: 0,
+            pagination: { hasMore: false, limit: 20 },
+            requestId: 'test-id',
+            timestamp: new Date().toISOString(),
+          }),
+      });
+
+      const service = createSearchService(baseUrl);
+      await service.search({
+        query: 'test',
+        filters: { mcp: true, filterMode: 'OR' },
+      });
+
+      // Should only make one request (OR with single filter is same as AND)
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('healthCheck', () => {

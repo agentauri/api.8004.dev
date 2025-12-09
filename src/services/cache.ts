@@ -60,6 +60,8 @@ export const CACHE_KEYS = {
   agentDetail: (agentId: string) => `agents:detail:${agentId}`,
   classification: (agentId: string) => `classification:${agentId}`,
   chainStats: () => 'chains:stats',
+  /** Fallback cache for individual chain stats (used when SDK fails) */
+  chainStatsFallback: (chainId: number) => `chains:stats:fallback:${chainId}`,
   platformStats: () => 'platform:stats',
   taxonomy: (type: string) => `taxonomy:${type}`,
   search: (hash: string) => `search:${hash}`,

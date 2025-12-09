@@ -85,87 +85,151 @@ interface SearchResponseBody {
 }
 
 /**
+ * Merge and deduplicate search results, keeping highest score per agent
+ */
+function mergeSearchResults(
+  resultArrays: SearchServiceResult[],
+  limit: number
+): SearchServiceResult {
+  const agentMap = new Map<string, SearchResultItem>();
+
+  // Collect all results, keeping highest score per agent
+  for (const result of resultArrays) {
+    for (const item of result.results) {
+      const existing = agentMap.get(item.agentId);
+      if (!existing || item.score > existing.score) {
+        agentMap.set(item.agentId, item);
+      }
+    }
+  }
+
+  // Sort by score descending and limit
+  const mergedResults = [...agentMap.values()].sort((a, b) => b.score - a.score).slice(0, limit);
+
+  const totalUnique = agentMap.size;
+
+  return {
+    results: mergedResults,
+    total: totalUnique,
+    hasMore: totalUnique > limit,
+    // Cannot provide cursor for merged OR results
+    nextCursor: undefined,
+  };
+}
+
+/**
  * Create search service client
  */
 export function createSearchService(searchServiceUrl: string): SearchService {
   const baseUrl = searchServiceUrl.replace(/\/$/, '');
 
+  /**
+   * Execute a single search request
+   */
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Filter building logic requires multiple conditional checks
+  async function executeSearch(
+    query: string,
+    limit: number,
+    minScore: number,
+    filters?: SearchFilters
+  ): Promise<SearchServiceResult> {
+    const body: SearchRequestBody = {
+      query,
+      topK: limit,
+      minScore,
+    };
+
+    if (filters) {
+      body.filters = {};
+
+      if (filters.chainIds?.length === 1) {
+        body.filters.chainId = filters.chainIds[0];
+      }
+      if (filters.active !== undefined) {
+        body.filters.active = filters.active;
+      }
+      if (filters.mcp !== undefined) {
+        body.filters.mcp = filters.mcp;
+      }
+      if (filters.a2a !== undefined) {
+        body.filters.a2a = filters.a2a;
+      }
+      if (filters.x402 !== undefined) {
+        body.filters.x402support = filters.x402;
+      }
+      if (filters.skills?.length) {
+        body.filters.capabilities = filters.skills;
+      }
+      if (filters.domains?.length) {
+        body.filters.domains = filters.domains;
+      }
+    }
+
+    const response = await fetchWithTimeout(`${baseUrl}/api/search`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Search service error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = (await response.json()) as SearchResponseBody;
+
+    const results: SearchResultItem[] = data.results.map((r) => ({
+      agentId: r.agentId,
+      chainId: r.chainId,
+      name: r.name,
+      description: r.description,
+      score: r.score,
+      metadata: r.metadata,
+    }));
+
+    return {
+      results,
+      total: data.total,
+      hasMore: data.pagination?.hasMore ?? results.length >= limit,
+      nextCursor: data.pagination?.nextCursor,
+    };
+  }
+
   return {
-    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Filter building logic requires multiple conditional checks
     async search(params: SearchParams): Promise<SearchServiceResult> {
       const { query, limit = 20, minScore = 0.3, filters } = params;
 
-      // Build request body using agent0lab search-service format (flat filters)
-      const body: SearchRequestBody = {
-        query,
-        topK: limit,
-        minScore,
-      };
+      // Check if OR mode with multiple boolean filters
+      const booleanFilters: Array<'mcp' | 'a2a' | 'x402'> = [];
+      if (filters?.mcp) booleanFilters.push('mcp');
+      if (filters?.a2a) booleanFilters.push('a2a');
+      if (filters?.x402) booleanFilters.push('x402');
 
-      // Add flat filters if provided (agent0lab format, not AG0 nested format)
-      if (filters) {
-        body.filters = {};
+      const isOrMode = filters?.filterMode === 'OR' && booleanFilters.length > 1;
 
-        // Chain ID filter (single chain only - search service doesn't support multi-chain in filters)
-        if (filters.chainIds?.length === 1) {
-          body.filters.chainId = filters.chainIds[0];
-        }
+      if (isOrMode) {
+        // OR mode: run separate searches for each boolean filter and merge results
+        const baseFilters: SearchFilters = {
+          chainIds: filters?.chainIds,
+          active: filters?.active,
+          skills: filters?.skills,
+          domains: filters?.domains,
+        };
 
-        // Boolean filters - use flat format with correct field names
-        if (filters.active !== undefined) {
-          body.filters.active = filters.active;
-        }
-        if (filters.mcp !== undefined) {
-          body.filters.mcp = filters.mcp;
-        }
-        if (filters.a2a !== undefined) {
-          body.filters.a2a = filters.a2a;
-        }
-        if (filters.x402 !== undefined) {
-          // Search service uses 'x402support', not 'x402'
-          body.filters.x402support = filters.x402;
-        }
+        const searchPromises = booleanFilters.map((filter) =>
+          executeSearch(query, limit, minScore, {
+            ...baseFilters,
+            [filter]: true,
+          })
+        );
 
-        // Array filters
-        if (filters.skills?.length) {
-          body.filters.capabilities = filters.skills;
-        }
-        if (filters.domains?.length) {
-          body.filters.domains = filters.domains;
-        }
+        const results = await Promise.all(searchPromises);
+        return mergeSearchResults(results, limit);
       }
 
-      // agent0lab uses /api/search, AG0 standard uses /api/v1/search
-      const response = await fetchWithTimeout(`${baseUrl}/api/search`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Search service error: ${response.status} ${response.statusText}`);
-      }
-
-      const data = (await response.json()) as SearchResponseBody;
-
-      // Transform response to our format
-      const results: SearchResultItem[] = data.results.map((r) => ({
-        agentId: r.agentId,
-        chainId: r.chainId,
-        name: r.name,
-        description: r.description,
-        score: r.score,
-        metadata: r.metadata,
-      }));
-
-      return {
-        results,
-        total: data.total,
-        hasMore: data.pagination?.hasMore ?? results.length >= limit,
-        nextCursor: data.pagination?.nextCursor,
-      };
+      // AND mode (default): single search with all filters
+      return executeSearch(query, limit, minScore, filters);
     },
 
     async healthCheck(): Promise<boolean> {

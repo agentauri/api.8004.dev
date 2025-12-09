@@ -3,7 +3,12 @@
  * @module routes/agents
  */
 
-import { getClassification, getClassificationsBatch, getReputationsBatch } from '@/db/queries';
+import {
+  enqueueClassificationsBatch,
+  getClassification,
+  getClassificationsBatch,
+  getReputationsBatch,
+} from '@/db/queries';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import {
@@ -108,6 +113,7 @@ agents.use('*', rateLimit(rateLimitConfigs.standard));
  * GET /api/v1/agents
  * List agents with optional filters and search
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Complex handler with multiple code paths for search vs SDK, OR vs AND mode
 agents.get('/', async (c) => {
   // Parse and validate query parameters
   const rawQuery = c.req.query();
@@ -131,8 +137,8 @@ agents.get('/', async (c) => {
 
   const sdk = createSDKService(c.env);
 
-  // Resolve chain IDs: prefer 'chains' over 'chainId' for backwards compatibility
-  const chainIds = query.chains ?? (query.chainId ? [query.chainId] : undefined);
+  // Resolve chain IDs: prefer 'chainIds' (array format), then 'chains' (CSV), then 'chainId' (single)
+  const chainIds = query.chainIds ?? query.chains ?? (query.chainId ? [query.chainId] : undefined);
 
   // If search query provided, use semantic search
   if (query.q) {
@@ -256,20 +262,81 @@ agents.get('/', async (c) => {
       },
     };
 
+    // Trigger background classification for unclassified agents (non-blocking)
+    const unclassifiedIds = sortedAgents
+      .filter((a) => !a.oasf)
+      .slice(0, 10) // Limit to 10 per request to avoid spam
+      .map((a) => a.id);
+
+    if (unclassifiedIds.length > 0) {
+      // Fire and forget - don't await to avoid blocking response
+      enqueueClassificationsBatch(c.env.DB, unclassifiedIds).catch((err) => {
+        console.error('Failed to enqueue classifications:', err);
+      });
+    }
+
     await cache.set(cacheKey, response, CACHE_TTL.AGENTS);
     return c.json(response);
   }
 
   // Otherwise, use SDK directly with cursor-based pagination
-  const agentsResult = await sdk.getAgents({
-    chainIds,
-    limit: query.limit,
-    cursor: query.cursor,
-    active: query.active,
-    hasMcp: query.mcp,
-    hasA2a: query.a2a,
-    hasX402: query.x402,
-  });
+  // Check if OR mode with multiple boolean filters
+  const booleanFilters: Array<'mcp' | 'a2a' | 'x402'> = [];
+  if (query.mcp) booleanFilters.push('mcp');
+  if (query.a2a) booleanFilters.push('a2a');
+  if (query.x402) booleanFilters.push('x402');
+
+  const isOrMode = query.filterMode === 'OR' && booleanFilters.length > 1;
+
+  let agentsResult: { items: AgentSummary[]; nextCursor?: string };
+
+  if (isOrMode) {
+    // OR mode: run separate queries for each boolean filter and merge results
+    const baseParams = {
+      chainIds,
+      limit: query.limit,
+      active: query.active,
+    };
+
+    const queryPromises = booleanFilters.map((filter) =>
+      sdk.getAgents({
+        ...baseParams,
+        hasMcp: filter === 'mcp' ? true : undefined,
+        hasA2a: filter === 'a2a' ? true : undefined,
+        hasX402: filter === 'x402' ? true : undefined,
+      })
+    );
+
+    const results = await Promise.all(queryPromises);
+
+    // Merge and deduplicate by agent ID
+    const agentMap = new Map<string, AgentSummary>();
+    for (const result of results) {
+      for (const agent of result.items) {
+        if (!agentMap.has(agent.id)) {
+          agentMap.set(agent.id, agent);
+        }
+      }
+    }
+
+    const mergedItems = [...agentMap.values()].slice(0, query.limit);
+    agentsResult = {
+      items: mergedItems,
+      // Cannot provide cursor for merged OR results
+      nextCursor: undefined,
+    };
+  } else {
+    // AND mode (default): single query with all filters
+    agentsResult = await sdk.getAgents({
+      chainIds,
+      limit: query.limit,
+      cursor: query.cursor,
+      active: query.active,
+      hasMcp: query.mcp,
+      hasA2a: query.a2a,
+      hasX402: query.x402,
+    });
+  }
 
   // Batch fetch classifications and reputations for all agents (N+1 fix)
   const agentIds = agentsResult.items.map((a) => a.id);
@@ -316,6 +383,19 @@ agents.get('/', async (c) => {
       nextCursor: agentsResult.nextCursor,
     },
   };
+
+  // Trigger background classification for unclassified agents (non-blocking)
+  const unclassifiedIds = sortedAgents
+    .filter((a) => !a.oasf)
+    .slice(0, 10) // Limit to 10 per request to avoid spam
+    .map((a) => a.id);
+
+  if (unclassifiedIds.length > 0) {
+    // Fire and forget - don't await to avoid blocking response
+    enqueueClassificationsBatch(c.env.DB, unclassifiedIds).catch((err) => {
+      console.error('Failed to enqueue classifications:', err);
+    });
+  }
 
   await cache.set(cacheKey, response, CACHE_TTL.AGENTS);
   return c.json(response);

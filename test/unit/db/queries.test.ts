@@ -8,6 +8,7 @@ import {
   cleanupOldJobs,
   deleteClassification,
   enqueueClassification,
+  enqueueClassificationsBatch,
   feedbackExistsByEasUid,
   getAllClassifications,
   getAllFeedback,
@@ -191,6 +192,54 @@ describe('Queue queries', () => {
       const status = await getQueueStatus(env.DB, agentId);
       expect(status).not.toBeNull();
       expect(status?.status).toBe('pending');
+    });
+  });
+
+  describe('enqueueClassificationsBatch', () => {
+    it('enqueues multiple agents', async () => {
+      const agentIds = ['11155111:200', '11155111:201', '11155111:202'];
+      const count = await enqueueClassificationsBatch(env.DB, agentIds);
+
+      expect(count).toBe(3);
+
+      // Verify all are enqueued
+      for (const agentId of agentIds) {
+        const status = await getQueueStatus(env.DB, agentId);
+        expect(status?.status).toBe('pending');
+      }
+    });
+
+    it('returns 0 for empty array', async () => {
+      const count = await enqueueClassificationsBatch(env.DB, []);
+      expect(count).toBe(0);
+    });
+
+    it('skips agents with pending jobs', async () => {
+      const agentId1 = '11155111:300';
+      const agentId2 = '11155111:301';
+
+      // First, enqueue agent1
+      await enqueueClassification(env.DB, agentId1);
+
+      // Now try to batch enqueue both
+      const count = await enqueueClassificationsBatch(env.DB, [agentId1, agentId2]);
+
+      // Should only enqueue agent2
+      expect(count).toBe(1);
+    });
+
+    it('skips agents with processing jobs', async () => {
+      const agentId = '11155111:400';
+
+      // Enqueue and mark as processing
+      const id = await enqueueClassification(env.DB, agentId);
+      await markJobProcessing(env.DB, id);
+
+      // Try to batch enqueue same agent
+      const count = await enqueueClassificationsBatch(env.DB, [agentId]);
+
+      // Should skip since already processing
+      expect(count).toBe(0);
     });
   });
 

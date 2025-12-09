@@ -46,18 +46,26 @@ const stringBooleanSchema = z
   .pipe(z.boolean());
 
 /**
- * Comma-separated chain IDs schema
- * Accepts format like "11155111,84532" and validates each ID
+ * Chain IDs schema - supports multiple formats:
+ * - CSV string: "11155111,84532"
+ * - Single string: "11155111"
+ * - Array of strings: ["11155111", "84532"] (from chainIds[]=X&chainIds[]=Y)
  */
 const chainsSchema = z
-  .string()
-  .transform((val) =>
-    val
-      .split(',')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0)
-      .map((s) => Number.parseInt(s, 10))
-  )
+  .union([
+    // Array format (from URL like chainIds[]=X&chainIds[]=Y)
+    z.array(z.coerce.number()),
+    // CSV string format (from URL like chains=X,Y)
+    z
+      .string()
+      .transform((val) =>
+        val
+          .split(',')
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0)
+          .map((s) => Number.parseInt(s, 10))
+      ),
+  ])
   .refine(
     (arr) =>
       arr.every((id) => SUPPORTED_CHAIN_IDS.includes(id as (typeof SUPPORTED_CHAIN_IDS)[number])),
@@ -84,6 +92,8 @@ export const listAgentsQuerySchema = z
     q: z.string().min(1).optional(),
     chainId: chainIdSchema.optional(),
     chains: chainsSchema.optional(),
+    // Alias for chains - supports chainIds[]=X&chainIds[]=Y format
+    chainIds: chainsSchema.optional(),
     active: stringBooleanSchema.optional(),
     mcp: stringBooleanSchema.optional(),
     a2a: stringBooleanSchema.optional(),

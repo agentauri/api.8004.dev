@@ -172,7 +172,7 @@ export async function getTotalClassificationCount(db: D1Database): Promise<numbe
 // ============================================================================
 
 /**
- * Enqueue a classification job
+ * Enqueue a classification job (only if no pending job exists)
  */
 export async function enqueueClassification(db: D1Database, agentId: string): Promise<string> {
   const id = crypto.randomUUID().replace(/-/g, '');
@@ -186,6 +186,47 @@ export async function enqueueClassification(db: D1Database, agentId: string): Pr
     .run();
 
   return id;
+}
+
+/**
+ * Enqueue classification for multiple agents in a single operation
+ * Skips agents that already have pending/processing jobs
+ */
+export async function enqueueClassificationsBatch(
+  db: D1Database,
+  agentIds: string[]
+): Promise<number> {
+  if (agentIds.length === 0) return 0;
+
+  // Get existing pending/processing jobs
+  const placeholders = agentIds.map(() => '?').join(',');
+  const existingJobs = await db
+    .prepare(
+      `SELECT agent_id FROM classification_queue
+       WHERE agent_id IN (${placeholders})
+       AND status IN ('pending', 'processing')`
+    )
+    .bind(...agentIds)
+    .all<{ agent_id: string }>();
+
+  const existingSet = new Set(existingJobs.results.map((r) => r.agent_id));
+  const toEnqueue = agentIds.filter((id) => !existingSet.has(id));
+
+  if (toEnqueue.length === 0) return 0;
+
+  // Insert new jobs in batch
+  const insertStatements = toEnqueue.map((agentId) => {
+    const id = crypto.randomUUID().replace(/-/g, '');
+    return db
+      .prepare(
+        `INSERT INTO classification_queue (id, agent_id, status)
+         VALUES (?, ?, 'pending')`
+      )
+      .bind(id, agentId);
+  });
+
+  await db.batch(insertStatements);
+  return toEnqueue.length;
 }
 
 /**

@@ -21,8 +21,8 @@ export interface ChainStats {
   activeCount: number;
   /** Number of inactive agents */
   inactiveCount?: number;
-  /** Status of the stats fetch - 'ok' or 'error' if RPC/subgraph failed */
-  status?: 'ok' | 'error';
+  /** Status of the stats fetch - 'ok', 'error' if RPC/subgraph failed, or 'cached' for fallback data */
+  status?: 'ok' | 'error' | 'cached';
 }
 
 /**

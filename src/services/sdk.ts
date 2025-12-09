@@ -303,7 +303,11 @@ export function createSDKService(env: Env): SDKService {
             status: 'ok',
           });
         } catch (error) {
-          console.error(`SDK getChainStats error for chain ${chain.chainId}:`, error);
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error(
+            `SDK getChainStats error for chain ${chain.chainId} (${chain.name}):`,
+            errorMessage
+          );
           // Include error status so consumers know data is unreliable
           results.push({
             chainId: chain.chainId,

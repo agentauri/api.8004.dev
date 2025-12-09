@@ -85,6 +85,43 @@ describe('listAgentsQuerySchema', () => {
     expect(result.limit).toBe(10);
   });
 
+  it('accepts chains as CSV format', () => {
+    const result = listAgentsQuerySchema.parse({
+      chains: '11155111,84532',
+    });
+    expect(result.chains).toEqual([11155111, 84532]);
+  });
+
+  it('accepts chainIds as array format (from chainIds[]=X&chainIds[]=Y)', () => {
+    const result = listAgentsQuerySchema.parse({
+      chainIds: ['11155111', '84532'],
+    });
+    expect(result.chainIds).toEqual([11155111, 84532]);
+  });
+
+  it('accepts chainIds as number array', () => {
+    const result = listAgentsQuerySchema.parse({
+      chainIds: [11155111, 84532],
+    });
+    expect(result.chainIds).toEqual([11155111, 84532]);
+  });
+
+  it('rejects invalid chain IDs in chainIds array', () => {
+    expect(() =>
+      listAgentsQuerySchema.parse({
+        chainIds: [11155111, 999999],
+      })
+    ).toThrow();
+  });
+
+  it('rejects invalid chain IDs in chains CSV', () => {
+    expect(() =>
+      listAgentsQuerySchema.parse({
+        chains: '11155111,999999',
+      })
+    ).toThrow();
+  });
+
   it('enforces limit constraints', () => {
     expect(listAgentsQuerySchema.parse({ limit: '1' }).limit).toBe(1);
     expect(listAgentsQuerySchema.parse({ limit: '100' }).limit).toBe(100);
