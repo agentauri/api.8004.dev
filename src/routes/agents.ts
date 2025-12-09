@@ -269,10 +269,12 @@ agents.get('/', async (c) => {
       .map((a) => a.id);
 
     if (unclassifiedIds.length > 0) {
-      // Fire and forget - don't await to avoid blocking response
-      enqueueClassificationsBatch(c.env.DB, unclassifiedIds).catch((err) => {
-        console.error('Failed to enqueue classifications:', err);
-      });
+      // Use waitUntil to properly register the background task with Workers runtime
+      c.executionCtx.waitUntil(
+        enqueueClassificationsBatch(c.env.DB, unclassifiedIds).catch((err) => {
+          console.error('Failed to enqueue classifications:', err);
+        })
+      );
     }
 
     await cache.set(cacheKey, response, CACHE_TTL.AGENTS);
@@ -391,10 +393,12 @@ agents.get('/', async (c) => {
     .map((a) => a.id);
 
   if (unclassifiedIds.length > 0) {
-    // Fire and forget - don't await to avoid blocking response
-    enqueueClassificationsBatch(c.env.DB, unclassifiedIds).catch((err) => {
-      console.error('Failed to enqueue classifications:', err);
-    });
+    // Use waitUntil to properly register the background task with Workers runtime
+    c.executionCtx.waitUntil(
+      enqueueClassificationsBatch(c.env.DB, unclassifiedIds).catch((err) => {
+        console.error('Failed to enqueue classifications:', err);
+      })
+    );
   }
 
   await cache.set(cacheKey, response, CACHE_TTL.AGENTS);
