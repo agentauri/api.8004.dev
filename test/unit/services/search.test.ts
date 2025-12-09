@@ -50,9 +50,8 @@ describe('createSearchService', () => {
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(body.query).toBe('test query');
-      expect(body.limit).toBe(20);
+      expect(body.topK).toBe(20);
       expect(body.minScore).toBe(0.3);
-      expect(body.includeMetadata).toBe(true);
     });
 
     it('applies custom limit and minScore', async () => {
@@ -73,7 +72,7 @@ describe('createSearchService', () => {
       await service.search({ query: 'test', limit: 50, minScore: 0.5 });
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body.limit).toBe(50);
+      expect(body.topK).toBe(50);
       expect(body.minScore).toBe(0.5);
     });
 
@@ -101,7 +100,7 @@ describe('createSearchService', () => {
       expect(body.filters.chainId).toBe(11155111);
     });
 
-    it('applies chainIds filter for multiple chains', async () => {
+    it('ignores multiple chainIds filter (not supported by search service)', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
         json: () =>
@@ -122,7 +121,8 @@ describe('createSearchService', () => {
       });
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body.filters.in.chainId).toEqual([11155111, 84532]);
+      // Multi-chain not supported, should not set chainId
+      expect(body.filters.chainId).toBeUndefined();
     });
 
     it('applies skills filter as capabilities', async () => {
@@ -149,7 +149,7 @@ describe('createSearchService', () => {
       expect(body.filters.capabilities).toEqual(['nlp', 'code']);
     });
 
-    it('applies boolean filters', async () => {
+    it('applies boolean filters with flat format', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
         json: () =>
@@ -166,13 +166,16 @@ describe('createSearchService', () => {
       const service = createSearchService(baseUrl);
       await service.search({
         query: 'test',
-        filters: { active: true, mcp: true, a2a: false },
+        filters: { active: true, mcp: true, a2a: false, x402: true },
       });
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body.filters.equals.active).toBe(true);
-      expect(body.filters.equals.mcp).toBe(true);
-      expect(body.filters.equals.a2a).toBe(false);
+      // Flat filter format (not nested in equals)
+      expect(body.filters.active).toBe(true);
+      expect(body.filters.mcp).toBe(true);
+      expect(body.filters.a2a).toBe(false);
+      // x402 maps to x402support
+      expect(body.filters.x402support).toBe(true);
     });
 
     it('transforms response to service format', async () => {

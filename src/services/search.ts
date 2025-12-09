@@ -38,23 +38,23 @@ export interface SearchService {
 }
 
 /**
- * Search service request body (AG0 Semantic Search Standard)
+ * Search service request body (agent0lab search-service format)
+ * Note: Uses flat filter format, not AG0 nested equals/in format
  */
 interface SearchRequestBody {
   query: string;
-  limit: number;
-  offset?: number;
-  cursor?: string;
+  topK: number;
   minScore?: number;
   filters?: {
-    equals?: Record<string, unknown>;
-    in?: Record<string, unknown[]>;
+    // Flat filters (agent0lab format)
+    chainId?: number;
+    active?: boolean;
+    mcp?: boolean;
+    a2a?: boolean;
+    x402support?: boolean;
     capabilities?: string[];
     domains?: string[];
-    chainId?: number;
-    mode?: 'AND' | 'OR';
   };
-  includeMetadata?: boolean;
 }
 
 /**
@@ -91,55 +91,47 @@ export function createSearchService(searchServiceUrl: string): SearchService {
   const baseUrl = searchServiceUrl.replace(/\/$/, '');
 
   return {
-    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This function handles complex filter logic that is intentionally comprehensive
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Filter building logic requires multiple conditional checks
     async search(params: SearchParams): Promise<SearchServiceResult> {
-      const { query, limit = 20, minScore = 0.3, cursor, filters } = params;
+      const { query, limit = 20, minScore = 0.3, filters } = params;
 
-      // Build request body following AG0 Semantic Search Standard
+      // Build request body using agent0lab search-service format (flat filters)
       const body: SearchRequestBody = {
         query,
-        limit,
+        topK: limit,
         minScore,
-        cursor,
-        includeMetadata: true,
       };
 
-      // Add filters if provided
+      // Add flat filters if provided (agent0lab format, not AG0 nested format)
       if (filters) {
         body.filters = {};
 
+        // Chain ID filter (single chain only - search service doesn't support multi-chain in filters)
         if (filters.chainIds?.length === 1) {
           body.filters.chainId = filters.chainIds[0];
-        } else if (filters.chainIds && filters.chainIds.length > 1) {
-          body.filters.in = { chainId: filters.chainIds };
         }
 
+        // Boolean filters - use flat format with correct field names
+        if (filters.active !== undefined) {
+          body.filters.active = filters.active;
+        }
+        if (filters.mcp !== undefined) {
+          body.filters.mcp = filters.mcp;
+        }
+        if (filters.a2a !== undefined) {
+          body.filters.a2a = filters.a2a;
+        }
+        if (filters.x402 !== undefined) {
+          // Search service uses 'x402support', not 'x402'
+          body.filters.x402support = filters.x402;
+        }
+
+        // Array filters
         if (filters.skills?.length) {
           body.filters.capabilities = filters.skills;
         }
-
         if (filters.domains?.length) {
           body.filters.domains = filters.domains;
-        }
-
-        if (filters.active !== undefined) {
-          body.filters.equals = { ...body.filters.equals, active: filters.active };
-        }
-
-        if (filters.mcp !== undefined) {
-          body.filters.equals = { ...body.filters.equals, mcp: filters.mcp };
-        }
-
-        if (filters.a2a !== undefined) {
-          body.filters.equals = { ...body.filters.equals, a2a: filters.a2a };
-        }
-
-        if (filters.x402 !== undefined) {
-          body.filters.equals = { ...body.filters.equals, x402: filters.x402 };
-        }
-
-        if (filters.filterMode) {
-          body.filters.mode = filters.filterMode;
         }
       }
 
