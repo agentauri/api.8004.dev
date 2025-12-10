@@ -20,6 +20,8 @@ export interface SearchParams {
   minScore?: number;
   /** Pagination cursor */
   cursor?: string;
+  /** Direct offset for pagination (takes precedence over cursor) */
+  offset?: number;
   /** Optional filters */
   filters?: SearchFilters;
 }
@@ -393,21 +395,25 @@ export function createSearchService(searchServiceUrl: string, cache?: CacheServi
   return {
     // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Search logic with cache and OR mode requires multiple branches
     async search(params: SearchParams): Promise<SearchServiceResult> {
-      const { query, limit = 20, minScore = 0.3, cursor, filters } = params;
+      const { query, limit = 20, minScore = 0.3, cursor, offset, filters } = params;
 
-      // Track offset from expired cursor for fallback pagination
-      let expiredCursorOffset = 0;
+      // Determine starting offset
+      // Priority: explicit offset > cursor > 0
+      let startOffset = 0;
 
-      // Check if cursor is a cached cursor (pagination from cache)
-      if (cursor && cache) {
+      // If explicit offset is provided, use it directly
+      if (offset !== undefined && offset > 0) {
+        startOffset = offset;
+      } else if (cursor && cache) {
+        // Check if cursor is a cached cursor (pagination from cache)
         const cachedCursor = decodeCachedCursor(cursor);
         if (cachedCursor) {
           const cached = await cache.get<CachedSearchData>(cachedCursor.k);
           if (cached) {
             return paginateFromCache(cached, cachedCursor.k, cachedCursor.o, limit);
           }
-          // Cache expired - save offset for fallback
-          expiredCursorOffset = cachedCursor.o;
+          // Cache expired - use offset from cursor as fallback
+          startOffset = cachedCursor.o;
         }
       }
 
@@ -450,14 +456,10 @@ export function createSearchService(searchServiceUrl: string, cache?: CacheServi
           };
           await cache.set(cacheKey, cacheData, CACHE_TTL.SEARCH_RESULTS);
 
-          // Use offset from expired cursor if available, otherwise start from 0
-          const startOffset = expiredCursorOffset > 0 ? expiredCursorOffset : 0;
           return paginateFromCache(cacheData, cacheKey, startOffset, limit);
         }
 
         // No caching needed, return limited results
-        // Apply offset from expired cursor if available
-        const startOffset = expiredCursorOffset > 0 ? expiredCursorOffset : 0;
         const paginatedResults = merged.results.slice(startOffset, startOffset + limit);
         const hasMore = startOffset + limit < merged.results.length;
 
@@ -509,14 +511,10 @@ export function createSearchService(searchServiceUrl: string, cache?: CacheServi
         };
         await cache.set(cacheKey, cacheData, CACHE_TTL.SEARCH_RESULTS);
 
-        // Use offset from expired cursor if available, otherwise start from 0
-        const startOffset = expiredCursorOffset > 0 ? expiredCursorOffset : 0;
         return paginateFromCache(cacheData, cacheKey, startOffset, limit);
       }
 
       // No caching needed (few results or no cache service)
-      // Apply offset from expired cursor if available
-      const startOffset = expiredCursorOffset > 0 ? expiredCursorOffset : 0;
       const paginatedResults = allResults.results.slice(startOffset, startOffset + limit);
       const hasMore = startOffset + limit < allResults.results.length;
 
