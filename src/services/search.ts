@@ -268,7 +268,10 @@ export function createSearchService(searchServiceUrl: string): SearchService {
     }));
 
     // Determine if there are more results
-    const hasMore = data.pagination?.hasMore ?? offset + results.length < data.total;
+    // Note: search-service may return total = results.length (not true total)
+    // So we use a heuristic: if we got exactly `limit` results, assume there are more
+    const hasMore =
+      data.pagination?.hasMore ?? (results.length >= limit || offset + results.length < data.total);
 
     // Generate nextCursor if there are more results
     // Use server-provided cursor if available, otherwise generate offset-based cursor
@@ -277,6 +280,9 @@ export function createSearchService(searchServiceUrl: string): SearchService {
       nextCursor = data.pagination?.nextCursor ?? encodeOffsetCursor(offset + results.length);
     }
 
+    // Total from search-service may be capped at results.length
+    // If hasMore is true, we know there are at least more results
+    // Return the server's total but indicate hasMore correctly
     return {
       results,
       total: data.total,
