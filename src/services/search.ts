@@ -272,8 +272,11 @@ function mergeSearchResults(
   };
 }
 
-/** Maximum results to fetch from search-service for caching */
-const MAX_SEARCH_RESULTS = 1000;
+/**
+ * Maximum results to fetch from search-service for caching.
+ * Note: The search service (agent0lab) has MAX_TOP_K = 100, so we cap at 100.
+ */
+const MAX_SEARCH_RESULTS = 100;
 
 /**
  * Create search service client
@@ -392,6 +395,9 @@ export function createSearchService(searchServiceUrl: string, cache?: CacheServi
     async search(params: SearchParams): Promise<SearchServiceResult> {
       const { query, limit = 20, minScore = 0.3, cursor, filters } = params;
 
+      // Track offset from expired cursor for fallback pagination
+      let expiredCursorOffset = 0;
+
       // Check if cursor is a cached cursor (pagination from cache)
       if (cursor && cache) {
         const cachedCursor = decodeCachedCursor(cursor);
@@ -400,7 +406,8 @@ export function createSearchService(searchServiceUrl: string, cache?: CacheServi
           if (cached) {
             return paginateFromCache(cached, cachedCursor.k, cachedCursor.o, limit);
           }
-          // Cache expired, fall through to fresh search
+          // Cache expired - save offset for fallback
+          expiredCursorOffset = cachedCursor.o;
         }
       }
 
@@ -443,16 +450,22 @@ export function createSearchService(searchServiceUrl: string, cache?: CacheServi
           };
           await cache.set(cacheKey, cacheData, CACHE_TTL.SEARCH_RESULTS);
 
-          // Return first page with cached cursor
-          return paginateFromCache(cacheData, cacheKey, 0, limit);
+          // Use offset from expired cursor if available, otherwise start from 0
+          const startOffset = expiredCursorOffset > 0 ? expiredCursorOffset : 0;
+          return paginateFromCache(cacheData, cacheKey, startOffset, limit);
         }
 
         // No caching needed, return limited results
+        // Apply offset from expired cursor if available
+        const startOffset = expiredCursorOffset > 0 ? expiredCursorOffset : 0;
+        const paginatedResults = merged.results.slice(startOffset, startOffset + limit);
+        const hasMore = startOffset + limit < merged.results.length;
+
         return {
           ...merged,
-          results: merged.results.slice(0, limit),
-          hasMore: merged.total > limit,
-          nextCursor: undefined,
+          results: paginatedResults,
+          hasMore,
+          nextCursor: hasMore ? encodeOffsetCursor(startOffset + limit) : undefined,
         };
       }
 
@@ -496,16 +509,22 @@ export function createSearchService(searchServiceUrl: string, cache?: CacheServi
         };
         await cache.set(cacheKey, cacheData, CACHE_TTL.SEARCH_RESULTS);
 
-        // Return first page with cached cursor
-        return paginateFromCache(cacheData, cacheKey, 0, limit);
+        // Use offset from expired cursor if available, otherwise start from 0
+        const startOffset = expiredCursorOffset > 0 ? expiredCursorOffset : 0;
+        return paginateFromCache(cacheData, cacheKey, startOffset, limit);
       }
 
       // No caching needed (few results or no cache service)
+      // Apply offset from expired cursor if available
+      const startOffset = expiredCursorOffset > 0 ? expiredCursorOffset : 0;
+      const paginatedResults = allResults.results.slice(startOffset, startOffset + limit);
+      const hasMore = startOffset + limit < allResults.results.length;
+
       return {
-        results: allResults.results.slice(0, limit),
+        results: paginatedResults,
         total: allResults.results.length,
-        hasMore: allResults.results.length > limit,
-        nextCursor: undefined,
+        hasMore,
+        nextCursor: hasMore ? encodeOffsetCursor(startOffset + limit) : undefined,
         byChain,
       };
     },
