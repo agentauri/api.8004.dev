@@ -100,6 +100,7 @@ export const listAgentsQuerySchema = z
     mcp: stringBooleanSchema.optional(),
     a2a: stringBooleanSchema.optional(),
     x402: stringBooleanSchema.optional(),
+    hasRegistrationFile: stringBooleanSchema.optional(),
     skills: z
       .string()
       .transform((val) => val.split(',').map((s) => s.trim()))
@@ -149,6 +150,7 @@ export const searchRequestSchema = z.object({
   minScore: z.number().min(0).max(1).default(0.3),
   limit: z.number().int().min(1).max(100).default(20),
   cursor: z.string().optional(),
+  offset: z.number().int().min(0).optional(),
 });
 
 export type SearchRequestBody = z.infer<typeof searchRequestSchema>;

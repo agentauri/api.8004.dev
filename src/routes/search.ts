@@ -64,6 +64,7 @@ search.post('/', async (c) => {
       limit: body.limit,
       minScore: body.minScore,
       cursor: body.cursor,
+      offset: body.offset,
       filters: body.filters,
     });
 
