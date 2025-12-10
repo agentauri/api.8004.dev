@@ -3,8 +3,10 @@
  * @module services/search
  */
 
+import { createHash } from 'node:crypto';
 import { fetchWithTimeout } from '@/lib/utils/fetch';
 import type { SearchFilters, SearchResultItem, SearchServiceResult } from '@/types';
+import { CACHE_KEYS, CACHE_TTL, type CacheService } from './cache';
 
 /**
  * Search parameters
@@ -96,6 +98,25 @@ interface OrModeCursor {
 }
 
 /**
+ * Cached search cursor for pagination from KV cache
+ */
+interface CachedSearchCursor {
+  /** Cache key where results are stored */
+  k: string;
+  /** Current offset in results */
+  o: number;
+}
+
+/**
+ * Cached search data stored in KV
+ */
+interface CachedSearchData {
+  results: SearchResultItem[];
+  total: number;
+  byChain: Record<number, number>;
+}
+
+/**
  * Encode offset into a cursor string
  */
 function encodeOffsetCursor(offset: number): string {
@@ -123,6 +144,69 @@ function decodeCursor(cursor: string): { offset: number; orCursor?: OrModeCursor
 function encodeOrCursor(cursors: Record<string, string>, globalOffset: number): string {
   const orCursor: OrModeCursor = { mode: 'OR', cursors, globalOffset };
   return Buffer.from(JSON.stringify(orCursor)).toString('base64url');
+}
+
+/**
+ * Encode cached search cursor
+ */
+function encodeCachedCursor(cacheKey: string, offset: number): string {
+  const cursor: CachedSearchCursor = { k: cacheKey, o: offset };
+  return Buffer.from(JSON.stringify(cursor)).toString('base64url');
+}
+
+/**
+ * Decode cached search cursor
+ */
+function decodeCachedCursor(cursor: string): CachedSearchCursor | null {
+  try {
+    const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString());
+    if (decoded.k && typeof decoded.o === 'number') {
+      return decoded as CachedSearchCursor;
+    }
+  } catch {
+    // Not a cached cursor
+  }
+  return null;
+}
+
+/**
+ * Compute byChain breakdown from results
+ */
+function computeByChain(results: SearchResultItem[]): Record<number, number> {
+  const byChain: Record<number, number> = {};
+  for (const item of results) {
+    byChain[item.chainId] = (byChain[item.chainId] || 0) + 1;
+  }
+  return byChain;
+}
+
+/**
+ * Generate hash for search parameters (used as cache key)
+ */
+function hashSearchParams(query: string, minScore: number, filters?: SearchFilters): string {
+  const obj = { query, minScore, filters };
+  return createHash('sha256').update(JSON.stringify(obj)).digest('hex').substring(0, 16);
+}
+
+/**
+ * Paginate from cached results
+ */
+function paginateFromCache(
+  cached: CachedSearchData,
+  cacheKey: string,
+  offset: number,
+  limit: number
+): SearchServiceResult {
+  const pageResults = cached.results.slice(offset, offset + limit);
+  const hasMore = offset + limit < cached.total;
+
+  return {
+    results: pageResults,
+    total: cached.total,
+    hasMore,
+    nextCursor: hasMore ? encodeCachedCursor(cacheKey, offset + limit) : undefined,
+    byChain: cached.byChain,
+  };
 }
 
 /**
@@ -187,10 +271,15 @@ function mergeSearchResults(
   };
 }
 
+/** Maximum results to fetch from search-service for caching */
+const MAX_SEARCH_RESULTS = 1000;
+
 /**
  * Create search service client
+ * @param searchServiceUrl - Base URL for search service
+ * @param cache - Optional cache service for pagination support
  */
-export function createSearchService(searchServiceUrl: string): SearchService {
+export function createSearchService(searchServiceUrl: string, cache?: CacheService): SearchService {
   const baseUrl = searchServiceUrl.replace(/\/$/, '');
 
   /**
@@ -292,11 +381,21 @@ export function createSearchService(searchServiceUrl: string): SearchService {
   }
 
   return {
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Search logic with cache and OR mode requires multiple branches
     async search(params: SearchParams): Promise<SearchServiceResult> {
       const { query, limit = 20, minScore = 0.3, cursor, filters } = params;
 
-      // Decode cursor (may be offset or OR composite)
-      const { orCursor } = cursor ? decodeCursor(cursor) : { orCursor: undefined };
+      // Check if cursor is a cached cursor (pagination from cache)
+      if (cursor && cache) {
+        const cachedCursor = decodeCachedCursor(cursor);
+        if (cachedCursor) {
+          const cached = await cache.get<CachedSearchData>(cachedCursor.k);
+          if (cached) {
+            return paginateFromCache(cached, cachedCursor.k, cachedCursor.o, limit);
+          }
+          // Cache expired, fall through to fresh search
+        }
+      }
 
       // Check if OR mode with multiple boolean filters
       const booleanFilters: Array<'mcp' | 'a2a' | 'x402'> = [];
@@ -315,36 +414,68 @@ export function createSearchService(searchServiceUrl: string): SearchService {
           domains: filters?.domains,
         };
 
-        // Use saved cursors from composite cursor if available
+        // Fetch all results for each filter
         const searchPromises = booleanFilters.map(async (filter) => {
-          const filterCursor = orCursor?.cursors[filter];
-          const result = await executeSearch(
-            query,
-            limit,
-            minScore,
-            {
-              ...baseFilters,
-              [filter]: true,
-            },
-            filterCursor
-          );
+          const result = await executeSearch(query, MAX_SEARCH_RESULTS, minScore, {
+            ...baseFilters,
+            [filter]: true,
+          });
           return { result, filterKey: filter };
         });
 
         const results = await Promise.all(searchPromises);
-        return mergeSearchResults(results, limit);
+        const merged = mergeSearchResults(results, MAX_SEARCH_RESULTS);
+
+        // Cache merged results if there are more than limit
+        if (cache && merged.total > limit) {
+          const cacheKey = CACHE_KEYS.searchResults(hashSearchParams(query, minScore, filters));
+          const cacheData: CachedSearchData = {
+            results: merged.results,
+            total: merged.total,
+            byChain: merged.byChain || {},
+          };
+          await cache.set(cacheKey, cacheData, CACHE_TTL.SEARCH_RESULTS);
+
+          // Return first page with cached cursor
+          return paginateFromCache(cacheData, cacheKey, 0, limit);
+        }
+
+        // No caching needed, return limited results
+        return {
+          ...merged,
+          results: merged.results.slice(0, limit),
+          hasMore: merged.total > limit,
+          nextCursor: undefined,
+        };
       }
 
-      // AND mode (default): single search with all filters
-      const result = await executeSearch(query, limit, minScore, filters, cursor);
+      // AND mode (default): single search
+      // Fetch all results (up to MAX) for caching
+      const allResults = await executeSearch(query, MAX_SEARCH_RESULTS, minScore, filters);
+      const byChain = computeByChain(allResults.results);
 
-      // Add byChain breakdown for AND mode
-      const byChain: Record<number, number> = {};
-      for (const item of result.results) {
-        byChain[item.chainId] = (byChain[item.chainId] || 0) + 1;
+      // Cache results if there are more than limit
+      if (cache && allResults.results.length > limit) {
+        const cacheKey = CACHE_KEYS.searchResults(hashSearchParams(query, minScore, filters));
+        const cacheData: CachedSearchData = {
+          results: allResults.results,
+          total: allResults.results.length,
+          byChain,
+        };
+        await cache.set(cacheKey, cacheData, CACHE_TTL.SEARCH_RESULTS);
+
+        // Return first page with cached cursor
+        return paginateFromCache(cacheData, cacheKey, 0, limit);
       }
 
-      return { ...result, byChain };
+      // No caching needed (few results or no cache service)
+      return {
+        results: allResults.results.slice(0, limit),
+        total: allResults.results.length,
+        hasMore: allResults.results.length > limit,
+        nextCursor: undefined,
+        byChain,
+      };
     },
 
     async healthCheck(): Promise<boolean> {

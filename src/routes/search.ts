@@ -41,17 +41,23 @@ search.post('/', async (c) => {
     return errors.badRequest(c, 'Invalid JSON body');
   }
 
-  const cache = createCacheService(c.env.CACHE, CACHE_TTL.SEARCH);
-  const cacheKey = cache.generateKey('search', body);
+  // Cache for search results pagination (used by search service)
+  const searchResultsCache = createCacheService(c.env.CACHE, CACHE_TTL.SEARCH_RESULTS);
 
-  // Check cache
-  const cached = await cache.get<SearchResponse>(cacheKey);
-  if (cached) {
-    return c.json(cached);
+  // Cache for full API response (only for first page without cursor)
+  const responseCache = createCacheService(c.env.CACHE, CACHE_TTL.SEARCH);
+
+  // Check response cache only for first page (no cursor)
+  if (!body.cursor) {
+    const cacheKey = responseCache.generateKey('search', body);
+    const cached = await responseCache.get<SearchResponse>(cacheKey);
+    if (cached) {
+      return c.json(cached);
+    }
   }
 
-  // Perform search
-  const searchService = createSearchService(c.env.SEARCH_SERVICE_URL);
+  // Perform search (pass cache for pagination support)
+  const searchService = createSearchService(c.env.SEARCH_SERVICE_URL, searchResultsCache);
   const searchResults = await searchService.search({
     query: body.query,
     limit: body.limit,
@@ -110,7 +116,12 @@ search.post('/', async (c) => {
     },
   };
 
-  await cache.set(cacheKey, response, CACHE_TTL.SEARCH);
+  // Cache full response only for first page (no cursor in request)
+  if (!body.cursor) {
+    const cacheKey = responseCache.generateKey('search', body);
+    await responseCache.set(cacheKey, response, CACHE_TTL.SEARCH);
+  }
+
   return c.json(response);
 });
 
