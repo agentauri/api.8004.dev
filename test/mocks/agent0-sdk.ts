@@ -77,9 +77,27 @@ export const mockSDKAgentDetail = {
  * Mock chain stats
  */
 export const mockChainStats = [
-  { chainId: 11155111, name: 'Ethereum Sepolia', agentCount: 100, activeCount: 75 },
-  { chainId: 84532, name: 'Base Sepolia', agentCount: 50, activeCount: 40 },
-  { chainId: 80002, name: 'Polygon Amoy', agentCount: 25, activeCount: 20 },
+  {
+    chainId: 11155111,
+    name: 'Ethereum Sepolia',
+    totalCount: 150,
+    withRegistrationFileCount: 100,
+    activeCount: 75,
+  },
+  {
+    chainId: 84532,
+    name: 'Base Sepolia',
+    totalCount: 80,
+    withRegistrationFileCount: 50,
+    activeCount: 40,
+  },
+  {
+    chainId: 80002,
+    name: 'Polygon Amoy',
+    totalCount: 40,
+    withRegistrationFileCount: 25,
+    activeCount: 20,
+  },
 ];
 
 /**
