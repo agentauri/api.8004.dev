@@ -23,23 +23,23 @@ describe('GET /api/v1/stats', () => {
     expect(body.data).toBeDefined();
   });
 
-  it('returns correct stats structure with inactive counts', async () => {
+  it('returns correct stats structure with three count types', async () => {
     const response = await testRoute('/api/v1/stats');
 
     const body = await response.json();
     const data = body.data;
 
     expect(data).toHaveProperty('totalAgents');
+    expect(data).toHaveProperty('withRegistrationFile');
     expect(data).toHaveProperty('activeAgents');
-    expect(data).toHaveProperty('inactiveAgents');
     expect(data).toHaveProperty('chainBreakdown');
     expect(typeof data.totalAgents).toBe('number');
+    expect(typeof data.withRegistrationFile).toBe('number');
     expect(typeof data.activeAgents).toBe('number');
-    expect(typeof data.inactiveAgents).toBe('number');
     expect(Array.isArray(data.chainBreakdown)).toBe(true);
   });
 
-  it('includes chain breakdown with inactive counts for all chains', async () => {
+  it('includes chain breakdown with all count types for all chains', async () => {
     const response = await testRoute('/api/v1/stats');
 
     const body = await response.json();
@@ -50,25 +50,14 @@ describe('GET /api/v1/stats', () => {
     expect(chainIds).toContain(84532); // Base Sepolia
     expect(chainIds).toContain(80002); // Polygon Amoy
 
-    // Each chain should have inactiveCount
+    // Each chain should have all count types
     for (const chain of body.data.chainBreakdown) {
-      expect(chain).toHaveProperty('inactiveCount');
-      expect(typeof chain.inactiveCount).toBe('number');
-    }
-  });
-
-  it('correctly calculates inactive counts', async () => {
-    const response = await testRoute('/api/v1/stats');
-
-    const body = await response.json();
-    const { totalAgents, activeAgents, inactiveAgents, chainBreakdown } = body.data;
-
-    // inactiveAgents should equal totalAgents - activeAgents
-    expect(inactiveAgents).toBe(totalAgents - activeAgents);
-
-    // Each chain's inactiveCount should equal agentCount - activeCount
-    for (const chain of chainBreakdown) {
-      expect(chain.inactiveCount).toBe(chain.agentCount - chain.activeCount);
+      expect(chain).toHaveProperty('totalCount');
+      expect(chain).toHaveProperty('withRegistrationFileCount');
+      expect(chain).toHaveProperty('activeCount');
+      expect(typeof chain.totalCount).toBe('number');
+      expect(typeof chain.withRegistrationFileCount).toBe('number');
+      expect(typeof chain.activeCount).toBe('number');
     }
   });
 
@@ -76,11 +65,16 @@ describe('GET /api/v1/stats', () => {
     const response = await testRoute('/api/v1/stats');
 
     const body = await response.json();
-    const { totalAgents, activeAgents, chainBreakdown } = body.data;
+    const { totalAgents, withRegistrationFile, activeAgents, chainBreakdown } = body.data;
 
     // Totals should equal sum of chain breakdowns
     const expectedTotal = chainBreakdown.reduce(
-      (sum: number, chain: { agentCount: number }) => sum + chain.agentCount,
+      (sum: number, chain: { totalCount: number }) => sum + chain.totalCount,
+      0
+    );
+    const expectedWithRegFile = chainBreakdown.reduce(
+      (sum: number, chain: { withRegistrationFileCount: number }) =>
+        sum + chain.withRegistrationFileCount,
       0
     );
     const expectedActive = chainBreakdown.reduce(
@@ -89,6 +83,7 @@ describe('GET /api/v1/stats', () => {
     );
 
     expect(totalAgents).toBe(expectedTotal);
+    expect(withRegistrationFile).toBe(expectedWithRegFile);
     expect(activeAgents).toBe(expectedActive);
   });
 

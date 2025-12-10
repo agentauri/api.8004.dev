@@ -267,31 +267,69 @@ export function createSDKService(env: Env): SDKService {
     },
 
     async getChainStats(): Promise<ChainStats[]> {
+      // Subgraph URLs for direct queries (to count ALL agents without registrationFile filter)
+      const SUBGRAPH_URLS: Record<number, string> = {
+        11155111:
+          'https://gateway.thegraph.com/api/00a452ad3cd1900273ea62c1bf283f93/subgraphs/id/6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT',
+        84532:
+          'https://gateway.thegraph.com/api/00a452ad3cd1900273ea62c1bf283f93/subgraphs/id/GjQEDgEKqoh5Yc8MUgxoQoRATEJdEiH7HbocfR1aFiHa',
+        80002:
+          'https://gateway.thegraph.com/api/00a452ad3cd1900273ea62c1bf283f93/subgraphs/id/2A1JB18r1mF2VNP4QBH4mmxd74kbHoM6xLXC8ABAKf7j',
+      };
+
+      // Helper to count agents via direct subgraph query (without registrationFile filter)
+      async function countAllAgentsDirectly(chainId: number): Promise<number> {
+        const url = SUBGRAPH_URLS[chainId];
+        if (!url) return 0;
+
+        let total = 0;
+        let skip = 0;
+
+        while (true) {
+          const query = `{ agents(first: 1000, skip: ${skip}) { id } }`;
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query }),
+          });
+
+          if (!response.ok) break;
+
+          const data = (await response.json()) as { data?: { agents?: { id: string }[] } };
+          const agents = data?.data?.agents || [];
+          const count = agents.length;
+
+          if (count === 0) break;
+          total += count;
+          if (count < 1000) break;
+          skip += 1000;
+          if (skip > 10000) break; // Safety limit
+        }
+
+        return total;
+      }
+
       const results: ChainStats[] = [];
 
       for (const chain of SUPPORTED_CHAINS) {
         try {
           const sdk = getSDK(chain.chainId);
 
-          // Fetch all agents with pagination (subgraph limit is 1000 per query)
-          // This scales automatically to any number of agents (5k, 10k, 100k...)
-          let allCount = 0;
-          let activeCount = 0;
-          let cursor: string | undefined;
+          // 1. Count ALL agents (no filter) - direct subgraph query
+          const totalCount = await countAllAgentsDirectly(chain.chainId);
 
-          // Count all agents using single-chain path (skip-based pagination)
-          // IMPORTANT: Do NOT pass `chains` param - this triggers multi-chain path
-          // which has pageSize*3 limit per chain and breaks for >3k agents.
-          // The SDK uses its constructor chainId for single-chain queries.
-          // Note: Use 999 because SDK adds +1 internally for hasMore check,
-          // and subgraph max is 1000 (so 999+1=1000 stays within limit)
+          // 2. Count agents with registrationFile (SDK default behavior)
+          // SDK applies registrationFile_not: null filter automatically
+          let withRegFileCount = 0;
+          let cursor: string | undefined;
           do {
             const result = await sdk.searchAgents({}, undefined, 999, cursor);
-            allCount += result.items.length;
+            withRegFileCount += result.items.length;
             cursor = result.nextCursor;
           } while (cursor);
 
-          // Count active agents using single-chain path
+          // 3. Count active agents (active: true AND has registrationFile)
+          let activeCount = 0;
           cursor = undefined;
           do {
             const result = await sdk.searchAgents({ active: true }, undefined, 999, cursor);
@@ -304,8 +342,9 @@ export function createSDKService(env: Env): SDKService {
             name: chain.name,
             shortName: chain.shortName,
             explorerUrl: chain.explorerUrl,
-            agentCount: allCount,
-            activeCount: activeCount,
+            totalCount,
+            withRegistrationFileCount: withRegFileCount,
+            activeCount,
             status: 'ok',
           });
         } catch (error) {
@@ -314,13 +353,13 @@ export function createSDKService(env: Env): SDKService {
             `SDK getChainStats error for chain ${chain.chainId} (${chain.name}):`,
             errorMessage
           );
-          // Include error status so consumers know data is unreliable
           results.push({
             chainId: chain.chainId,
             name: chain.name,
             shortName: chain.shortName,
             explorerUrl: chain.explorerUrl,
-            agentCount: 0,
+            totalCount: 0,
+            withRegistrationFileCount: 0,
             activeCount: 0,
             status: 'error',
           });

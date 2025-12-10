@@ -47,13 +47,15 @@ describe('GET /api/v1/chains', () => {
     expect(chain).toHaveProperty('name');
     expect(chain).toHaveProperty('shortName');
     expect(chain).toHaveProperty('explorerUrl');
-    expect(chain).toHaveProperty('agentCount');
+    expect(chain).toHaveProperty('totalCount');
+    expect(chain).toHaveProperty('withRegistrationFileCount');
     expect(chain).toHaveProperty('activeCount');
     expect(typeof chain.chainId).toBe('number');
     expect(typeof chain.name).toBe('string');
     expect(typeof chain.shortName).toBe('string');
     expect(typeof chain.explorerUrl).toBe('string');
-    expect(typeof chain.agentCount).toBe('number');
+    expect(typeof chain.totalCount).toBe('number');
+    expect(typeof chain.withRegistrationFileCount).toBe('number');
     expect(typeof chain.activeCount).toBe('number');
   });
 

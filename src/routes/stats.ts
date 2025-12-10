@@ -33,23 +33,20 @@ stats.get('/', async (c) => {
   const chainStats = await sdk.getChainStats();
 
   // Aggregate totals
-  const totalAgents = chainStats.reduce((sum, chain) => sum + chain.agentCount, 0);
+  const totalAgents = chainStats.reduce((sum, chain) => sum + chain.totalCount, 0);
+  const withRegistrationFile = chainStats.reduce(
+    (sum, chain) => sum + chain.withRegistrationFileCount,
+    0
+  );
   const activeAgents = chainStats.reduce((sum, chain) => sum + chain.activeCount, 0);
-  const inactiveAgents = totalAgents - activeAgents;
-
-  // Add inactiveCount to each chain breakdown
-  const chainBreakdownWithInactive = chainStats.map((chain) => ({
-    ...chain,
-    inactiveCount: chain.agentCount - chain.activeCount,
-  }));
 
   const response: PlatformStatsResponse = {
     success: true,
     data: {
       totalAgents,
+      withRegistrationFile,
       activeAgents,
-      inactiveAgents,
-      chainBreakdown: chainBreakdownWithInactive,
+      chainBreakdown: chainStats,
     },
   };
 

@@ -15,12 +15,12 @@ export interface ChainStats {
   shortName: string;
   /** Block explorer URL */
   explorerUrl: string;
-  /** Total number of registered agents */
-  agentCount: number;
-  /** Number of active agents */
+  /** Total number of registered agents (all agents, no filter) */
+  totalCount: number;
+  /** Number of agents with registration file (have metadata) */
+  withRegistrationFileCount: number;
+  /** Number of active agents (active: true AND has registration file) */
   activeCount: number;
-  /** Number of inactive agents */
-  inactiveCount?: number;
   /** Status of the stats fetch - 'ok', 'error' if RPC/subgraph failed, or 'cached' for fallback data */
   status?: 'ok' | 'error' | 'cached';
 }
@@ -49,12 +49,12 @@ export interface ChainStatsResponse {
  * Platform-wide statistics
  */
 export interface PlatformStats {
-  /** Total number of registered agents across all chains */
+  /** Total number of registered agents across all chains (all agents, no filter) */
   totalAgents: number;
+  /** Number of agents with registration file across all chains (have metadata) */
+  withRegistrationFile: number;
   /** Number of active agents across all chains */
   activeAgents: number;
-  /** Number of inactive agents across all chains */
-  inactiveAgents: number;
   /** Per-chain breakdown */
   chainBreakdown: ChainStats[];
 }

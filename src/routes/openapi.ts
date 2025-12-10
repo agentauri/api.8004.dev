@@ -853,12 +853,19 @@ function generateOpenAPISpec(): object {
         },
         ChainStats: {
           type: 'object',
-          required: ['chainId', 'name', 'agentCount', 'activeCount'],
+          required: ['chainId', 'name', 'totalCount', 'withRegistrationFileCount', 'activeCount'],
           properties: {
             chainId: { type: 'integer' },
             name: { type: 'string' },
-            agentCount: { type: 'integer' },
-            activeCount: { type: 'integer' },
+            shortName: { type: 'string' },
+            explorerUrl: { type: 'string' },
+            totalCount: { type: 'integer', description: 'Total number of agents (all, no filter)' },
+            withRegistrationFileCount: {
+              type: 'integer',
+              description: 'Agents with registration file (have metadata)',
+            },
+            activeCount: { type: 'integer', description: 'Active agents with registration file' },
+            status: { type: 'string', enum: ['ok', 'error', 'cached'] },
           },
         },
         ChainStatsResponse: {
@@ -879,11 +886,17 @@ function generateOpenAPISpec(): object {
             success: { type: 'boolean', enum: [true] },
             data: {
               type: 'object',
-              required: ['totalAgents', 'activeAgents', 'inactiveAgents', 'chainBreakdown'],
+              required: ['totalAgents', 'withRegistrationFile', 'activeAgents', 'chainBreakdown'],
               properties: {
-                totalAgents: { type: 'integer' },
-                activeAgents: { type: 'integer' },
-                inactiveAgents: { type: 'integer' },
+                totalAgents: {
+                  type: 'integer',
+                  description: 'Total agents across all chains (no filter)',
+                },
+                withRegistrationFile: {
+                  type: 'integer',
+                  description: 'Agents with registration file across all chains',
+                },
+                activeAgents: { type: 'integer', description: 'Active agents across all chains' },
                 chainBreakdown: {
                   type: 'array',
                   items: { $ref: '#/components/schemas/ChainStats' },

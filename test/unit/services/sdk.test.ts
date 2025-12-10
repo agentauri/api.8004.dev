@@ -127,7 +127,8 @@ describe('createSDKService', () => {
       expect(stat).toMatchObject({
         chainId: expect.any(Number),
         name: expect.any(String),
-        agentCount: expect.any(Number),
+        totalCount: expect.any(Number),
+        withRegistrationFileCount: expect.any(Number),
         activeCount: expect.any(Number),
       });
     });
@@ -190,7 +191,8 @@ describe('SDK error paths', () => {
     expect(stats.length).toBe(3);
     for (const stat of stats) {
       expect(stat.status).toBe('error');
-      expect(stat.agentCount).toBe(0);
+      expect(stat.totalCount).toBe(0);
+      expect(stat.withRegistrationFileCount).toBe(0);
       expect(stat.activeCount).toBe(0);
     }
   });
