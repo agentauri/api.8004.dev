@@ -154,6 +154,31 @@ export interface AgentDetail extends AgentSummary {
 }
 
 /**
+ * Chain stats breakdown for agent list results
+ */
+export interface AgentListChainStats {
+  chainId: number;
+  name: string;
+  totalCount: number;
+  withRegistrationFileCount: number;
+  activeCount: number;
+}
+
+/**
+ * Platform-wide stats included in agent list results
+ */
+export interface AgentListStats {
+  /** Total agents across all chains */
+  total: number;
+  /** Agents with registration file across all chains */
+  withRegistrationFile: number;
+  /** Active agents across all chains */
+  active: number;
+  /** Breakdown by chain */
+  byChain: AgentListChainStats[];
+}
+
+/**
  * Agent list API response
  */
 export interface AgentListResponse {
@@ -163,6 +188,8 @@ export interface AgentListResponse {
     total: number;
     hasMore: boolean;
     nextCursor?: string;
+    /** Platform-wide agent statistics */
+    stats?: AgentListStats;
   };
 }
 

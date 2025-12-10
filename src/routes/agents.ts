@@ -256,6 +256,21 @@ agents.get('/', async (c) => {
     // Apply sorting
     const sortedAgents = sortAgents(filteredAgents, query.sort, query.order);
 
+    // Fetch chain stats for totals (cached via SDK)
+    const chainStats = await sdk.getChainStats();
+    const stats = {
+      total: chainStats.reduce((sum, c) => sum + c.totalCount, 0),
+      withRegistrationFile: chainStats.reduce((sum, c) => sum + c.withRegistrationFileCount, 0),
+      active: chainStats.reduce((sum, c) => sum + c.activeCount, 0),
+      byChain: chainStats.map((c) => ({
+        chainId: c.chainId,
+        name: c.name,
+        totalCount: c.totalCount,
+        withRegistrationFileCount: c.withRegistrationFileCount,
+        activeCount: c.activeCount,
+      })),
+    };
+
     const response: AgentListResponse = {
       success: true,
       data: sortedAgents,
@@ -263,6 +278,7 @@ agents.get('/', async (c) => {
         total: searchResults.total,
         hasMore: searchResults.hasMore,
         nextCursor: searchResults.nextCursor,
+        stats,
       },
     };
 
@@ -385,6 +401,20 @@ agents.get('/', async (c) => {
   // Apply sorting
   const sortedAgents = sortAgents(filteredAgents, query.sort, query.order);
 
+  // Build stats from chain stats (already fetched above)
+  const stats = {
+    total: chainStats.reduce((sum, c) => sum + c.totalCount, 0),
+    withRegistrationFile: chainStats.reduce((sum, c) => sum + c.withRegistrationFileCount, 0),
+    active: chainStats.reduce((sum, c) => sum + c.activeCount, 0),
+    byChain: chainStats.map((c) => ({
+      chainId: c.chainId,
+      name: c.name,
+      totalCount: c.totalCount,
+      withRegistrationFileCount: c.withRegistrationFileCount,
+      activeCount: c.activeCount,
+    })),
+  };
+
   const response: AgentListResponse = {
     success: true,
     data: sortedAgents,
@@ -392,6 +422,7 @@ agents.get('/', async (c) => {
       total: totalAgentsFromStats,
       hasMore: !!agentsResult.nextCursor,
       nextCursor: agentsResult.nextCursor,
+      stats,
     },
   };
 
