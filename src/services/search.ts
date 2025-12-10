@@ -434,9 +434,14 @@ export function createSearchService(searchServiceUrl: string, cache?: CacheServi
           domains: filters?.domains,
         };
 
-        // Fetch all results for each filter
+        // Calculate smart fetch limit: request enough results per filter to fill the page after merge
+        // With N filters, each filter contributes ~limit/N results on average, so fetch limit*2 per filter
+        // to account for deduplication
+        const perFilterLimit = Math.min(limit * 2, MAX_SEARCH_RESULTS);
+
+        // Fetch results for each filter with smart limit
         const searchPromises = booleanFilters.map(async (filter) => {
-          const result = await executeSearch(query, MAX_SEARCH_RESULTS, minScore, {
+          const result = await executeSearch(query, perFilterLimit, minScore, {
             ...baseFilters,
             [filter]: true,
           });
@@ -480,14 +485,12 @@ export function createSearchService(searchServiceUrl: string, cache?: CacheServi
 
       if (hasMultipleChains && filters?.chainIds) {
         // Multi-chain: run separate searches for each chain and merge
+        // Calculate smart fetch limit: request enough results per chain to fill the page after merge
+        const perChainLimit = Math.min(limit * 2, MAX_SEARCH_RESULTS);
+
         const chainSearches = filters.chainIds.map(async (chainId) => {
           const singleChainFilters = { ...filters, chainIds: [chainId] };
-          const result = await executeSearch(
-            query,
-            MAX_SEARCH_RESULTS,
-            minScore,
-            singleChainFilters
-          );
+          const result = await executeSearch(query, perChainLimit, minScore, singleChainFilters);
           return { result, filterKey: `chain:${chainId}` };
         });
 
@@ -497,7 +500,9 @@ export function createSearchService(searchServiceUrl: string, cache?: CacheServi
         byChain = merged.byChain || computeByChain(merged.results);
       } else {
         // Single chain or no chain filter: single search
-        allResults = await executeSearch(query, MAX_SEARCH_RESULTS, minScore, filters);
+        // Use smart limit: fetch limit*2 for potential pagination, capped at max
+        const smartLimit = Math.min(limit * 2, MAX_SEARCH_RESULTS);
+        allResults = await executeSearch(query, smartLimit, minScore, filters);
         byChain = computeByChain(allResults.results);
       }
 

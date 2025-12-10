@@ -13,9 +13,8 @@ import {
   searchRequestSchema,
 } from '@/lib/utils/validation';
 import { CACHE_TTL, createCacheService } from '@/services/cache';
-import { createSDKService } from '@/services/sdk';
 import { createSearchService } from '@/services/search';
-import type { Env, OASFSource, SearchResponse, Variables } from '@/types';
+import type { Env, OASFSource, SearchResponse, TrustMethod, Variables } from '@/types';
 import { Hono } from 'hono';
 
 const search = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -72,57 +71,61 @@ search.post('/', async (c) => {
     const agentIds = searchResults.results.map((r) => r.agentId);
     const classificationsMap = await getClassificationsBatch(c.env.DB, agentIds);
 
-    // Enrich search results with agent data and classifications
-    const sdk = createSDKService(c.env);
+    // Enrich search results using metadata from search service (no SDK calls needed)
+    // The search service already includes all agent data in the metadata field
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Agent enrichment requires multiple metadata extractions
+    const enrichedAgents = searchResults.results.map((result) => {
+      const { tokenId } = parseAgentId(result.agentId);
+      const meta = result.metadata || {};
 
-    // Fetch chain stats for totals (cached)
-    const chainStats = await sdk.getChainStats();
+      // Get classification from batch result
+      const classificationRow = classificationsMap.get(result.agentId);
+      const oasf = parseClassificationRow(classificationRow);
 
-    const enrichedAgents = await Promise.all(
-      searchResults.results.map(async (result) => {
-        const { chainId, tokenId } = parseAgentId(result.agentId);
-        const agent = await sdk.getAgent(chainId, tokenId);
+      // Extract arrays from metadata
+      const mcpTools = Array.isArray(meta.mcpTools) ? meta.mcpTools : [];
+      const mcpPrompts = Array.isArray(meta.mcpPrompts) ? meta.mcpPrompts : [];
+      const mcpResources = Array.isArray(meta.mcpResources) ? meta.mcpResources : [];
+      const a2aSkills = Array.isArray(meta.a2aSkills) ? meta.a2aSkills : [];
+      const supportedTrusts = Array.isArray(meta.supportedTrusts) ? meta.supportedTrusts : [];
 
-        // Get classification from batch result
-        const classificationRow = classificationsMap.get(result.agentId);
-        const oasf = parseClassificationRow(classificationRow);
+      // Calculate hasMcp and hasA2a from arrays
+      const hasMcp = mcpTools.length > 0 || mcpPrompts.length > 0 || mcpResources.length > 0;
+      const hasA2a = a2aSkills.length > 0;
 
-        return {
-          id: result.agentId,
-          chainId: result.chainId,
-          tokenId,
-          name: agent?.name ?? result.name,
-          description: agent?.description ?? result.description,
-          image: agent?.image,
-          active: agent?.active ?? true,
-          hasMcp: agent?.hasMcp ?? false,
-          hasA2a: agent?.hasA2a ?? false,
-          x402Support: agent?.x402Support ?? false,
-          supportedTrust: agent?.supportedTrust ?? [],
-          operators: agent?.operators ?? [],
-          ens: agent?.ens,
-          did: agent?.did,
-          walletAddress: agent?.walletAddress,
-          oasf,
-          oasfSource: (oasf ? 'llm-classification' : 'none') as OASFSource,
-          searchScore: result.score,
-        };
-      })
-    );
+      // Map supportedTrusts to TrustMethod types
+      const supportedTrust: TrustMethod[] = [];
+      if (supportedTrusts.includes('x402') || meta.x402support === true) {
+        supportedTrust.push('x402');
+      }
+      if (supportedTrusts.includes('eas')) {
+        supportedTrust.push('eas');
+      }
 
-    // Build stats breakdown by chain
-    const stats = {
-      total: chainStats.reduce((sum, c) => sum + c.totalCount, 0),
-      withRegistrationFile: chainStats.reduce((sum, c) => sum + c.withRegistrationFileCount, 0),
-      active: chainStats.reduce((sum, c) => sum + c.activeCount, 0),
-      byChain: chainStats.map((c) => ({
-        chainId: c.chainId,
-        name: c.name,
-        totalCount: c.totalCount,
-        withRegistrationFileCount: c.withRegistrationFileCount,
-        activeCount: c.activeCount,
-      })),
-    };
+      return {
+        id: result.agentId,
+        chainId: result.chainId,
+        tokenId,
+        name: result.name,
+        description: result.description,
+        image: typeof meta.image === 'string' ? meta.image : undefined,
+        active: typeof meta.active === 'boolean' ? meta.active : true,
+        hasMcp,
+        hasA2a,
+        x402Support: meta.x402support === true,
+        supportedTrust,
+        operators: Array.isArray(meta.operators) ? meta.operators : [],
+        ens: typeof meta.ens === 'string' ? meta.ens : undefined,
+        did: typeof meta.did === 'string' ? meta.did : undefined,
+        walletAddress: typeof meta.agentWallet === 'string' ? meta.agentWallet : undefined,
+        oasf,
+        oasfSource: (oasf ? 'llm-classification' : 'none') as OASFSource,
+        searchScore: result.score,
+      };
+    });
+
+    // Note: Chain stats are now optional for search results to avoid slow SDK calls
+    // If stats are critical, they should be fetched from a cached endpoint separately
 
     const response: SearchResponse = {
       success: true,
@@ -133,7 +136,6 @@ search.post('/', async (c) => {
         hasMore: searchResults.hasMore,
         nextCursor: searchResults.nextCursor,
         byChain: searchResults.byChain,
-        stats,
       },
     };
 
