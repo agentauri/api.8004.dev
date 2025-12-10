@@ -50,8 +50,9 @@ describe('createSearchService', () => {
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(body.query).toBe('test query');
-      // topK is always 1000 (MAX_SEARCH_RESULTS) for caching all results
-      expect(body.topK).toBe(1000);
+      // topK uses smart limit: Math.min(limit * 2, MAX_SEARCH_RESULTS=100)
+      // Default limit=20 → 20*2=40
+      expect(body.topK).toBe(40);
       expect(body.minScore).toBe(0.3);
     });
 
@@ -73,8 +74,9 @@ describe('createSearchService', () => {
       await service.search({ query: 'test', limit: 50, minScore: 0.5 });
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      // topK is always 1000 for caching; limit is applied client-side
-      expect(body.topK).toBe(1000);
+      // topK uses smart limit: Math.min(limit * 2, MAX_SEARCH_RESULTS=100)
+      // limit=50 → 50*2=100 (capped at MAX)
+      expect(body.topK).toBe(100);
       expect(body.minScore).toBe(0.5);
     });
 
@@ -102,7 +104,7 @@ describe('createSearchService', () => {
       expect(body.filters.chainId).toBe(11155111);
     });
 
-    it('ignores multiple chainIds filter (not supported by search service)', async () => {
+    it('runs separate searches for multiple chainIds and merges results', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
         json: () =>
@@ -122,9 +124,13 @@ describe('createSearchService', () => {
         filters: { chainIds: [11155111, 84532] },
       });
 
-      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      // Multi-chain not supported, should not set chainId
-      expect(body.filters.chainId).toBeUndefined();
+      // Multi-chain now runs separate searches per chain and merges
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      const body1 = JSON.parse(mockFetch.mock.calls[0][1].body);
+      const body2 = JSON.parse(mockFetch.mock.calls[1][1].body);
+      // Each call should have a single chainId
+      expect(body1.filters.chainId).toBe(11155111);
+      expect(body2.filters.chainId).toBe(84532);
     });
 
     it('applies skills filter as capabilities', async () => {
@@ -421,11 +427,11 @@ describe('createSearchService', () => {
       expect(result.results[1].agentId).toBe('84532:2'); // 0.8
       expect(result.results[2].agentId).toBe('11155111:3'); // 0.7
 
-      // hasMore should be true since total > results.length
-      expect(result.hasMore).toBe(true);
+      // hasMore is false when merged results (3) < limit (20)
+      // The smart limit logic means we fetch more than needed, so all results fit in one page
+      expect(result.hasMore).toBe(false);
 
-      // nextCursor is undefined without cache service
-      // (cursor-based pagination requires cache)
+      // nextCursor is undefined when hasMore is false
       expect(result.nextCursor).toBeUndefined();
 
       // byChain should show breakdown (2 on sepolia, 1 on base)
