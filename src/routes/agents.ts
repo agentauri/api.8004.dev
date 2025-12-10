@@ -296,6 +296,10 @@ agents.get('/', async (c) => {
 
   let agentsResult: { items: AgentSummary[]; nextCursor?: string };
 
+  // Fetch chain stats for accurate total count (cached)
+  const chainStats = await sdk.getChainStats();
+  const totalAgentsFromStats = chainStats.reduce((sum, c) => sum + c.agentCount, 0);
+
   if (isOrMode) {
     // OR mode: run separate queries for each boolean filter and merge results
     const baseParams = {
@@ -384,7 +388,7 @@ agents.get('/', async (c) => {
     success: true,
     data: sortedAgents,
     meta: {
-      total: sortedAgents.length,
+      total: totalAgentsFromStats,
       hasMore: !!agentsResult.nextCursor,
       nextCursor: agentsResult.nextCursor,
     },

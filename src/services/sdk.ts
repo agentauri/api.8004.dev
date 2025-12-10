@@ -280,11 +280,13 @@ export function createSDKService(env: Env): SDKService {
           let cursor: string | undefined;
 
           // Count all agents - explicitly specify chain to ensure correct subgraph query
+          // Note: Use 999 instead of 1000 because SDK adds +1 internally for hasMore check,
+          // and subgraph max is 1000 (so 999+1=1000 stays within limit)
           do {
             const result = await sdk.searchAgents(
               { chains: [chain.chainId] },
               undefined,
-              1000,
+              999,
               cursor
             );
             allCount += result.items.length;
@@ -297,7 +299,7 @@ export function createSDKService(env: Env): SDKService {
             const result = await sdk.searchAgents(
               { active: true, chains: [chain.chainId] },
               undefined,
-              1000,
+              999,
               cursor
             );
             activeCount += result.items.length;
