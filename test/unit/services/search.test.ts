@@ -349,16 +349,16 @@ describe('createSearchService', () => {
               {
                 rank: 2,
                 vectorId: 'v2',
-                agentId: '11155111:2',
-                chainId: 11155111,
+                agentId: '84532:2',
+                chainId: 84532,
                 name: 'Agent 2',
                 description: 'Test',
                 score: 0.8,
                 metadata: {},
               },
             ],
-            total: 2,
-            pagination: { hasMore: false, limit: 20 },
+            total: 100,
+            pagination: { hasMore: true, nextCursor: 'cursor1', limit: 20 },
             requestId: 'test-id',
             timestamp: new Date().toISOString(),
           }),
@@ -392,8 +392,8 @@ describe('createSearchService', () => {
                 metadata: {},
               },
             ],
-            total: 2,
-            pagination: { hasMore: false, limit: 20 },
+            total: 50,
+            pagination: { hasMore: true, nextCursor: 'cursor2', limit: 20 },
             requestId: 'test-id',
             timestamp: new Date().toISOString(),
           }),
@@ -407,7 +407,8 @@ describe('createSearchService', () => {
 
       // Should have 3 unique agents
       expect(result.results).toHaveLength(3);
-      expect(result.total).toBe(3);
+      // Total should be SUM of all filter totals (100 + 50 = 150)
+      expect(result.total).toBe(150);
 
       // Agent 1 should have higher score (0.95, not 0.9)
       const agent1 = result.results.find((r) => r.agentId === '11155111:1');
@@ -415,8 +416,20 @@ describe('createSearchService', () => {
 
       // Results should be sorted by score descending
       expect(result.results[0].agentId).toBe('11155111:1'); // 0.95
-      expect(result.results[1].agentId).toBe('11155111:2'); // 0.8
+      expect(result.results[1].agentId).toBe('84532:2'); // 0.8
       expect(result.results[2].agentId).toBe('11155111:3'); // 0.7
+
+      // hasMore should be true since total > results.length
+      expect(result.hasMore).toBe(true);
+
+      // nextCursor should be composite cursor (base64 encoded)
+      expect(result.nextCursor).toBeDefined();
+
+      // byChain should show breakdown (2 on sepolia, 1 on base)
+      expect(result.byChain).toEqual({
+        11155111: 3, // Agent 1 counted twice (from both searches) + Agent 3
+        84532: 1, // Agent 2
+      });
     });
 
     it('uses single search for OR mode with only one boolean filter', async () => {

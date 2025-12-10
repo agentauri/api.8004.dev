@@ -73,6 +73,8 @@ export interface SearchServiceResult {
   hasMore: boolean;
   /** Next pagination cursor */
   nextCursor?: string;
+  /** Result count breakdown by chain ID */
+  byChain?: Record<number, number>;
 }
 
 /**
@@ -90,5 +92,7 @@ export interface SearchResponse {
     hasMore: boolean;
     /** Next pagination cursor */
     nextCursor?: string;
+    /** Result count breakdown by chain ID */
+    byChain?: Record<number, number>;
   };
 }

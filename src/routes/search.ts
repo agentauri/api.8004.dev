@@ -106,6 +106,7 @@ search.post('/', async (c) => {
       total: searchResults.total,
       hasMore: searchResults.hasMore,
       nextCursor: searchResults.nextCursor,
+      byChain: searchResults.byChain,
     },
   };
 

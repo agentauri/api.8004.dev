@@ -87,6 +87,15 @@ interface SearchResponseBody {
 }
 
 /**
+ * Cursor for OR mode pagination (composite cursor with per-filter cursors)
+ */
+interface OrModeCursor {
+  mode: 'OR';
+  cursors: Record<string, string>;
+  globalOffset: number;
+}
+
+/**
  * Encode offset into a cursor string
  */
 function encodeOffsetCursor(offset: number): string {
@@ -94,29 +103,64 @@ function encodeOffsetCursor(offset: number): string {
 }
 
 /**
- * Decode cursor string into offset
+ * Decode cursor string - handles both offset and OR mode cursors
  */
-function decodeOffsetCursor(cursor: string): number {
+function decodeCursor(cursor: string): { offset: number; orCursor?: OrModeCursor } {
   try {
     const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString());
-    return typeof decoded.offset === 'number' ? decoded.offset : 0;
+    if (decoded.mode === 'OR') {
+      return { offset: decoded.globalOffset || 0, orCursor: decoded as OrModeCursor };
+    }
+    return { offset: typeof decoded.offset === 'number' ? decoded.offset : 0 };
   } catch {
-    return 0;
+    return { offset: 0 };
   }
 }
 
 /**
+ * Encode OR mode cursor
+ */
+function encodeOrCursor(cursors: Record<string, string>, globalOffset: number): string {
+  const orCursor: OrModeCursor = { mode: 'OR', cursors, globalOffset };
+  return Buffer.from(JSON.stringify(orCursor)).toString('base64url');
+}
+
+/**
+ * Result with filter key for OR mode merging
+ */
+interface TaggedSearchResult {
+  result: SearchServiceResult;
+  filterKey: string;
+}
+
+/**
  * Merge and deduplicate search results, keeping highest score per agent
+ * Calculates total as sum of all filter totals and supports composite cursor
  */
 function mergeSearchResults(
-  resultArrays: SearchServiceResult[],
+  resultArrays: TaggedSearchResult[],
   limit: number
 ): SearchServiceResult {
   const agentMap = new Map<string, SearchResultItem>();
+  let totalAcrossAll = 0;
+  const byChain: Record<number, number> = {};
+  const nextCursors: Record<string, string> = {};
 
-  // Collect all results, keeping highest score per agent
-  for (const result of resultArrays) {
+  // Collect all results
+  for (const { result, filterKey } of resultArrays) {
+    // Sum totals from all filter searches
+    totalAcrossAll += result.total;
+
+    // Save cursors for composite OR pagination
+    if (result.nextCursor) {
+      nextCursors[filterKey] = result.nextCursor;
+    }
+
+    // Merge results (dedup by agentId, keep highest score)
     for (const item of result.results) {
+      // Count per chain (from actual results)
+      byChain[item.chainId] = (byChain[item.chainId] || 0) + 1;
+
       const existing = agentMap.get(item.agentId);
       if (!existing || item.score > existing.score) {
         agentMap.set(item.agentId, item);
@@ -127,14 +171,19 @@ function mergeSearchResults(
   // Sort by score descending and limit
   const mergedResults = [...agentMap.values()].sort((a, b) => b.score - a.score).slice(0, limit);
 
-  const totalUnique = agentMap.size;
+  // Build composite cursor if there are more results
+  let nextCursor: string | undefined;
+  const hasMore = totalAcrossAll > mergedResults.length;
+  if (hasMore && Object.keys(nextCursors).length > 0) {
+    nextCursor = encodeOrCursor(nextCursors, limit);
+  }
 
   return {
     results: mergedResults,
-    total: totalUnique,
-    hasMore: totalUnique > limit,
-    // Cannot provide cursor for merged OR results
-    nextCursor: undefined,
+    total: totalAcrossAll,
+    hasMore,
+    nextCursor,
+    byChain,
   };
 }
 
@@ -156,7 +205,7 @@ export function createSearchService(searchServiceUrl: string): SearchService {
     cursor?: string
   ): Promise<SearchServiceResult> {
     // Decode offset from cursor if provided
-    const offset = cursor ? decodeOffsetCursor(cursor) : 0;
+    const { offset } = cursor ? decodeCursor(cursor) : { offset: 0 };
 
     const body: SearchRequestBody = {
       query,
@@ -240,6 +289,9 @@ export function createSearchService(searchServiceUrl: string): SearchService {
     async search(params: SearchParams): Promise<SearchServiceResult> {
       const { query, limit = 20, minScore = 0.3, cursor, filters } = params;
 
+      // Decode cursor (may be offset or OR composite)
+      const { orCursor } = cursor ? decodeCursor(cursor) : { orCursor: undefined };
+
       // Check if OR mode with multiple boolean filters
       const booleanFilters: Array<'mcp' | 'a2a' | 'x402'> = [];
       if (filters?.mcp) booleanFilters.push('mcp');
@@ -250,7 +302,6 @@ export function createSearchService(searchServiceUrl: string): SearchService {
 
       if (isOrMode) {
         // OR mode: run separate searches for each boolean filter and merge results
-        // Note: cursor pagination is not supported in OR mode as results are merged
         const baseFilters: SearchFilters = {
           chainIds: filters?.chainIds,
           active: filters?.active,
@@ -258,19 +309,36 @@ export function createSearchService(searchServiceUrl: string): SearchService {
           domains: filters?.domains,
         };
 
-        const searchPromises = booleanFilters.map((filter) =>
-          executeSearch(query, limit, minScore, {
-            ...baseFilters,
-            [filter]: true,
-          })
-        );
+        // Use saved cursors from composite cursor if available
+        const searchPromises = booleanFilters.map(async (filter) => {
+          const filterCursor = orCursor?.cursors[filter];
+          const result = await executeSearch(
+            query,
+            limit,
+            minScore,
+            {
+              ...baseFilters,
+              [filter]: true,
+            },
+            filterCursor
+          );
+          return { result, filterKey: filter };
+        });
 
         const results = await Promise.all(searchPromises);
         return mergeSearchResults(results, limit);
       }
 
       // AND mode (default): single search with all filters
-      return executeSearch(query, limit, minScore, filters, cursor);
+      const result = await executeSearch(query, limit, minScore, filters, cursor);
+
+      // Add byChain breakdown for AND mode
+      const byChain: Record<number, number> = {};
+      for (const item of result.results) {
+        byChain[item.chainId] = (byChain[item.chainId] || 0) + 1;
+      }
+
+      return { ...result, byChain };
     },
 
     async healthCheck(): Promise<boolean> {
