@@ -203,7 +203,8 @@ describe('POST /api/v1/search', () => {
     const fetchCall = mockFetch.mock.calls.find((call) => call[0].includes('/search'));
     if (fetchCall) {
       const body = JSON.parse(fetchCall[1].body);
-      expect(body.topK).toBe(10);
+      // topK is always 1000 (MAX_SEARCH_RESULTS) for caching; limit is applied client-side
+      expect(body.topK).toBe(1000);
       expect(body.minScore).toBe(0.5);
       expect(body.filters).toBeDefined();
     }

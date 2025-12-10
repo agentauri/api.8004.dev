@@ -50,11 +50,12 @@ describe('createSearchService', () => {
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(body.query).toBe('test query');
-      expect(body.topK).toBe(20);
+      // topK is always 1000 (MAX_SEARCH_RESULTS) for caching all results
+      expect(body.topK).toBe(1000);
       expect(body.minScore).toBe(0.3);
     });
 
-    it('applies custom limit and minScore', async () => {
+    it('applies custom minScore (limit is applied client-side)', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
         json: () =>
@@ -72,7 +73,8 @@ describe('createSearchService', () => {
       await service.search({ query: 'test', limit: 50, minScore: 0.5 });
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body.topK).toBe(50);
+      // topK is always 1000 for caching; limit is applied client-side
+      expect(body.topK).toBe(1000);
       expect(body.minScore).toBe(0.5);
     });
 
@@ -422,8 +424,9 @@ describe('createSearchService', () => {
       // hasMore should be true since total > results.length
       expect(result.hasMore).toBe(true);
 
-      // nextCursor should be composite cursor (base64 encoded)
-      expect(result.nextCursor).toBeDefined();
+      // nextCursor is undefined without cache service
+      // (cursor-based pagination requires cache)
+      expect(result.nextCursor).toBeUndefined();
 
       // byChain should show breakdown (2 on sepolia, 1 on base)
       expect(result.byChain).toEqual({
