@@ -52,6 +52,7 @@ interface SearchRequestBody {
   filters?: {
     // Flat filters (agent0lab format)
     chainId?: number;
+    chainIds?: number[]; // Support array of chain IDs
     active?: boolean;
     mcp?: boolean;
     a2a?: boolean;
@@ -310,8 +311,14 @@ export function createSearchService(searchServiceUrl: string, cache?: CacheServi
     if (filters) {
       body.filters = {};
 
-      if (filters.chainIds?.length === 1) {
-        body.filters.chainId = filters.chainIds[0];
+      // Support both single chainId and array of chainIds
+      if (filters.chainIds?.length) {
+        if (filters.chainIds.length === 1) {
+          body.filters.chainId = filters.chainIds[0];
+        } else {
+          // Send array for multi-chain filtering
+          body.filters.chainIds = filters.chainIds;
+        }
       }
       if (filters.active !== undefined) {
         body.filters.active = filters.active;
@@ -449,10 +456,35 @@ export function createSearchService(searchServiceUrl: string, cache?: CacheServi
         };
       }
 
-      // AND mode (default): single search
-      // Fetch all results (up to MAX) for caching
-      const allResults = await executeSearch(query, MAX_SEARCH_RESULTS, minScore, filters);
-      const byChain = computeByChain(allResults.results);
+      // AND mode (default): single search or multi-chain merge
+      // Check if multi-chain filter - need to run separate searches per chain and merge
+      const hasMultipleChains = filters?.chainIds && filters.chainIds.length > 1;
+
+      let allResults: SearchServiceResult;
+      let byChain: Record<number, number>;
+
+      if (hasMultipleChains && filters?.chainIds) {
+        // Multi-chain: run separate searches for each chain and merge
+        const chainSearches = filters.chainIds.map(async (chainId) => {
+          const singleChainFilters = { ...filters, chainIds: [chainId] };
+          const result = await executeSearch(
+            query,
+            MAX_SEARCH_RESULTS,
+            minScore,
+            singleChainFilters
+          );
+          return { result, filterKey: `chain:${chainId}` };
+        });
+
+        const results = await Promise.all(chainSearches);
+        const merged = mergeSearchResults(results, MAX_SEARCH_RESULTS);
+        allResults = merged;
+        byChain = merged.byChain || computeByChain(merged.results);
+      } else {
+        // Single chain or no chain filter: single search
+        allResults = await executeSearch(query, MAX_SEARCH_RESULTS, minScore, filters);
+        byChain = computeByChain(allResults.results);
+      }
 
       // Cache results if there are more than limit
       if (cache && allResults.results.length > limit) {

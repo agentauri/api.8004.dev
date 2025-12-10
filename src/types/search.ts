@@ -78,6 +78,31 @@ export interface SearchServiceResult {
 }
 
 /**
+ * Chain stats breakdown for search results
+ */
+export interface SearchChainStats {
+  chainId: number;
+  name: string;
+  totalCount: number;
+  withRegistrationFileCount: number;
+  activeCount: number;
+}
+
+/**
+ * Platform-wide stats included in search results
+ */
+export interface SearchStats {
+  /** Total agents across all chains */
+  total: number;
+  /** Agents with registration file across all chains */
+  withRegistrationFile: number;
+  /** Active agents across all chains */
+  active: number;
+  /** Breakdown by chain */
+  byChain: SearchChainStats[];
+}
+
+/**
  * Search API response
  */
 export interface SearchResponse {
@@ -94,5 +119,7 @@ export interface SearchResponse {
     nextCursor?: string;
     /** Result count breakdown by chain ID */
     byChain?: Record<number, number>;
+    /** Platform-wide agent statistics */
+    stats?: SearchStats;
   };
 }
