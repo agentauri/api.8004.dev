@@ -25,6 +25,34 @@ This is the backend service for **8004.dev**, providing a unified REST API that 
 - Coverage reports are generated in `coverage/` directory
 - CI pipeline will fail if branch coverage drops below 70%
 
+### API Testing After Changes
+
+- **Mandatory production verification**: After every code modification that affects API behavior, you MUST test the APIs in production
+- Use `curl` with the API key to verify results:
+  ```bash
+  curl -s "https://api.8004.dev/api/v1/agents?limit=5" \
+    -H "X-API-Key: $API_KEY" | jq
+  ```
+- A fix is **NOT** considered complete without manual API verification
+- Be aware of KV cache (5-minute TTL) - use different query parameters to bypass cached responses when testing fresh changes
+- Document the verification results before marking a task as done
+
+### Local Validation Before Implementation
+
+For any new feature or change request:
+
+1. **SDK-related changes**: Before implementing changes that involve agent0-sdk:
+   - Write a local test script in `test-sdk-scripts/` to verify SDK behavior
+   - Test the SDK call locally to ensure correct usage and expected results
+   - Only proceed with implementation after local validation passes
+
+2. **Vector search changes**: Before implementing changes that involve semantic search:
+   - Test the search-service call locally using curl or a test script
+   - Verify query parameters, response format, and pagination behavior
+   - Only proceed with implementation after local validation passes
+
+This ensures we understand the external service behavior before writing integration code.
+
 ### Open Source Ready
 
 This project is designed to be open source. All contributions must follow these guidelines:

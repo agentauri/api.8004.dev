@@ -29,8 +29,12 @@ tags:
     description: Semantic search endpoints
   - name: Chains
     description: Chain statistics
+  - name: Stats
+    description: Platform statistics
   - name: Taxonomy
     description: OASF taxonomy data
+  - name: Reputation
+    description: Agent reputation and feedback
 
 paths:
   /api/v1/health:
@@ -61,10 +65,31 @@ paths:
             type: string
         - name: chainId
           in: query
-          description: Filter by chain ID
+          description: Filter by single chain ID
           schema:
             type: integer
             enum: [11155111, 84532, 80002]
+        - name: chainIds
+          in: query
+          description: Filter by multiple chain IDs (comma-separated)
+          schema:
+            type: string
+            example: "11155111,84532"
+        - name: chainIds[]
+          in: query
+          description: Filter by multiple chain IDs (array notation)
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: integer
+              enum: [11155111, 84532, 80002]
+        - name: chains
+          in: query
+          description: Alias for chainIds (comma-separated)
+          schema:
+            type: string
         - name: limit
           in: query
           description: Maximum number of results
@@ -73,13 +98,11 @@ paths:
             minimum: 1
             maximum: 100
             default: 20
-        - name: offset
+        - name: cursor
           in: query
-          description: Offset for pagination
+          description: Cursor for pagination (replaces offset)
           schema:
-            type: integer
-            minimum: 0
-            default: 0
+            type: string
         - name: active
           in: query
           description: Filter by active status
@@ -95,6 +118,16 @@ paths:
           description: Filter by A2A support
           schema:
             type: boolean
+        - name: x402
+          in: query
+          description: Filter by x402 payment support
+          schema:
+            type: boolean
+        - name: hasRegistrationFile
+          in: query
+          description: Filter by presence of registration file
+          schema:
+            type: boolean
         - name: skills
           in: query
           description: Filter by OASF skills (comma-separated)
@@ -105,14 +138,49 @@ paths:
           description: Filter by OASF domains (comma-separated)
           schema:
             type: string
+        - name: filterMode
+          in: query
+          description: How to combine boolean filters (mcp, a2a, x402)
+          schema:
+            type: string
+            enum: [AND, OR]
+            default: AND
         - name: minScore
           in: query
-          description: Minimum search score (0-1)
+          description: Minimum search score (0-1), only applies when q is provided
           schema:
             type: number
             minimum: 0
             maximum: 1
             default: 0.3
+        - name: minRep
+          in: query
+          description: Minimum reputation score (0-100)
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+        - name: maxRep
+          in: query
+          description: Maximum reputation score (0-100)
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+        - name: sort
+          in: query
+          description: Sort field
+          schema:
+            type: string
+            enum: [relevance, name, createdAt, reputation]
+            default: relevance
+        - name: order
+          in: query
+          description: Sort order
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
       responses:
         '200':
           description: List of agents
@@ -204,6 +272,54 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimitError'
 
+  /api/v1/agents/{agentId}/reputation:
+    get:
+      tags: [Reputation]
+      summary: Get agent reputation
+      description: Get reputation summary and recent feedback for an agent
+      operationId: getAgentReputation
+      parameters:
+        - $ref: '#/components/parameters/agentId'
+      responses:
+        '200':
+          description: Reputation data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReputationResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+
+  /api/v1/agents/{agentId}/reputation/feedback:
+    get:
+      tags: [Reputation]
+      summary: Get agent feedback
+      description: Get paginated feedback list for an agent
+      operationId: getAgentFeedback
+      parameters:
+        - $ref: '#/components/parameters/agentId'
+        - name: limit
+          in: query
+          description: Maximum number of feedback items
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Feedback list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedbackListResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+
   /api/v1/search:
     post:
       tags: [Search]
@@ -244,6 +360,22 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimitError'
 
+  /api/v1/stats:
+    get:
+      tags: [Stats]
+      summary: Get platform statistics
+      description: Get platform-wide aggregated statistics
+      operationId: getPlatformStats
+      responses:
+        '200':
+          description: Platform statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformStatsResponse'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+
   /api/v1/taxonomy:
     get:
       tags: [Taxonomy]
@@ -256,7 +388,7 @@ paths:
           description: Type of taxonomy to retrieve
           schema:
             type: string
-            enum: [skills, domains, all]
+            enum: [skill, domain, all]
             default: all
       responses:
         '200':
@@ -341,10 +473,15 @@ components:
                       type: string
                       enum: [ok, error]
 
+    # Trust methods
+    TrustMethod:
+      type: string
+      enum: [x402, eas]
+
     # Agent types
     AgentSummary:
       type: object
-      required: [id, chainId, tokenId, name, description, active, hasMcp, hasA2a, x402Support]
+      required: [id, chainId, tokenId, name, description, active, hasMcp, hasA2a, x402Support, supportedTrust]
       properties:
         id:
           type: string
@@ -368,16 +505,45 @@ components:
           type: boolean
         x402Support:
           type: boolean
+        supportedTrust:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrustMethod'
+        operators:
+          type: array
+          items:
+            type: string
+          description: Operator wallet addresses
+        ens:
+          type: string
+          description: ENS name
+        did:
+          type: string
+          description: DID identifier
+        walletAddress:
+          type: string
+          description: Agent's own wallet address
         oasf:
           $ref: '#/components/schemas/ClassificationData'
+        oasfSource:
+          type: string
+          enum: [creator-defined, llm-classification, none]
+          description: Source of OASF classification
         searchScore:
           type: number
           description: Search relevance score (0-1)
+        reputationScore:
+          type: number
+          description: Average reputation score (0-100)
+        reputationCount:
+          type: integer
+          description: Total feedback count
 
     AgentDetail:
       allOf:
         - $ref: '#/components/schemas/AgentSummary'
         - type: object
+          required: [endpoints, registration, mcpTools, a2aSkills]
           properties:
             endpoints:
               type: object
@@ -398,8 +564,17 @@ components:
                       format: uri
                     version:
                       type: string
+                ens:
+                  type: string
+                did:
+                  type: string
+                agentWallet:
+                  type: string
+                oasf:
+                  $ref: '#/components/schemas/OASFEndpoint'
             registration:
               type: object
+              required: [chainId, tokenId, contractAddress, metadataUri, owner, registeredAt]
               properties:
                 chainId:
                   type: integer
@@ -418,10 +593,99 @@ components:
               type: array
               items:
                 type: string
+            mcpPrompts:
+              type: array
+              items:
+                type: string
+            mcpResources:
+              type: array
+              items:
+                type: string
             a2aSkills:
               type: array
               items:
                 type: string
+            reputation:
+              $ref: '#/components/schemas/AgentReputation'
+            ipfsMetadata:
+              $ref: '#/components/schemas/IPFSMetadata'
+
+    OASFEndpoint:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+        skills:
+          type: array
+          items:
+            type: string
+        domains:
+          type: array
+          items:
+            type: string
+
+    IPFSMetadata:
+      type: object
+      properties:
+        socialLinks:
+          type: object
+          properties:
+            twitter:
+              type: string
+            github:
+              type: string
+            discord:
+              type: string
+            telegram:
+              type: string
+            website:
+              type: string
+        externalUrl:
+          type: string
+          format: uri
+        attributes:
+          type: array
+          items:
+            type: object
+            properties:
+              trait_type:
+                type: string
+              value:
+                type: string
+
+    AgentListChainStats:
+      type: object
+      required: [chainId, name, totalCount, withRegistrationFileCount, activeCount]
+      properties:
+        chainId:
+          type: integer
+        name:
+          type: string
+        totalCount:
+          type: integer
+        withRegistrationFileCount:
+          type: integer
+        activeCount:
+          type: integer
+
+    AgentListStats:
+      type: object
+      required: [total, withRegistrationFile, active, byChain]
+      properties:
+        total:
+          type: integer
+          description: Total agents across all chains
+        withRegistrationFile:
+          type: integer
+          description: Agents with registration file
+        active:
+          type: integer
+          description: Active agents
+        byChain:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentListChainStats'
 
     AgentListResponse:
       allOf:
@@ -443,6 +707,8 @@ components:
                   type: boolean
                 nextCursor:
                   type: string
+                stats:
+                  $ref: '#/components/schemas/AgentListStats'
 
     AgentDetailResponse:
       allOf:
@@ -538,6 +804,97 @@ components:
             agentId:
               type: string
 
+    # Reputation types
+    AgentReputation:
+      type: object
+      required: [count, averageScore, distribution]
+      properties:
+        count:
+          type: integer
+          description: Total feedback count
+        averageScore:
+          type: number
+          description: Average score (0-100)
+        distribution:
+          type: object
+          required: [low, medium, high]
+          properties:
+            low:
+              type: integer
+              description: Count of scores 1-2
+            medium:
+              type: integer
+              description: Count of scores 3
+            high:
+              type: integer
+              description: Count of scores 4-5
+
+    FeedbackItem:
+      type: object
+      required: [id, score, submitter, submittedAt]
+      properties:
+        id:
+          type: string
+        score:
+          type: integer
+          minimum: 1
+          maximum: 5
+        tags:
+          type: array
+          items:
+            type: string
+        context:
+          type: string
+        feedbackUri:
+          type: string
+        submitter:
+          type: string
+          description: Wallet address
+        easUid:
+          type: string
+          description: EAS attestation UID
+        submittedAt:
+          type: string
+          format: date-time
+
+    ReputationResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              required: [agentId, reputation, recentFeedback]
+              properties:
+                agentId:
+                  type: string
+                reputation:
+                  $ref: '#/components/schemas/AgentReputation'
+                recentFeedback:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/FeedbackItem'
+
+    FeedbackListResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [data, meta]
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/FeedbackItem'
+            meta:
+              type: object
+              required: [total, limit]
+              properties:
+                total:
+                  type: integer
+                limit:
+                  type: integer
+
     # Search types
     SearchRequest:
       type: object
@@ -557,6 +914,13 @@ components:
           minimum: 0
           maximum: 1
           default: 0.3
+        cursor:
+          type: string
+          description: Cursor for pagination
+        offset:
+          type: integer
+          minimum: 0
+          description: Offset for pagination (alternative to cursor)
         filters:
           type: object
           properties:
@@ -570,6 +934,8 @@ components:
               type: boolean
             a2a:
               type: boolean
+            x402:
+              type: boolean
             skills:
               type: array
               items:
@@ -578,6 +944,18 @@ components:
               type: array
               items:
                 type: string
+            filterMode:
+              type: string
+              enum: [AND, OR]
+              default: AND
+
+    SearchByChainStats:
+      type: object
+      properties:
+        chainId:
+          type: integer
+        count:
+          type: integer
 
     SearchResponse:
       allOf:
@@ -601,17 +979,23 @@ components:
                   type: boolean
                 nextCursor:
                   type: string
+                byChain:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/SearchByChainStats'
 
     # Chain types
     ChainStats:
       type: object
-      required: [chainId, name, agentCount, activeCount]
+      required: [chainId, name, totalCount, withRegistrationFileCount, activeCount]
       properties:
         chainId:
           type: integer
         name:
           type: string
-        agentCount:
+        totalCount:
+          type: integer
+        withRegistrationFileCount:
           type: integer
         activeCount:
           type: integer
@@ -626,6 +1010,28 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/ChainStats'
+
+    # Platform stats types
+    PlatformStatsResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: object
+              required: [totalAgents, withRegistrationFile, activeAgents, chainBreakdown]
+              properties:
+                totalAgents:
+                  type: integer
+                withRegistrationFile:
+                  type: integer
+                activeAgents:
+                  type: integer
+                chainBreakdown:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ChainStats'
 
     # Taxonomy types
     TaxonomyCategory:
