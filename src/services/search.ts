@@ -366,6 +366,7 @@ export function createSearchService(searchServiceUrl: string, cache?: CacheServi
       description: r.description,
       score: r.score,
       metadata: r.metadata,
+      matchReasons: r.matchReasons,
     }));
 
     // Determine if there are more results

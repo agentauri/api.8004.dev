@@ -121,6 +121,9 @@ search.post('/', async (c) => {
         oasf,
         oasfSource: (oasf ? 'llm-classification' : 'none') as OASFSource,
         searchScore: result.score,
+        matchReasons: result.matchReasons,
+        inputModes: mcpPrompts.length > 0 ? ['mcp-prompt'] : undefined,
+        outputModes: mcpResources.length > 0 ? ['mcp-resource'] : undefined,
       };
     });
 

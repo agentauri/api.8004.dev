@@ -13,6 +13,7 @@ import type {
   TrustMethod,
 } from '@/types';
 import { SDK } from 'agent0-sdk';
+import type { SearchParams } from 'agent0-sdk';
 
 /**
  * Derive supported trust methods from agent data
@@ -91,7 +92,7 @@ export interface GetAgentsParams {
 let pendingChainStatsPromise: Promise<ChainStats[]> | null = null;
 
 /**
- * Subgraph URLs for direct queries (bypass SDK's registrationFile filter)
+ * Subgraph URLs for direct queries (used by getChainStats for accurate count)
  */
 const SUBGRAPH_URLS: Record<number, string> = {
   11155111:
@@ -108,6 +109,7 @@ const SUBGRAPH_URLS: Record<number, string> = {
 export interface GetAgentsResult {
   items: AgentSummary[];
   nextCursor?: string;
+  total: number;
 }
 
 /**
@@ -131,116 +133,6 @@ export interface SDKService {
 }
 
 /**
- * Subgraph agent response type (without registrationFile)
- * Note: Field names match the actual subgraph schema (not the SDK's transformed names)
- */
-interface SubgraphAgent {
-  id: string; // Format: "chainId:tokenId"
-  registrationFile?: {
-    name?: string;
-    description?: string;
-    image?: string;
-    active?: boolean;
-    x402support?: boolean;
-    mcpEndpoint?: string;
-    a2aEndpoint?: string;
-    ens?: string;
-    did?: string;
-    agentWallet?: string;
-  } | null;
-}
-
-/**
- * Query ALL agents from subgraph (without registrationFile filter)
- * Returns results in SDK-compatible format
- */
-async function queryAllAgentsFromSubgraph(
-  chainId: number,
-  limit: number,
-  _params: Record<string, unknown>
-): Promise<{
-  items: Array<{
-    agentId: string;
-    name: string;
-    description: string;
-    image?: string;
-    active: boolean;
-    mcp: boolean;
-    a2a: boolean;
-    x402support: boolean;
-    operators: string[];
-    ens?: string;
-    did?: string;
-    walletAddress?: string;
-  }>;
-  nextCursor?: string;
-}> {
-  const url = SUBGRAPH_URLS[chainId];
-  if (!url) return { items: [] };
-
-  // GraphQL query for agents (no registrationFile filter)
-  // Note: id is in format "chainId:tokenId", no separate tokenId/owners fields
-  // Field names must match subgraph schema: mcpEndpoint/a2aEndpoint instead of mcp/a2a, agentWallet instead of walletAddress
-  const query = `{
-    agents(first: ${limit}, orderBy: id, orderDirection: desc) {
-      id
-      registrationFile {
-        name
-        description
-        image
-        active
-        x402support
-        mcpEndpoint
-        a2aEndpoint
-        ens
-        did
-        agentWallet
-      }
-    }
-  }`;
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Subgraph query failed: ${response.status}`);
-  }
-
-  const data = (await response.json()) as {
-    data?: { agents?: SubgraphAgent[] };
-    errors?: unknown[];
-  };
-  const agents = data?.data?.agents || [];
-
-  // Transform to SDK-compatible format
-  const items = agents.map((agent) => {
-    const reg = agent.registrationFile;
-    // Extract tokenId from id (format: "chainId:tokenId")
-    const tokenId = agent.id.split(':')[1] || '0';
-    return {
-      agentId: agent.id,
-      name: reg?.name || `Agent #${tokenId}`,
-      description: reg?.description || '',
-      image: reg?.image,
-      active: reg?.active ?? false,
-      // Derive mcp/a2a boolean from presence of endpoint
-      mcp: !!reg?.mcpEndpoint,
-      a2a: !!reg?.a2aEndpoint,
-      x402support: reg?.x402support ?? false,
-      operators: [],
-      ens: reg?.ens,
-      did: reg?.did,
-      walletAddress: reg?.agentWallet,
-    };
-  });
-
-  return { items };
-}
-
-/**
  * Create SDK service using agent0-sdk
  */
 export function createSDKService(env: Env): SDKService {
@@ -254,24 +146,16 @@ export function createSDKService(env: Env): SDKService {
     const config = getChainConfig(chainId);
     if (!config) throw new Error(`Unsupported chain: ${chainId}`);
     const rpcUrl = env[config.rpcEnvKey];
-    const sdk = new SDK({ chainId, rpcUrl });
+    // Pass subgraphOverrides for multi-chain query support
+    const sdk = new SDK({ chainId, rpcUrl, subgraphOverrides: SUBGRAPH_URLS });
     sdkInstances.set(chainId, sdk);
     return sdk;
   }
 
   return {
-    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Multi-chain parallel query and merge logic requires multiple conditional branches
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Multi-chain query and transformation logic requires multiple conditional branches
     async getAgents(params: GetAgentsParams): Promise<GetAgentsResult> {
-      const {
-        chainIds,
-        limit = 20,
-        cursor,
-        active,
-        hasMcp,
-        hasA2a,
-        hasX402,
-        hasRegistrationFile,
-      } = params;
+      const { chainIds, limit = 20, cursor, active, hasMcp, hasA2a, hasX402 } = params;
 
       // Determine which chains to query
       const chainsToQuery = chainIds
@@ -279,97 +163,68 @@ export function createSDKService(env: Env): SDKService {
         : SUPPORTED_CHAINS;
 
       if (chainsToQuery.length === 0) {
-        return { items: [], nextCursor: undefined };
+        return { items: [], nextCursor: undefined, total: 0 };
       }
 
-      // Build search params
-      const searchParams: Record<string, unknown> = {};
+      // Build search params with native multi-chain support
+      const searchParams: SearchParams = {
+        chains: chainsToQuery.map((c) => c.chainId),
+      };
       if (active !== undefined) searchParams.active = active;
       if (hasMcp !== undefined) searchParams.mcp = hasMcp;
       if (hasA2a !== undefined) searchParams.a2a = hasA2a;
       if (hasX402 !== undefined) searchParams.x402support = hasX402;
 
       try {
-        // If hasRegistrationFile=false, query ALL agents via direct subgraph (bypasses SDK filter)
-        // Default behavior (hasRegistrationFile undefined or true) uses SDK which filters to agents with metadata
-        const queryPromises = chainsToQuery.map(async (chain) => {
-          if (hasRegistrationFile === false) {
-            // Direct subgraph query for ALL agents (including those without registrationFile)
-            return queryAllAgentsFromSubgraph(chain.chainId, limit, searchParams);
-          }
-          // Default: use SDK (only agents with registrationFile)
-          const sdk = getSDK(chain.chainId);
-          return sdk.searchAgents(searchParams, ['createdAt:desc'], limit, cursor);
+        // Use SDK with native multi-chain support and cursor-based pagination
+        // The SDK handles pagination correctly when cursor is passed as 4th parameter
+        // Use the first requested chain's SDK (all SDKs have subgraphOverrides for multi-chain)
+        const primaryChain = chainsToQuery[0];
+        if (!primaryChain) {
+          return { items: [], nextCursor: undefined, total: 0 };
+        }
+        const sdk = getSDK(primaryChain.chainId);
+        const result = await sdk.searchAgents(
+          searchParams,
+          ['createdAt:desc'],
+          limit,
+          cursor // Pass cursor for native SDK pagination!
+        );
+
+        // Transform SDK results to our format
+        const items: AgentSummary[] = result.items.map((agent) => {
+          const parts = agent.agentId.split(':');
+          const chainIdStr = parts[0] || '0';
+          const tokenId = parts[1] || '0';
+
+          return {
+            id: agent.agentId,
+            chainId: Number.parseInt(chainIdStr, 10),
+            tokenId,
+            name: agent.name,
+            description: agent.description,
+            image: agent.image,
+            active: agent.active,
+            hasMcp: agent.mcp,
+            hasA2a: agent.a2a,
+            x402Support: agent.x402support,
+            supportedTrust: deriveSupportedTrust(agent.x402support),
+            operators: agent.operators || [],
+            ens: agent.ens || undefined,
+            did: agent.did || undefined,
+            walletAddress: agent.walletAddress || undefined,
+            inputModes: agent.mcpPrompts?.length ? ['mcp-prompt'] : undefined,
+            outputModes: agent.mcpResources?.length ? ['mcp-resource'] : undefined,
+          };
         });
 
-        const allResults = await Promise.all(queryPromises);
-
-        // Merge and deduplicate by agentId
-        const agentMap = new Map<string, AgentSummary>();
-        for (const result of allResults) {
-          for (const agent of result.items) {
-            if (!agentMap.has(agent.agentId)) {
-              // Transform to our format
-              const parts = agent.agentId.split(':');
-              const chainIdStr = parts[0] || '0';
-              const tokenId = parts[1] || '0';
-
-              agentMap.set(agent.agentId, {
-                id: agent.agentId,
-                chainId: Number.parseInt(chainIdStr, 10),
-                tokenId,
-                name: agent.name,
-                description: agent.description,
-                image: agent.image,
-                active: agent.active,
-                hasMcp: agent.mcp,
-                hasA2a: agent.a2a,
-                x402Support: agent.x402support,
-                supportedTrust: deriveSupportedTrust(agent.x402support),
-                operators: agent.operators || [],
-                ens: agent.ens || undefined,
-                did: agent.did || undefined,
-                walletAddress: agent.walletAddress || undefined,
-              });
-            }
-          }
-        }
-
-        // Group results by chain for fair distribution
-        const resultsByChain = new Map<number, AgentSummary[]>();
-        for (const agent of agentMap.values()) {
-          const chainAgents = resultsByChain.get(agent.chainId) || [];
-          chainAgents.push(agent);
-          resultsByChain.set(agent.chainId, chainAgents);
-        }
-
-        // Sort each chain's results by tokenId DESC (newest first within chain)
-        for (const agents of resultsByChain.values()) {
-          agents.sort((a, b) => Number(b.tokenId) - Number(a.tokenId));
-        }
-
-        // Interleave results from all chains (round-robin for fair distribution)
-        const mergedItems: AgentSummary[] = [];
-        const chainArrays = [...resultsByChain.values()];
-        let idx = 0;
-        while (mergedItems.length < limit) {
-          let added = false;
-          for (const chainAgents of chainArrays) {
-            const agent = chainAgents[idx];
-            if (agent) {
-              mergedItems.push(agent);
-              added = true;
-              if (mergedItems.length >= limit) break;
-            }
-          }
-          if (!added) break; // All chains exhausted
-          idx++;
-        }
+        // Get total from SDK meta or default to items length
+        const total = result.meta?.totalResults ?? items.length;
 
         return {
-          items: mergedItems,
-          // Multi-chain merge doesn't support cursor pagination
-          nextCursor: undefined,
+          items,
+          nextCursor: result.nextCursor,
+          total,
         };
       } catch (error) {
         // Throw SDKError to propagate to route handlers for proper 503 response
@@ -437,6 +292,9 @@ export function createSDKService(env: Env): SDKService {
           // MCP prompts and resources
           mcpPrompts: agent.mcpPrompts || [],
           mcpResources: agent.mcpResources || [],
+          // I/O mode metadata derived from MCP capabilities
+          inputModes: agent.mcpPrompts?.length ? ['mcp-prompt'] : undefined,
+          outputModes: agent.mcpResources?.length ? ['mcp-resource'] : undefined,
         };
       } catch (error) {
         // Throw SDKError to propagate to route handlers for proper 503 response
