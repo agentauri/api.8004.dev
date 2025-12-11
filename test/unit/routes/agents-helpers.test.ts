@@ -183,9 +183,7 @@ describe('filterByReputation', () => {
     const agentsWithNull = [
       createMockAgent({ id: '11155111:1', reputationScore: null as unknown as undefined }),
     ];
-    const agentsWithUndefined = [
-      createMockAgent({ id: '11155111:1', reputationScore: undefined }),
-    ];
+    const agentsWithUndefined = [createMockAgent({ id: '11155111:1', reputationScore: undefined })];
 
     // Both should behave identically
     expect(filterByReputation(agentsWithNull, 10, undefined)).toHaveLength(0);
