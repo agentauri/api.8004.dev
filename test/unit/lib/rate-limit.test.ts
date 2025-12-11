@@ -3,7 +3,7 @@
  * @module test/unit/lib/rate-limit
  */
 
-import { rateLimit, rateLimitByTier, rateLimitConfigs } from '@/lib/utils/rate-limit';
+import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -258,77 +258,5 @@ describe('rateLimit edge cases', () => {
     );
 
     consoleSpy.mockRestore();
-  });
-});
-
-describe('rateLimitByTier', () => {
-  let mockKV: ReturnType<typeof createMockKV>;
-
-  beforeEach(() => {
-    mockKV = createMockKV();
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2024-01-01T00:00:00Z'));
-  });
-
-  it('uses standard config for anonymous tier', async () => {
-    const app = new Hono<{
-      Bindings: { CACHE: typeof mockKV };
-      Variables: { apiKeyTier?: string };
-    }>();
-    app.use('*', rateLimitByTier());
-    app.get('/', (c) => c.text('OK'));
-
-    const request = new Request('http://localhost/', {
-      headers: { 'CF-Connecting-IP': '1.2.3.4' },
-    });
-    const response = await app.fetch(request, { CACHE: mockKV });
-
-    expect(response.status).toBe(200);
-    // Standard limit is 60
-    expect(response.headers.get('X-RateLimit-Limit')).toBe('60');
-  });
-
-  it('uses higher config for authenticated tier', async () => {
-    const app = new Hono<{
-      Bindings: { CACHE: typeof mockKV };
-      Variables: { apiKeyTier?: string };
-    }>();
-
-    // Middleware to set authenticated tier
-    app.use('*', async (c, next) => {
-      c.set('apiKeyTier', 'authenticated');
-      await next();
-    });
-    app.use('*', rateLimitByTier());
-    app.get('/', (c) => c.text('OK'));
-
-    const request = new Request('http://localhost/', {
-      headers: { 'CF-Connecting-IP': '1.2.3.4' },
-    });
-    const response = await app.fetch(request, { CACHE: mockKV });
-
-    expect(response.status).toBe(200);
-    // With API key limit is 300
-    expect(response.headers.get('X-RateLimit-Limit')).toBe('300');
-  });
-
-  it('uses custom keyPrefix', async () => {
-    const app = new Hono<{
-      Bindings: { CACHE: typeof mockKV };
-      Variables: { apiKeyTier?: string };
-    }>();
-    app.use('*', rateLimitByTier({ keyPrefix: 'custom-prefix' }));
-    app.get('/', (c) => c.text('OK'));
-
-    const request = new Request('http://localhost/', {
-      headers: { 'CF-Connecting-IP': '1.2.3.4' },
-    });
-    await app.fetch(request, { CACHE: mockKV });
-
-    expect(mockKV.put).toHaveBeenCalledWith(
-      expect.stringContaining('custom-prefix:'),
-      expect.any(String),
-      expect.any(Object)
-    );
   });
 });

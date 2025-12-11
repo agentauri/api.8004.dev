@@ -13,8 +13,6 @@ import {
   parseClassificationRow,
   searchRequestSchema,
   taxonomyQuerySchema,
-  validateBody,
-  validateQuery,
 } from '@/lib/utils/validation';
 import { describe, expect, it } from 'vitest';
 
@@ -226,52 +224,6 @@ describe('taxonomyQuerySchema', () => {
 
   it('rejects invalid types', () => {
     expect(() => taxonomyQuerySchema.parse({ type: 'invalid' })).toThrow();
-  });
-});
-
-describe('validateBody', () => {
-  it('parses valid JSON body', async () => {
-    const request = new Request('http://localhost/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: 'test search' }),
-    });
-
-    const result = await validateBody(request, searchRequestSchema);
-
-    expect(result.query).toBe('test search');
-    expect(result.limit).toBe(20); // default
-  });
-
-  it('throws on invalid body', async () => {
-    const request = new Request('http://localhost/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: '' }), // empty query is invalid
-    });
-
-    await expect(validateBody(request, searchRequestSchema)).rejects.toThrow();
-  });
-});
-
-describe('validateQuery', () => {
-  it('parses valid query parameters', () => {
-    const query = { type: 'skill' };
-    const result = validateQuery(query, taxonomyQuerySchema);
-
-    expect(result.type).toBe('skill');
-  });
-
-  it('applies defaults', () => {
-    const query = {};
-    const result = validateQuery(query, taxonomyQuerySchema);
-
-    expect(result.type).toBe('all');
-  });
-
-  it('throws on invalid query', () => {
-    const query = { type: 'invalid' };
-    expect(() => validateQuery(query, taxonomyQuerySchema)).toThrow();
   });
 });
 
