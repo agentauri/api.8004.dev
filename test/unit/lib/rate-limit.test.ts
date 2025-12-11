@@ -250,8 +250,8 @@ describe('rateLimit edge cases', () => {
     });
     const response = await app.fetch(request, { CACHE: brokenKV });
 
-    // Should succeed - fail open on KV errors
-    expect(response.status).toBe(200);
+    // Should fail closed on KV errors (security measure)
+    expect(response.status).toBe(500);
     expect(consoleSpy).toHaveBeenCalledWith(
       expect.stringContaining('Rate limit KV error'),
       expect.any(String)

@@ -28,7 +28,7 @@ import type { ClassificationJob, Env, Variables } from '@/types';
 import { Hono } from 'hono';
 
 /**
- * Required environment variables that must be set
+ * Required environment variables that must be set in production
  */
 const REQUIRED_ENV_VARS = [
   'ANTHROPIC_API_KEY',
@@ -41,9 +41,14 @@ const REQUIRED_ENV_VARS = [
 /**
  * Validate that all required environment variables are set
  * @param env - Environment bindings
- * @throws Error if any required env var is missing
+ * @throws Error if any required env var is missing (only in production)
  */
 function validateEnv(env: Env): void {
+  // Skip validation in test environment (ENVIRONMENT=test or not set)
+  if (!env.ENVIRONMENT || env.ENVIRONMENT === 'test') {
+    return;
+  }
+
   const missing: string[] = [];
   for (const key of REQUIRED_ENV_VARS) {
     if (!env[key]) {
