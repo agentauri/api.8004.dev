@@ -68,6 +68,10 @@ describe('GET /api/v1/health', () => {
         ...env,
         ANTHROPIC_API_KEY: 'invalid-api-key',
         SEARCH_SERVICE_URL: 'https://search.example.com',
+        SEPOLIA_RPC_URL: 'https://sepolia.example.com',
+        BASE_SEPOLIA_RPC_URL: 'https://base-sepolia.example.com',
+        POLYGON_AMOY_RPC_URL: 'https://polygon-amoy.example.com',
+        ENVIRONMENT: 'test',
       },
       ctx
     );

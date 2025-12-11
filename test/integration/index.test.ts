@@ -12,6 +12,21 @@ import { TEST_API_KEY, createMockEnv } from '../setup';
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
+/**
+ * Create test environment with all required variables
+ */
+function createTestEnv() {
+  return {
+    ...env,
+    ANTHROPIC_API_KEY: 'sk-ant-test-key',
+    SEARCH_SERVICE_URL: 'https://search.example.com',
+    SEPOLIA_RPC_URL: 'https://sepolia.example.com',
+    BASE_SEPOLIA_RPC_URL: 'https://base-sepolia.example.com',
+    POLYGON_AMOY_RPC_URL: 'https://polygon-amoy.example.com',
+    ENVIRONMENT: 'test',
+  };
+}
+
 describe('Root endpoint', () => {
   beforeEach(() => {
     mockFetch.mockReset();
@@ -24,15 +39,7 @@ describe('Root endpoint', () => {
   it('returns app info at root', async () => {
     const request = new Request('http://localhost/');
     const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
+    const response = await app.fetch(request, createTestEnv(), ctx);
     await waitOnExecutionContext(ctx);
 
     expect(response.status).toBe(200);
@@ -46,15 +53,7 @@ describe('Root endpoint', () => {
   it('includes security headers on root', async () => {
     const request = new Request('http://localhost/');
     const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
+    const response = await app.fetch(request, createTestEnv(), ctx);
     await waitOnExecutionContext(ctx);
 
     expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
@@ -74,15 +73,7 @@ describe('404 handler', () => {
   it('returns 404 for unknown routes', async () => {
     const request = new Request('http://localhost/api/v1/unknown');
     const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
+    const response = await app.fetch(request, createTestEnv(), ctx);
     await waitOnExecutionContext(ctx);
 
     expect(response.status).toBe(404);
@@ -96,15 +87,7 @@ describe('404 handler', () => {
   it('includes security headers on 404', async () => {
     const request = new Request('http://localhost/nonexistent');
     const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
+    const response = await app.fetch(request, createTestEnv(), ctx);
     await waitOnExecutionContext(ctx);
 
     expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
@@ -158,15 +141,7 @@ describe('CORS', () => {
       },
     });
     const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
+    const response = await app.fetch(request, createTestEnv(), ctx);
     await waitOnExecutionContext(ctx);
 
     expect(response.status).toBe(204);
@@ -179,15 +154,7 @@ describe('CORS', () => {
       headers: { Origin: 'https://8004.dev' },
     });
     const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
+    const response = await app.fetch(request, createTestEnv(), ctx);
     await waitOnExecutionContext(ctx);
 
     expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://8004.dev');
@@ -198,15 +165,7 @@ describe('CORS', () => {
       headers: { Origin: 'https://malicious.com' },
     });
     const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
+    const response = await app.fetch(request, createTestEnv(), ctx);
     await waitOnExecutionContext(ctx);
 
     expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull();
@@ -249,15 +208,7 @@ describe('Request ID propagation', () => {
   it('generates request ID when not provided', async () => {
     const request = new Request('http://localhost/api/v1/health');
     const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
+    const response = await app.fetch(request, createTestEnv(), ctx);
     await waitOnExecutionContext(ctx);
 
     const requestId = response.headers.get('X-Request-ID');
@@ -271,15 +222,7 @@ describe('Request ID propagation', () => {
       headers: { 'X-Request-ID': providedId },
     });
     const ctx = createExecutionContext();
-    const response = await app.fetch(
-      request,
-      {
-        ...env,
-        ANTHROPIC_API_KEY: 'sk-ant-test-key',
-        SEARCH_SERVICE_URL: 'https://search.example.com',
-      },
-      ctx
-    );
+    const response = await app.fetch(request, createTestEnv(), ctx);
     await waitOnExecutionContext(ctx);
 
     expect(response.headers.get('X-Request-ID')).toBe(providedId);
