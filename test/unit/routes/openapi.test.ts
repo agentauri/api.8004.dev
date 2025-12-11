@@ -11,14 +11,14 @@ import { describe, expect, it } from 'vitest';
 
 function createTestApp() {
   const app = new Hono<{ Bindings: Env; Variables: Variables }>();
-  app.route('/api/v1/openapi.json', openapi);
+  app.route('/api/v1/openapi', openapi);
   return app;
 }
 
-describe('GET /api/v1/openapi.json', () => {
+describe('GET /api/v1/openapi/openapi.json', () => {
   it('returns OpenAPI specification', async () => {
     const app = createTestApp();
-    const res = await app.request('/api/v1/openapi.json', {}, env);
+    const res = await app.request('/api/v1/openapi/openapi.json', {}, env);
 
     expect(res.status).toBe(200);
 
@@ -30,7 +30,7 @@ describe('GET /api/v1/openapi.json', () => {
 
   it('includes all required paths', async () => {
     const app = createTestApp();
-    const res = await app.request('/api/v1/openapi.json', {}, env);
+    const res = await app.request('/api/v1/openapi/openapi.json', {}, env);
     const data = await res.json();
 
     const expectedPaths = [
@@ -53,7 +53,7 @@ describe('GET /api/v1/openapi.json', () => {
 
   it('includes security scheme', async () => {
     const app = createTestApp();
-    const res = await app.request('/api/v1/openapi.json', {}, env);
+    const res = await app.request('/api/v1/openapi/openapi.json', {}, env);
     const data = await res.json();
 
     expect(data.components.securitySchemes).toBeDefined();
@@ -65,7 +65,7 @@ describe('GET /api/v1/openapi.json', () => {
 
   it('includes all required schemas', async () => {
     const app = createTestApp();
-    const res = await app.request('/api/v1/openapi.json', {}, env);
+    const res = await app.request('/api/v1/openapi/openapi.json', {}, env);
     const data = await res.json();
 
     const expectedSchemas = [
@@ -90,7 +90,7 @@ describe('GET /api/v1/openapi.json', () => {
 
   it('includes tags for grouping', async () => {
     const app = createTestApp();
-    const res = await app.request('/api/v1/openapi.json', {}, env);
+    const res = await app.request('/api/v1/openapi/openapi.json', {}, env);
     const data = await res.json();
 
     expect(data.tags).toBeDefined();
@@ -104,7 +104,7 @@ describe('GET /api/v1/openapi.json', () => {
 
   it('health endpoint has no security requirement', async () => {
     const app = createTestApp();
-    const res = await app.request('/api/v1/openapi.json', {}, env);
+    const res = await app.request('/api/v1/openapi/openapi.json', {}, env);
     const data = await res.json();
 
     const healthPath = data.paths['/api/v1/health'];
@@ -113,7 +113,7 @@ describe('GET /api/v1/openapi.json', () => {
 
   it('includes server information', async () => {
     const app = createTestApp();
-    const res = await app.request('/api/v1/openapi.json', {}, env);
+    const res = await app.request('/api/v1/openapi/openapi.json', {}, env);
     const data = await res.json();
 
     expect(data.servers).toBeDefined();
@@ -122,10 +122,10 @@ describe('GET /api/v1/openapi.json', () => {
   });
 });
 
-describe('GET /api/v1/openapi.json/yaml', () => {
+describe('GET /api/v1/openapi/openapi.yaml', () => {
   it('returns YAML content type', async () => {
     const app = createTestApp();
-    const res = await app.request('/api/v1/openapi.json/yaml', {}, env);
+    const res = await app.request('/api/v1/openapi/openapi.yaml', {}, env);
 
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toContain('application/x-yaml');
