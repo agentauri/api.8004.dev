@@ -18,13 +18,7 @@
     "db:migrate": "wrangler d1 execute 8004-backend-db --file=./migrations/0001_init.sql",
     "db:migrate:local": "wrangler d1 execute 8004-backend-db --local --file=./migrations/0001_init.sql"
   },
-  "keywords": [
-    "erc-8004",
-    "agents",
-    "cloudflare-workers",
-    "hono",
-    "oasf"
-  ],
+  "keywords": ["erc-8004", "agents", "cloudflare-workers", "hono", "oasf"],
   "author": "Agent0 Lab",
   "license": "MIT",
   "repository": {
