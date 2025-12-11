@@ -55,7 +55,7 @@ app.use('/api/v1/taxonomy/*', requireApiKey());
 
 // Mount routes
 app.route('/api/v1/health', health);
-app.route('/api/v1/openapi.json', openapi);
+app.route('/api/v1/openapi', openapi);
 app.route('/api/v1/agents', agents);
 app.route('/api/v1/search', search);
 app.route('/api/v1/chains', chains);
@@ -67,7 +67,10 @@ app.get('/', (c) => {
   return c.json({
     name: '8004-backend',
     version: '1.0.0',
-    docs: '/api/v1/openapi.json',
+    docs: {
+      json: '/api/v1/openapi/openapi.json',
+      yaml: '/api/v1/openapi/openapi.yaml',
+    },
     health: '/api/v1/health',
   });
 });

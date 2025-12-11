@@ -951,7 +951,7 @@ const openapi = new Hono<{ Bindings: Env; Variables: Variables }>();
  * GET /api/v1/openapi.json
  * Returns OpenAPI 3.1.0 specification
  */
-openapi.get('/', (c) => {
+openapi.get('/openapi.json', (c) => {
   const spec = generateOpenAPISpec();
   return c.json(spec);
 });
@@ -962,11 +962,19 @@ openapi.get('/', (c) => {
  * Note: Returns JSON structure with YAML content-type hint.
  * Full YAML serialization would require an additional dependency.
  */
-openapi.get('/yaml', (_c) => {
+openapi.get('/openapi.yaml', (_c) => {
   const spec = generateOpenAPISpec();
   return new Response(JSON.stringify(spec, null, 2), {
     headers: { 'Content-Type': 'application/x-yaml' },
   });
+});
+
+/**
+ * GET /api/v1/openapi (redirect to .json)
+ */
+openapi.get('/', (c) => {
+  const spec = generateOpenAPISpec();
+  return c.json(spec);
 });
 
 export { openapi };
