@@ -45,6 +45,6 @@
   },
   "files": {
     "include": ["src/**/*", "test/**/*", "*.ts", "*.json"],
-    "ignore": ["node_modules", "dist", "coverage", ".wrangler"]
+    "ignore": ["node_modules", "dist", "coverage", ".wrangler", "test-sdk-scripts"]
   }
 }

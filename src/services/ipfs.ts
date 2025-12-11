@@ -87,18 +87,102 @@ export interface IPFSService {
 }
 
 /**
+ * Allowed URL protocols for metadata fetching
+ * SECURITY: Only allow safe protocols to prevent SSRF attacks
+ */
+const ALLOWED_PROTOCOLS = ['https:', 'ipfs:'];
+
+/**
+ * Blocked hostnames to prevent SSRF to internal services
+ * SECURITY: Block localhost, private IPs, and metadata endpoints
+ */
+const BLOCKED_HOSTNAMES = [
+  'localhost',
+  '127.0.0.1',
+  '0.0.0.0',
+  '169.254.169.254', // AWS metadata
+  'metadata.google.internal', // GCP metadata
+  '100.100.100.200', // Alibaba metadata
+];
+
+/**
+ * Check if a hostname is blocked (private/internal)
+ * SECURITY: Prevents SSRF to internal services
+ */
+function isBlockedHostname(hostname: string): boolean {
+  const lower = hostname.toLowerCase();
+
+  // Check exact matches
+  if (BLOCKED_HOSTNAMES.includes(lower)) {
+    return true;
+  }
+
+  // Block private IP ranges
+  if (
+    /^10\./.test(hostname) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) ||
+    /^192\.168\./.test(hostname)
+  ) {
+    return true;
+  }
+
+  // Block .local and .internal domains
+  if (lower.endsWith('.local') || lower.endsWith('.internal')) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Validate a URL for safe fetching
+ * SECURITY: Prevents SSRF attacks by validating protocol and hostname
+ * @param url - URL to validate
+ * @returns true if URL is safe to fetch
+ */
+export function isValidMetadataUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+
+    // Check protocol
+    if (!ALLOWED_PROTOCOLS.includes(parsed.protocol)) {
+      return false;
+    }
+
+    // For https URLs, check hostname
+    if (parsed.protocol === 'https:') {
+      if (isBlockedHostname(parsed.hostname)) {
+        return false;
+      }
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Convert an IPFS URI to an HTTP gateway URL
  * @param uri - The ipfs:// or https:// URI
  * @param gateway - The IPFS gateway base URL
- * @returns HTTP URL
+ * @returns HTTP URL or null if URL is invalid/unsafe
  */
-export function convertIpfsUri(uri: string, gateway: string = DEFAULT_IPFS_GATEWAY): string {
+export function convertIpfsUri(uri: string, gateway: string = DEFAULT_IPFS_GATEWAY): string | null {
   if (uri.startsWith('ipfs://')) {
     const cid = uri.replace('ipfs://', '');
+    // Validate CID format (basic check - alphanumeric with optional path)
+    if (!/^[a-zA-Z0-9]+/.test(cid)) {
+      return null;
+    }
     return `${gateway}${cid}`;
   }
 
-  // Already an HTTP URL
+  // For HTTP URLs, validate before returning
+  if (!isValidMetadataUrl(uri)) {
+    return null;
+  }
+
   return uri;
 }
 
@@ -165,6 +249,7 @@ export function createIPFSService(
   const timeoutMs = config.timeoutMs || DEFAULT_IPFS_TIMEOUT_MS;
 
   return {
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: IPFS metadata fetching requires validation, normalization, and error handling
     async fetchMetadata(metadataUri: string, agentId: string): Promise<IPFSMetadata | null> {
       // Check cache first
       const cacheKey = CACHE_KEYS.ipfsMetadata(agentId);
@@ -179,8 +264,14 @@ export function createIPFSService(
       }
 
       try {
-        // Convert IPFS URI to HTTP
+        // Convert IPFS URI to HTTP (with SSRF protection)
         const httpUrl = convertIpfsUri(metadataUri, gatewayUrl);
+
+        // SECURITY: Reject invalid/unsafe URLs
+        if (!httpUrl) {
+          console.warn(`IPFS fetch rejected for ${agentId}: invalid or unsafe URL`);
+          return null;
+        }
 
         // Fetch with timeout
         const response = await fetchWithTimeout(

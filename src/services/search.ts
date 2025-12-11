@@ -281,11 +281,48 @@ function mergeSearchResults(
 const MAX_SEARCH_RESULTS = 100;
 
 /**
+ * Validate search service URL
+ * SECURITY: Prevents SSRF by only allowing HTTPS URLs to known domains
+ */
+function isValidSearchServiceUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    // Only allow HTTPS
+    if (parsed.protocol !== 'https:') {
+      return false;
+    }
+    // Block localhost and private IPs
+    const blockedHosts = ['localhost', '127.0.0.1', '0.0.0.0', '169.254.169.254'];
+    if (blockedHosts.includes(parsed.hostname.toLowerCase())) {
+      return false;
+    }
+    // Block private IP ranges
+    if (
+      /^10\./.test(parsed.hostname) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(parsed.hostname) ||
+      /^192\.168\./.test(parsed.hostname)
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Create search service client
  * @param searchServiceUrl - Base URL for search service
  * @param cache - Optional cache service for pagination support
+ * @throws Error if URL is invalid or unsafe
  */
 export function createSearchService(searchServiceUrl: string, cache?: CacheService): SearchService {
+  // SECURITY: Validate URL before using
+  if (!isValidSearchServiceUrl(searchServiceUrl)) {
+    throw new Error(
+      'Invalid search service URL: must be HTTPS and not point to internal resources'
+    );
+  }
   const baseUrl = searchServiceUrl.replace(/\/$/, '');
 
   /**

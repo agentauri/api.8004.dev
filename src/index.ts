@@ -27,6 +27,34 @@ import { createSDKService } from '@/services/sdk';
 import type { ClassificationJob, Env, Variables } from '@/types';
 import { Hono } from 'hono';
 
+/**
+ * Required environment variables that must be set
+ */
+const REQUIRED_ENV_VARS = [
+  'ANTHROPIC_API_KEY',
+  'SEARCH_SERVICE_URL',
+  'SEPOLIA_RPC_URL',
+  'BASE_SEPOLIA_RPC_URL',
+  'POLYGON_AMOY_RPC_URL',
+] as const;
+
+/**
+ * Validate that all required environment variables are set
+ * @param env - Environment bindings
+ * @throws Error if any required env var is missing
+ */
+function validateEnv(env: Env): void {
+  const missing: string[] = [];
+  for (const key of REQUIRED_ENV_VARS) {
+    if (!env[key]) {
+      missing.push(key);
+    }
+  }
+  if (missing.length > 0) {
+    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+  }
+}
+
 // Create Hono app
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -179,7 +207,11 @@ async function syncEASAttestations(env: Env): Promise<void> {
 
 // Export for Cloudflare Workers
 export default {
-  fetch: app.fetch,
+  fetch: (request: Request, env: Env, ctx: ExecutionContext) => {
+    // Validate environment on first request
+    validateEnv(env);
+    return app.fetch(request, env, ctx);
+  },
 
   /**
    * Queue consumer handler

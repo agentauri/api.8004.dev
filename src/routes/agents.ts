@@ -78,6 +78,7 @@ function sortAgents(
 
 /**
  * Filter agents by reputation score range
+ * Agents without reputation are included unless minRep > 0
  */
 function filterByReputation(
   agents: AgentSummary[],
@@ -90,9 +91,9 @@ function filterByReputation(
 
   return agents.filter((agent) => {
     const score = agent.reputationScore;
-    // Agents without reputation are excluded if min/max filters are applied
+    // Agents without reputation pass if minRep is 0 or undefined
     if (score === undefined) {
-      return false;
+      return minRep === undefined || minRep === 0;
     }
     if (minRep !== undefined && score < minRep) {
       return false;
@@ -116,7 +117,15 @@ agents.use('*', rateLimit(rateLimitConfigs.standard));
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Complex handler with multiple code paths for search vs SDK, OR vs AND mode
 agents.get('/', async (c) => {
   // Parse and validate query parameters
+  // Use c.req.queries() to properly handle array notation (e.g., chainIds[]=X&chainIds[]=Y)
   const rawQuery = c.req.query();
+  const rawQueries = c.req.queries();
+
+  // Merge array values: if chainIds[] has multiple values, use the array from queries()
+  if (rawQueries['chainIds[]'] && rawQueries['chainIds[]'].length > 1) {
+    (rawQuery as Record<string, unknown>)['chainIds[]'] = rawQueries['chainIds[]'];
+  }
+
   const queryResult = listAgentsQuerySchema.safeParse(rawQuery);
 
   if (!queryResult.success) {
@@ -146,159 +155,166 @@ agents.get('/', async (c) => {
 
   // If search query provided, use semantic search
   if (query.q) {
-    const searchService = createSearchService(c.env.SEARCH_SERVICE_URL);
-    const searchResults = await searchService.search({
-      query: query.q,
-      limit: query.limit,
-      minScore: query.minScore,
-      cursor: query.cursor,
-      filters: {
-        chainIds,
-        active: query.active,
-        mcp: query.mcp,
-        a2a: query.a2a,
-        x402: query.x402,
-        skills: query.skills,
-        domains: query.domains,
-        filterMode: query.filterMode,
-      },
-    });
+    try {
+      const searchService = createSearchService(c.env.SEARCH_SERVICE_URL);
+      const searchResults = await searchService.search({
+        query: query.q,
+        limit: query.limit,
+        minScore: query.minScore,
+        cursor: query.cursor,
+        filters: {
+          chainIds,
+          active: query.active,
+          mcp: query.mcp,
+          a2a: query.a2a,
+          x402: query.x402,
+          skills: query.skills,
+          domains: query.domains,
+          filterMode: query.filterMode,
+        },
+      });
 
-    // Batch fetch classifications and reputations for all search results (N+1 fix)
-    const agentIds = searchResults.results.map((r) => r.agentId);
-    const [classificationsMap, reputationsMap] = await Promise.all([
-      getClassificationsBatch(c.env.DB, agentIds),
-      getReputationsBatch(c.env.DB, agentIds),
-    ]);
+      // Batch fetch classifications and reputations for all search results (N+1 fix)
+      const agentIds = searchResults.results.map((r) => r.agentId);
+      const [classificationsMap, reputationsMap] = await Promise.all([
+        getClassificationsBatch(c.env.DB, agentIds),
+        getReputationsBatch(c.env.DB, agentIds),
+      ]);
 
-    // Enrich search results with full agent data
-    // Use Promise.allSettled for graceful error handling - failed fetches use search data fallback
-    const enrichedResults = await Promise.allSettled(
-      searchResults.results.map(async (result) => {
-        const { chainId, tokenId } = parseAgentId(result.agentId);
-        const agent = await sdk.getAgent(chainId, tokenId);
+      // Enrich search results with full agent data
+      // Use Promise.allSettled for graceful error handling - failed fetches use search data fallback
+      const enrichedResults = await Promise.allSettled(
+        searchResults.results.map(async (result) => {
+          const { chainId, tokenId } = parseAgentId(result.agentId);
+          const agent = await sdk.getAgent(chainId, tokenId);
 
-        // Get classification from batch result
-        const classificationRow = classificationsMap.get(result.agentId);
-        const oasf = parseClassificationRow(classificationRow);
+          // Get classification from batch result
+          const classificationRow = classificationsMap.get(result.agentId);
+          const oasf = parseClassificationRow(classificationRow);
 
-        // Get reputation from batch result
-        const reputationRow = reputationsMap.get(result.agentId);
+          // Get reputation from batch result
+          const reputationRow = reputationsMap.get(result.agentId);
 
-        return {
-          id: result.agentId,
-          chainId: result.chainId,
-          tokenId,
-          name: agent?.name ?? result.name,
-          description: agent?.description ?? result.description,
-          image: agent?.image,
-          active: agent?.active ?? true,
-          hasMcp: agent?.hasMcp ?? false,
-          hasA2a: agent?.hasA2a ?? false,
-          x402Support: agent?.x402Support ?? false,
-          supportedTrust: agent?.supportedTrust ?? [],
-          operators: agent?.operators ?? [],
-          ens: agent?.ens,
-          did: agent?.did,
-          walletAddress: agent?.walletAddress,
-          oasf,
-          oasfSource: (oasf ? 'llm-classification' : 'none') as OASFSource,
-          searchScore: result.score,
-          reputationScore: reputationRow?.average_score,
-          reputationCount: reputationRow?.feedback_count,
-        };
-      })
-    );
-
-    // Filter successful results and log failures
-    const enrichedAgents = enrichedResults
-      .map((result, index) => {
-        if (result.status === 'fulfilled') {
-          return result.value;
-        }
-        // Log failed enrichment but use search result data as fallback
-        const searchResult = searchResults.results[index];
-        console.error(`Failed to enrich agent ${searchResult?.agentId}:`, result.reason);
-        if (searchResult) {
-          const { tokenId } = parseAgentId(searchResult.agentId);
-          const reputationRow = reputationsMap.get(searchResult.agentId);
-          const fallbackOasf = parseClassificationRow(classificationsMap.get(searchResult.agentId));
           return {
-            id: searchResult.agentId,
-            chainId: searchResult.chainId,
+            id: result.agentId,
+            chainId: result.chainId,
             tokenId,
-            name: searchResult.name,
-            description: searchResult.description,
-            image: undefined,
-            active: true,
-            hasMcp: false,
-            hasA2a: false,
-            x402Support: false,
-            supportedTrust: [],
-            operators: [],
-            ens: undefined,
-            did: undefined,
-            walletAddress: undefined,
-            oasf: fallbackOasf,
-            oasfSource: (fallbackOasf ? 'llm-classification' : 'none') as OASFSource,
-            searchScore: searchResult.score,
+            name: agent?.name ?? result.name,
+            description: agent?.description ?? result.description,
+            image: agent?.image,
+            active: agent?.active ?? true,
+            hasMcp: agent?.hasMcp ?? false,
+            hasA2a: agent?.hasA2a ?? false,
+            x402Support: agent?.x402Support ?? false,
+            supportedTrust: agent?.supportedTrust ?? [],
+            operators: agent?.operators ?? [],
+            ens: agent?.ens,
+            did: agent?.did,
+            walletAddress: agent?.walletAddress,
+            oasf,
+            oasfSource: (oasf ? 'llm-classification' : 'none') as OASFSource,
+            searchScore: result.score,
             reputationScore: reputationRow?.average_score,
             reputationCount: reputationRow?.feedback_count,
           };
-        }
-        return null;
-      })
-      .filter((agent): agent is NonNullable<typeof agent> => agent !== null);
-
-    // Apply reputation filtering
-    const filteredAgents = filterByReputation(enrichedAgents, query.minRep, query.maxRep);
-
-    // Apply sorting
-    const sortedAgents = sortAgents(filteredAgents, query.sort, query.order);
-
-    // Fetch chain stats for totals (cached via SDK)
-    const chainStats = await sdk.getChainStats();
-    const stats = {
-      total: chainStats.reduce((sum, c) => sum + c.totalCount, 0),
-      withRegistrationFile: chainStats.reduce((sum, c) => sum + c.withRegistrationFileCount, 0),
-      active: chainStats.reduce((sum, c) => sum + c.activeCount, 0),
-      byChain: chainStats.map((c) => ({
-        chainId: c.chainId,
-        name: c.name,
-        totalCount: c.totalCount,
-        withRegistrationFileCount: c.withRegistrationFileCount,
-        activeCount: c.activeCount,
-      })),
-    };
-
-    const response: AgentListResponse = {
-      success: true,
-      data: sortedAgents,
-      meta: {
-        total: searchResults.total,
-        hasMore: searchResults.hasMore,
-        nextCursor: searchResults.nextCursor,
-        stats,
-      },
-    };
-
-    // Trigger background classification for unclassified agents (non-blocking)
-    const unclassifiedIds = sortedAgents
-      .filter((a) => !a.oasf)
-      .slice(0, 10) // Limit to 10 per request to avoid spam
-      .map((a) => a.id);
-
-    if (unclassifiedIds.length > 0) {
-      // Use waitUntil to properly register the background task with Workers runtime
-      c.executionCtx.waitUntil(
-        enqueueClassificationsBatch(c.env.DB, unclassifiedIds).catch((err) => {
-          console.error('Failed to enqueue classifications:', err);
         })
       );
-    }
 
-    await cache.set(cacheKey, response, CACHE_TTL.AGENTS);
-    return c.json(response);
+      // Filter successful results and log failures
+      const enrichedAgents = enrichedResults
+        .map((result, index) => {
+          if (result.status === 'fulfilled') {
+            return result.value;
+          }
+          // Log failed enrichment but use search result data as fallback
+          const searchResult = searchResults.results[index];
+          console.error(`Failed to enrich agent ${searchResult?.agentId}:`, result.reason);
+          if (searchResult) {
+            const { tokenId } = parseAgentId(searchResult.agentId);
+            const reputationRow = reputationsMap.get(searchResult.agentId);
+            const fallbackOasf = parseClassificationRow(
+              classificationsMap.get(searchResult.agentId)
+            );
+            return {
+              id: searchResult.agentId,
+              chainId: searchResult.chainId,
+              tokenId,
+              name: searchResult.name,
+              description: searchResult.description,
+              image: undefined,
+              active: true,
+              hasMcp: false,
+              hasA2a: false,
+              x402Support: false,
+              supportedTrust: [],
+              operators: [],
+              ens: undefined,
+              did: undefined,
+              walletAddress: undefined,
+              oasf: fallbackOasf,
+              oasfSource: (fallbackOasf ? 'llm-classification' : 'none') as OASFSource,
+              searchScore: searchResult.score,
+              reputationScore: reputationRow?.average_score,
+              reputationCount: reputationRow?.feedback_count,
+            };
+          }
+          return null;
+        })
+        .filter((agent): agent is NonNullable<typeof agent> => agent !== null);
+
+      // Apply reputation filtering
+      const filteredAgents = filterByReputation(enrichedAgents, query.minRep, query.maxRep);
+
+      // Apply sorting
+      const sortedAgents = sortAgents(filteredAgents, query.sort, query.order);
+
+      // Fetch chain stats for totals (cached via SDK)
+      const chainStats = await sdk.getChainStats();
+      const stats = {
+        total: chainStats.reduce((sum, c) => sum + c.totalCount, 0),
+        withRegistrationFile: chainStats.reduce((sum, c) => sum + c.withRegistrationFileCount, 0),
+        active: chainStats.reduce((sum, c) => sum + c.activeCount, 0),
+        byChain: chainStats.map((c) => ({
+          chainId: c.chainId,
+          name: c.name,
+          totalCount: c.totalCount,
+          withRegistrationFileCount: c.withRegistrationFileCount,
+          activeCount: c.activeCount,
+        })),
+      };
+
+      const response: AgentListResponse = {
+        success: true,
+        data: sortedAgents,
+        meta: {
+          total: searchResults.total,
+          hasMore: searchResults.hasMore,
+          nextCursor: searchResults.nextCursor,
+          stats,
+        },
+      };
+
+      // Trigger background classification for unclassified agents (non-blocking)
+      const unclassifiedIds = sortedAgents
+        .filter((a) => !a.oasf)
+        .slice(0, 10) // Limit to 10 per request to avoid spam
+        .map((a) => a.id);
+
+      if (unclassifiedIds.length > 0) {
+        // Use waitUntil to properly register the background task with Workers runtime
+        c.executionCtx.waitUntil(
+          enqueueClassificationsBatch(c.env.DB, unclassifiedIds).catch((err) => {
+            console.error('Failed to enqueue classifications:', err);
+          })
+        );
+      }
+
+      await cache.set(cacheKey, response, CACHE_TTL.AGENTS);
+      return c.json(response);
+    } catch (error) {
+      console.error('Search error in agents route:', error);
+      return errors.internalError(c, 'Search service error');
+    }
   }
 
   // Otherwise, use SDK directly with cursor-based pagination
@@ -323,6 +339,7 @@ agents.get('/', async (c) => {
       chainIds,
       limit: query.limit,
       active: query.active,
+      hasRegistrationFile: query.hasRegistrationFile,
     };
 
     const queryPromises = booleanFilters.map((filter) =>
@@ -362,6 +379,7 @@ agents.get('/', async (c) => {
       hasMcp: query.mcp,
       hasA2a: query.a2a,
       hasX402: query.x402,
+      hasRegistrationFile: query.hasRegistrationFile,
     });
   }
 
@@ -534,4 +552,4 @@ agents.route('/:agentId/classify', classify);
 // Mount reputation routes
 agents.route('/:agentId/reputation', reputation);
 
-export { agents };
+export { agents, filterByReputation, sortAgents };

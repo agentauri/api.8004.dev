@@ -20,11 +20,38 @@ export const chainIdSchema = z.coerce
   });
 
 /**
- * Agent ID validation (format: chainId:tokenId)
+ * Maximum safe integer for tokenId validation
+ * SECURITY: Prevents BigInt overflow attacks
  */
-export const agentIdSchema = z.string().regex(/^\d+:\d+$/, {
-  message: 'Agent ID must be in format chainId:tokenId (e.g., "11155111:123")',
-});
+const MAX_SAFE_TOKEN_ID = BigInt(Number.MAX_SAFE_INTEGER);
+
+/**
+ * Agent ID validation (format: chainId:tokenId)
+ * SECURITY: Validates both parts are within safe numeric ranges
+ */
+export const agentIdSchema = z
+  .string()
+  .regex(/^\d+:\d+$/, {
+    message: 'Agent ID must be in format chainId:tokenId (e.g., "11155111:123")',
+  })
+  .refine(
+    (val) => {
+      const [chainIdStr, tokenIdStr] = val.split(':');
+      if (!chainIdStr || !tokenIdStr) return false;
+      try {
+        // Validate chainId is within safe integer range
+        const chainId = Number.parseInt(chainIdStr, 10);
+        if (!Number.isSafeInteger(chainId) || chainId < 0) return false;
+        // Validate tokenId is within safe range (BigInt comparison)
+        const tokenId = BigInt(tokenIdStr);
+        if (tokenId < 0n || tokenId > MAX_SAFE_TOKEN_ID) return false;
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    { message: 'Agent ID contains invalid or out-of-range values' }
+  );
 
 /**
  * Parse agent ID into components
@@ -172,21 +199,6 @@ export const taxonomyQuerySchema = z.object({
 });
 
 export type TaxonomyQuery = z.infer<typeof taxonomyQuerySchema>;
-
-/**
- * Validate and parse request body
- */
-export async function validateBody<T>(request: Request, schema: z.ZodSchema<T>): Promise<T> {
-  const body = await request.json();
-  return schema.parse(body);
-}
-
-/**
- * Validate query parameters
- */
-export function validateQuery<T>(query: Record<string, string>, schema: z.ZodSchema<T>): T {
-  return schema.parse(query);
-}
 
 /**
  * OASF classification data structure

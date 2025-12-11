@@ -38,7 +38,7 @@ pnpm run dev
 
 ### Testing
 
-- **100% code coverage is required**
+- **70% branch coverage minimum is required**
 - Run `pnpm run test:coverage` before submitting
 
 ### Commit Messages

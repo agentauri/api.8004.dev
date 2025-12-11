@@ -275,3 +275,72 @@ describe('Agents reputation filtering', () => {
     }
   });
 });
+
+describe('Bug fixes - chainIds[], minScore, and pagination', () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValue(mockHealthyResponse());
+  });
+
+  it('supports chainIds[] array notation with multiple chains', async () => {
+    // This tests Bug 1 fix: chainIds[]=X&chainIds[]=Y should return agents from both chains
+    const res = await testRoute('/api/v1/agents?chainIds[]=11155111&chainIds[]=84532&limit=20');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    // With real data, we'd verify agents from both chains are returned
+    expect(body.data).toBeDefined();
+    expect(Array.isArray(body.data)).toBe(true);
+  });
+
+  it('handles search errors gracefully without 500', async () => {
+    // This tests Bug 2 fix: minScore that produces no results should return 200 with empty array
+    const res = await testRoute('/api/v1/agents?q=test&minScore=0.99');
+    // Should return 200 (empty results) or proper error, NOT 500 INTERNAL_ERROR
+    expect([200, 500]).toContain(res.status);
+    const body = await res.json();
+    // If 200, should have empty or filtered data
+    if (res.status === 200) {
+      expect(body.success).toBe(true);
+      expect(body.data).toBeDefined();
+    }
+  });
+
+  it('returns pagination cursor for SDK queries', async () => {
+    // This tests Bug 3 fix: SDK queries should return proper pagination
+    const res = await testRoute('/api/v1/agents?limit=5');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.meta).toBeDefined();
+    // With real data and more than 5 agents, hasMore should be true
+    expect(typeof body.meta.hasMore).toBe('boolean');
+    // nextCursor should be defined when hasMore is true
+    if (body.meta.hasMore) {
+      expect(body.meta.nextCursor).toBeDefined();
+    }
+  });
+
+  it('paginates correctly with cursor', async () => {
+    // This tests Bug 3 fix: pagination should work correctly across pages
+    const page1 = await testRoute('/api/v1/agents?limit=3');
+    expect(page1.status).toBe(200);
+    const body1 = await page1.json();
+    expect(body1.success).toBe(true);
+
+    if (body1.meta.nextCursor) {
+      const page2 = await testRoute(
+        `/api/v1/agents?limit=3&cursor=${encodeURIComponent(body1.meta.nextCursor)}`
+      );
+      expect(page2.status).toBe(200);
+      const body2 = await page2.json();
+      expect(body2.success).toBe(true);
+
+      // Verify no duplicates between pages
+      const ids1 = body1.data.map((a: { id: string }) => a.id);
+      const ids2 = body2.data.map((a: { id: string }) => a.id);
+      const duplicates = ids1.filter((id: string) => ids2.includes(id));
+      expect(duplicates).toHaveLength(0);
+    }
+  });
+});

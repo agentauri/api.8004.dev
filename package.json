@@ -31,7 +31,6 @@
   "homepage": "https://github.com/agent0lab/8004-backend#readme",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
-    "@hono/zod-openapi": "0.16.4",
     "agent0-sdk": "^0.31.0",
     "hono": "^4.6.12",
     "viem": "^2.41.2",
@@ -41,7 +40,6 @@
     "@biomejs/biome": "^1.9.4",
     "@cloudflare/vitest-pool-workers": "^0.5.33",
     "@cloudflare/workers-types": "^4.20241127.0",
-    "@vitest/coverage-istanbul": "2.1.9",
     "@vitest/coverage-v8": "^2.1.8",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8",

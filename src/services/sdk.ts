@@ -16,6 +16,30 @@ import { SDK } from 'agent0-sdk';
 import type { SearchParams } from 'agent0-sdk';
 
 /**
+ * Type guard for string extras fields
+ * @param value - The value to check
+ * @returns True if value is a non-empty string
+ */
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
+}
+
+/**
+ * Safely extract a string from SDK extras
+ * @param extras - SDK extras object
+ * @param key - Key to extract
+ * @returns The string value or undefined
+ */
+function getExtraString(
+  extras: Record<string, unknown> | undefined,
+  key: string
+): string | undefined {
+  if (!extras) return undefined;
+  const value = extras[key];
+  return isNonEmptyString(value) ? value : undefined;
+}
+
+/**
  * Derive supported trust methods from agent data
  */
 function deriveSupportedTrust(x402Support: boolean): TrustMethod[] {
@@ -265,27 +289,27 @@ export function createSDKService(env: Env): SDKService {
           endpoints: {
             mcp: agent.mcp
               ? {
-                  url: agent.extras?.mcpEndpoint as string,
+                  url: getExtraString(agent.extras, 'mcpEndpoint') ?? '',
                   version: '1.0.0',
                 }
               : undefined,
             a2a: agent.a2a
               ? {
-                  url: agent.extras?.a2aEndpoint as string,
+                  url: getExtraString(agent.extras, 'a2aEndpoint') ?? '',
                   version: '1.0.0',
                 }
               : undefined,
-            ens: agent.ens || (agent.extras?.ens as string) || undefined,
-            did: agent.did || (agent.extras?.did as string) || undefined,
-            agentWallet: agent.walletAddress || (agent.extras?.agentWallet as string) || undefined,
+            ens: agent.ens || getExtraString(agent.extras, 'ens'),
+            did: agent.did || getExtraString(agent.extras, 'did'),
+            agentWallet: agent.walletAddress || getExtraString(agent.extras, 'agentWallet'),
           },
           registration: {
             chainId,
             tokenId,
-            contractAddress: (agent.extras?.contractAddress as string) || '',
-            metadataUri: (agent.extras?.metadataUri as string) || '',
+            contractAddress: getExtraString(agent.extras, 'contractAddress') ?? '',
+            metadataUri: getExtraString(agent.extras, 'metadataUri') ?? '',
             owner: agent.owners[0] || '',
-            registeredAt: (agent.extras?.registeredAt as string) || new Date().toISOString(),
+            registeredAt: getExtraString(agent.extras, 'registeredAt') ?? new Date().toISOString(),
           },
           mcpTools: agent.mcpTools,
           a2aSkills: agent.a2aSkills,
@@ -343,16 +367,21 @@ export function createSDKService(env: Env): SDKService {
       }
 
       // Helper to count agents with SDK pagination
+      // SECURITY: Limit iterations to prevent DoS from infinite pagination
+      const MAX_COUNT_ITERATIONS = 20; // Max ~20,000 agents (20 * 999)
       async function countWithSDK(
         sdk: ReturnType<typeof getSDK>,
         filter: Record<string, boolean>
       ): Promise<number> {
         let count = 0;
         let cursor: string | undefined;
+        let iterations = 0;
         do {
           const result = await sdk.searchAgents(filter, undefined, 999, cursor);
           count += result.items.length;
           cursor = result.nextCursor;
+          iterations++;
+          if (iterations >= MAX_COUNT_ITERATIONS) break; // Safety limit
         } while (cursor);
         return count;
       }
