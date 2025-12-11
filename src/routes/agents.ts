@@ -92,7 +92,8 @@ function filterByReputation(
   return agents.filter((agent) => {
     const score = agent.reputationScore;
     // Agents without reputation pass if minRep is 0 or undefined
-    if (score === undefined) {
+    // Note: score can be null after JSON serialization from cache
+    if (score === undefined || score === null) {
       return minRep === undefined || minRep === 0;
     }
     if (minRep !== undefined && score < minRep) {
@@ -410,6 +411,15 @@ agents.get('/', async (c) => {
       if (!agent.oasf?.domains) return false;
       const agentDomains = agent.oasf.domains.map((d) => d.slug);
       return query.domains?.some((d) => agentDomains.includes(d));
+    });
+  }
+
+  // Apply skills filtering (post-fetch since SDK doesn't support it)
+  if (query.skills?.length) {
+    enrichedAgents = enrichedAgents.filter((agent) => {
+      if (!agent.oasf?.skills) return false;
+      const agentSkills = agent.oasf.skills.map((s) => s.slug);
+      return query.skills?.some((skill) => agentSkills.includes(skill));
     });
   }
 
