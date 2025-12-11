@@ -156,6 +156,44 @@ describe('filterByReputation', () => {
     const rangeResult = filterByReputation(agents, 30, 70);
     expect(rangeResult).toHaveLength(3);
   });
+
+  it('handles null reputationScore from JSON cache deserialization', () => {
+    // After JSON.stringify/JSON.parse, undefined becomes null
+    const agents = [
+      createMockAgent({ id: '11155111:1', reputationScore: null as unknown as undefined }),
+      createMockAgent({ id: '11155111:2', reputationScore: 50 }),
+      createMockAgent({ id: '11155111:3', reputationScore: null as unknown as undefined }),
+    ];
+
+    // With minRep > 0, agents with null score should be excluded
+    const minRepResult = filterByReputation(agents, 10, undefined);
+    expect(minRepResult).toHaveLength(1);
+    expect(minRepResult[0]?.id).toBe('11155111:2');
+
+    // With minRep = 0, agents with null score should be included
+    const minRepZeroResult = filterByReputation(agents, 0, 100);
+    expect(minRepZeroResult).toHaveLength(3);
+
+    // With only maxRep, agents with null score should be included
+    const maxRepResult = filterByReputation(agents, undefined, 100);
+    expect(maxRepResult).toHaveLength(3);
+  });
+
+  it('treats null the same as undefined for filtering purposes', () => {
+    const agentsWithNull = [
+      createMockAgent({ id: '11155111:1', reputationScore: null as unknown as undefined }),
+    ];
+    const agentsWithUndefined = [
+      createMockAgent({ id: '11155111:1', reputationScore: undefined }),
+    ];
+
+    // Both should behave identically
+    expect(filterByReputation(agentsWithNull, 10, undefined)).toHaveLength(0);
+    expect(filterByReputation(agentsWithUndefined, 10, undefined)).toHaveLength(0);
+
+    expect(filterByReputation(agentsWithNull, 0, 100)).toHaveLength(1);
+    expect(filterByReputation(agentsWithUndefined, 0, 100)).toHaveLength(1);
+  });
 });
 
 describe('sortAgents', () => {
