@@ -556,6 +556,21 @@ function generateOpenAPISpec(): object {
             searchScore: { type: 'number', minimum: 0, maximum: 1 },
             reputationScore: { type: 'number', minimum: 0, maximum: 100 },
             reputationCount: { type: 'integer' },
+            matchReasons: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Reasons why this agent matched the search query (search results only)',
+            },
+            inputModes: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Supported input modes derived from MCP prompts',
+            },
+            outputModes: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Supported output modes derived from MCP resources',
+            },
           },
         },
         AgentDetail: {

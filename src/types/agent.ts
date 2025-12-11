@@ -61,6 +61,12 @@ export interface AgentSummary {
   did?: string;
   /** Agent's own wallet address */
   walletAddress?: string;
+  /** Reasons why this agent matched the search query (search results only) */
+  matchReasons?: string[];
+  /** Supported input modes (derived from MCP prompts) */
+  inputModes?: string[];
+  /** Supported output modes (derived from MCP resources) */
+  outputModes?: string[];
 }
 
 /**

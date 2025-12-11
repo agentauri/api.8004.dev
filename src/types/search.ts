@@ -59,6 +59,8 @@ export interface SearchResultItem {
   score: number;
   /** Additional metadata */
   metadata: Record<string, unknown>;
+  /** Reasons why this agent matched the query */
+  matchReasons?: string[];
 }
 
 /**
