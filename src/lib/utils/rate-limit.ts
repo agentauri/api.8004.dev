@@ -103,9 +103,15 @@ export function rateLimit(config: RateLimitConfig): MiddlewareHandler<{
         expirationTtl: Math.max(ttl, 60),
       });
     } catch (error) {
-      // SECURITY: Fail open - allow request but log the error
-      // This prevents KV outages from blocking all traffic
+      // SECURITY: Log the error but fail closed for safety
+      // Consecutive KV failures could indicate an attack or system issue
       console.error('Rate limit KV error:', error instanceof Error ? error.message : String(error));
+
+      // Fail closed: reject requests when rate limiter is unavailable
+      // This prevents abuse during KV outages at the cost of some availability
+      // For critical production use, consider implementing a circuit breaker
+      // or in-memory fallback cache
+      return errors.internalError(c, 'Rate limiting temporarily unavailable');
     }
 
     await next();
@@ -125,31 +131,3 @@ export const rateLimitConfigs = {
   /** Classification rate limit: 10 requests per minute */
   classification: { limit: 10, window: 60, keyPrefix: 'ratelimit:classify' },
 } as const;
-
-/**
- * Tier-aware rate limiting middleware
- * Uses higher limits for authenticated API key users
- */
-export function rateLimitByTier(options?: {
-  keyPrefix?: string;
-}): MiddlewareHandler<{
-  Bindings: Env;
-  Variables: Variables;
-}> {
-  const { keyPrefix = 'ratelimit' } = options ?? {};
-
-  return async (c, next) => {
-    // Get tier from context (set by apiKeyAuth middleware)
-    const tier = c.get('apiKeyTier') ?? 'anonymous';
-
-    // Select config based on tier
-    const config: RateLimitConfig =
-      tier === 'anonymous'
-        ? { ...rateLimitConfigs.standard, keyPrefix }
-        : { ...rateLimitConfigs.withApiKey, keyPrefix };
-
-    // Create and execute rate limiter
-    const limiter = rateLimit(config);
-    return limiter(c, next);
-  };
-}

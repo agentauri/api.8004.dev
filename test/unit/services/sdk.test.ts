@@ -155,10 +155,11 @@ describe('SDK error paths', () => {
     mockConfig.chainErrorMap.clear();
   });
 
-  it('throws SDKError when searchAgents fails', async () => {
-    mockConfig.searchAgentsError = new Error('RPC connection failed');
-    const sdk = createSDKService(mockEnv);
+  it('throws SDKError when SDK searchAgents fails', async () => {
+    // Use mock config to simulate SDK error
+    mockConfig.searchAgentsError = new Error('SDK connection failed');
 
+    const sdk = createSDKService(mockEnv);
     await expect(sdk.getAgents({})).rejects.toThrow(SDKError);
     await expect(sdk.getAgents({})).rejects.toThrow('searchAgents');
   });

@@ -21,7 +21,7 @@ Backend service for [8004.dev](https://8004.dev) - the ERC-8004 Agent Explorer.
 - OASF skill and domain classification
 - Multi-chain support (Ethereum Sepolia, Base Sepolia, Polygon Amoy)
 - Rate limiting and caching
-- 100% test coverage
+- 70% branch coverage minimum (enforced by CI)
 
 ## Quick Start
 
