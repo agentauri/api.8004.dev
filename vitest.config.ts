@@ -29,7 +29,7 @@ export default defineWorkersConfig({
       },
     },
     coverage: {
-      provider: 'istanbul',
+      provider: 'v8',
       reporter: ['text', 'json', 'json-summary', 'html', 'lcov'],
       reportsDirectory: './coverage',
       include: ['src/**/*.ts'],
