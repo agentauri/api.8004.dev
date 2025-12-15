@@ -100,8 +100,11 @@ describe('Global error handler', () => {
   });
 
   it('handles unexpected errors gracefully', async () => {
-    // Simulate an error by mocking a failing search
+    const { mockConfig } = await import('../mocks/agent0-sdk');
+
+    // Simulate an error by mocking both vector search and SDK fallback to fail
     mockFetch.mockRejectedValue(new Error('Unexpected error'));
+    mockConfig.searchAgentsError = new Error('SDK also failed');
 
     const request = new Request('http://localhost/api/v1/search', {
       method: 'POST',
@@ -120,6 +123,9 @@ describe('Global error handler', () => {
     const body = await response.json();
     expect(body.success).toBe(false);
     expect(body.code).toBe('INTERNAL_ERROR');
+
+    // Clean up
+    mockConfig.searchAgentsError = null;
   });
 });
 

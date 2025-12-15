@@ -251,7 +251,9 @@ describe('calculateBasicScore', () => {
   });
 
   it('returns 0.3-0.5 for partial word match in description only', () => {
-    const score = calculateBasicScore('smart ai', 'Generic Bot', 'A smart AI assistant');
+    // Use a query where only partial words match in description, not the full query
+    // "intelligent bot" - "intelligent" matches description, "bot" doesn't
+    const score = calculateBasicScore('intelligent bot', 'Generic Agent', 'An intelligent AI assistant');
     expect(score).toBeGreaterThanOrEqual(0.3);
     expect(score).toBeLessThanOrEqual(0.5);
   });
