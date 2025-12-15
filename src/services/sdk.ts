@@ -618,7 +618,7 @@ export function createSDKService(env: Env): SDKService {
         };
 
         // Add name filter for substring search if query provided
-        if (query && query.trim()) {
+        if (query?.trim()) {
           baseSearchParams.name = query.trim();
         }
 
