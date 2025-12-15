@@ -204,9 +204,10 @@ describe('POST /api/v1/search', () => {
     const fetchCall = mockFetch.mock.calls.find((call) => call[0].includes('/search'));
     if (fetchCall) {
       const body = JSON.parse(fetchCall[1].body);
-      // topK uses smart limit: Math.min(limit * OVER_FETCH_MULTIPLIER, MAX_SEARCH_RESULTS=100)
-      // limit=10 with 6x multiplier → 60
-      expect(body.topK).toBe(60);
+      // v1 API: limit uses multiple multipliers:
+      // 1. Route: limit * 3 for boolean filters = 10 * 3 = 30
+      // 2. Search service: smartLimit * 2 = 30 * 2 = 60
+      expect(body.limit).toBe(60);
       expect(body.minScore).toBe(0.5);
       expect(body.filters).toBeDefined();
     }
