@@ -33,7 +33,7 @@ export default defineWorkersConfig({
       reporter: ['text', 'json', 'json-summary', 'html', 'lcov'],
       reportsDirectory: './coverage',
       include: ['src/**/*.ts'],
-      exclude: ['src/**/*.d.ts', 'src/types/**/*.ts'],
+      exclude: ['src/**/*.d.ts', 'src/types/**/*.ts', 'src/services/mock/**/*.ts'],
       thresholds: {
         // Note: 100% coverage is the goal, but some code paths are difficult
         // to test in Cloudflare Workers environment:
