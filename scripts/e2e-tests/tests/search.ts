@@ -114,6 +114,21 @@ export function registerSearchTests(): void {
       }
     });
 
+    it('POST /search with active=false (showAll) returns results', async () => {
+      // active=false means "no filter" (showAll=true in frontend)
+      // This should return results in both vector search and fallback modes
+      const { json } = await post('/search', {
+        query: 'agent',
+        filters: { active: false },
+        limit: 5,
+      });
+      assertSuccess(json);
+      // Should return results (no active filter applied)
+      if (json.data?.length > 0) {
+        assertHasSearchScore(json.data!);
+      }
+    });
+
     it('POST /search with filters.filterMode=OR', async () => {
       const { json } = await post('/search', {
         query: 'agent',

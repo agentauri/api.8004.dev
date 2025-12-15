@@ -327,7 +327,9 @@ export function createSDKService(env: Env): SDKService {
       const searchParams: SearchParams = {
         chains: chainsToQuery.map((c) => c.chainId),
       };
-      if (active !== undefined) searchParams.active = active;
+      // Only filter by active=true. active=false means "no filter" (show all agents)
+      // This matches vector search behavior where active=false doesn't filter
+      if (active === true) searchParams.active = true;
       if (hasMcp !== undefined) searchParams.mcp = hasMcp;
       if (hasA2a !== undefined) searchParams.a2a = hasA2a;
       if (hasX402 !== undefined) searchParams.x402support = hasX402;
@@ -622,7 +624,9 @@ export function createSDKService(env: Env): SDKService {
           baseSearchParams.name = query.trim();
         }
 
-        if (active !== undefined) baseSearchParams.active = active;
+        // Only filter by active=true. active=false means "no filter" (show all agents)
+        // This matches vector search behavior where active=false doesn't filter
+        if (active === true) baseSearchParams.active = true;
 
         let allItems: AgentSummary[] = [];
 
