@@ -18,7 +18,7 @@ import {
   parseAgentId,
   parseClassificationRow,
 } from '@/lib/utils/validation';
-import { CACHE_KEYS, CACHE_TTL, createCacheService } from '@/services/cache';
+import { CACHE_KEYS, CACHE_TTL, createCacheService, hashQueryParams } from '@/services/cache';
 import { createIPFSService } from '@/services/ipfs';
 import { resolveClassification, toOASFClassification } from '@/services/oasf-resolver';
 import { createReputationService } from '@/services/reputation';
@@ -28,6 +28,7 @@ import type {
   AgentDetailResponse,
   AgentListResponse,
   AgentSummary,
+  ChainStats,
   Env,
   OASFSource,
   Variables,
@@ -35,6 +36,71 @@ import type {
 import { Hono } from 'hono';
 import { classify } from './classify';
 import { reputation } from './reputation';
+
+/**
+ * Cached cursor for OR mode pagination
+ */
+interface OrModeCachedCursor {
+  /** Cache key where results are stored */
+  k: string;
+  /** Current offset in results */
+  o: number;
+}
+
+/**
+ * Cached data for OR mode pagination
+ */
+interface OrModeCachedData {
+  items: AgentSummary[];
+  total: number;
+}
+
+/**
+ * Encode a cached cursor to base64url string
+ */
+function encodeOrModeCursor(cacheKey: string, offset: number): string {
+  const cursor: OrModeCachedCursor = { k: cacheKey, o: offset };
+  return Buffer.from(JSON.stringify(cursor)).toString('base64url');
+}
+
+/**
+ * Decode a cached cursor from base64url string
+ * Returns null if not a valid OR mode cursor
+ */
+function decodeOrModeCursor(cursor: string): OrModeCachedCursor | null {
+  try {
+    const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString());
+    if (decoded.k && typeof decoded.o === 'number') {
+      return decoded as OrModeCachedCursor;
+    }
+  } catch {
+    // Not a cached cursor
+  }
+  return null;
+}
+
+/**
+ * Enqueue classification jobs for unclassified agents
+ * This function both inserts into DB and sends to Cloudflare Queue
+ */
+async function enqueueClassificationsWithQueue(env: Env, agentIds: string[]): Promise<number> {
+  if (agentIds.length === 0) return 0;
+
+  // First, insert into DB (this filters out already classified/queued agents)
+  // Returns the actual list of agent IDs that were enqueued
+  const enqueuedAgentIds = await enqueueClassificationsBatch(env.DB, agentIds);
+
+  if (enqueuedAgentIds.length === 0) return 0;
+
+  // Send to Cloudflare Queue for processing
+  const sendPromises = enqueuedAgentIds.map((agentId) =>
+    env.CLASSIFICATION_QUEUE.send({ agentId, force: false })
+  );
+
+  await Promise.all(sendPromises);
+
+  return enqueuedAgentIds.length;
+}
 
 /**
  * Sort agents based on query parameters
@@ -52,9 +118,10 @@ function sortAgents(
     switch (sortField) {
       case 'relevance': {
         // For relevance, use searchScore if available, otherwise by id
+        // Higher scores should come first with order=desc (default)
         const scoreA = a.searchScore ?? 0;
         const scoreB = b.searchScore ?? 0;
-        return (scoreB - scoreA) * multiplier;
+        return (scoreA - scoreB) * multiplier;
       }
       case 'name':
         return a.name.localeCompare(b.name) * multiplier;
@@ -104,6 +171,35 @@ function filterByReputation(
     }
     return true;
   });
+}
+
+/**
+ * Get chain stats with caching
+ * Uses KV cache with fallback to SDK for fresh data
+ */
+async function getCachedChainStats(
+  env: Env,
+  sdk: ReturnType<typeof createSDKService>
+): Promise<ChainStats[]> {
+  const cache = createCacheService(env.CACHE, CACHE_TTL.CHAIN_STATS);
+  const cacheKey = CACHE_KEYS.chainStats();
+
+  // Check cache first
+  const cached = await cache.get<{ data: ChainStats[] }>(cacheKey);
+  if (cached?.data) {
+    return cached.data;
+  }
+
+  // Fetch fresh stats
+  const stats = await sdk.getChainStats();
+
+  // Cache the result (only if all chains succeeded)
+  const hasErrors = stats.some((s) => s.status === 'error');
+  if (!hasErrors) {
+    await cache.set(cacheKey, { success: true, data: stats }, CACHE_TTL.CHAIN_STATS);
+  }
+
+  return stats;
 }
 
 const agents = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -158,22 +254,40 @@ agents.get('/', async (c) => {
   if (query.q) {
     try {
       const searchService = createSearchService(c.env.SEARCH_SERVICE_URL);
+
+      // Determine if we need post-filtering (these filters don't work upstream)
+      const hasBooleanFilters =
+        query.mcp !== undefined || query.a2a !== undefined || query.x402 !== undefined;
+
+      const hasOASFFilters =
+        (query.skills && query.skills.length > 0) || (query.domains && query.domains.length > 0);
+
+      // Over-fetch when filtering to ensure enough results after post-filtering
+      // Use 10x for OASF filters (sparse data), 3x for boolean filters
+      let fetchLimit = query.limit;
+      if (hasOASFFilters) {
+        fetchLimit = Math.min(query.limit * 10, 100);
+      } else if (hasBooleanFilters) {
+        fetchLimit = Math.min(query.limit * 3, 100);
+      }
+
       const searchResults = await searchService.search({
         query: query.q,
-        limit: query.limit,
+        limit: fetchLimit,
         minScore: query.minScore,
         cursor: query.cursor,
         filters: {
           chainIds,
           active: query.active,
-          mcp: query.mcp,
-          a2a: query.a2a,
-          x402: query.x402,
-          skills: query.skills,
-          domains: query.domains,
-          filterMode: query.filterMode,
+          // mcp, a2a, x402, skills, domains DON'T work upstream - post-filter instead
         },
       });
+
+      // If vector search returns 0 results, fall back to SDK search
+      // This handles cases where agents aren't indexed in vector DB
+      if (searchResults.results.length === 0 && !query.cursor) {
+        throw new Error('Vector search returned 0 results, trying SDK fallback');
+      }
 
       // Batch fetch classifications and reputations for all search results (N+1 fix)
       const agentIds = searchResults.results.map((r) => r.agentId);
@@ -263,14 +377,58 @@ agents.get('/', async (c) => {
         })
         .filter((agent): agent is NonNullable<typeof agent> => agent !== null);
 
+      // Post-filter using enriched SDK data (mcp, a2a, x402, skills, domains don't work upstream)
+      let postFilteredAgents = enrichedAgents;
+
+      if (hasBooleanFilters || hasOASFFilters) {
+        const isOrMode = query.filterMode === 'OR';
+
+        postFilteredAgents = enrichedAgents.filter((agent) => {
+          // Skills filter (always AND) - check OASF classification
+          // OASF uses flat structure, exact slug match only
+          if (query.skills?.length) {
+            const agentSkillSlugs = agent.oasf?.skills?.map((s) => s.slug) ?? [];
+            const hasMatchingSkill = query.skills.some((reqSkill) =>
+              agentSkillSlugs.includes(reqSkill)
+            );
+            if (!hasMatchingSkill) return false;
+          }
+
+          // Domains filter (always AND) - check OASF classification
+          // OASF uses flat structure, exact slug match only
+          if (query.domains?.length) {
+            const agentDomainSlugs = agent.oasf?.domains?.map((d) => d.slug) ?? [];
+            const hasMatchingDomain = query.domains.some((reqDomain) =>
+              agentDomainSlugs.includes(reqDomain)
+            );
+            if (!hasMatchingDomain) return false;
+          }
+
+          // Boolean filters (mcp, a2a, x402) - apply filterMode logic
+          const booleanFilters: boolean[] = [];
+          if (query.mcp !== undefined) booleanFilters.push(agent.hasMcp === query.mcp);
+          if (query.a2a !== undefined) booleanFilters.push(agent.hasA2a === query.a2a);
+          if (query.x402 !== undefined) booleanFilters.push(agent.x402Support === query.x402);
+
+          if (booleanFilters.length === 0) return true;
+
+          return isOrMode
+            ? booleanFilters.some((b) => b) // OR: at least one must match
+            : booleanFilters.every((b) => b); // AND: all must match
+        });
+      }
+
+      // Apply limit after post-filtering
+      const limitedAgents = postFilteredAgents.slice(0, query.limit);
+
       // Apply reputation filtering
-      const filteredAgents = filterByReputation(enrichedAgents, query.minRep, query.maxRep);
+      const filteredAgents = filterByReputation(limitedAgents, query.minRep, query.maxRep);
 
       // Apply sorting
       const sortedAgents = sortAgents(filteredAgents, query.sort, query.order);
 
-      // Fetch chain stats for totals (cached via SDK)
-      const chainStats = await sdk.getChainStats();
+      // Fetch chain stats for totals (from KV cache)
+      const chainStats = await getCachedChainStats(c.env, sdk);
       const stats = {
         total: chainStats.reduce((sum, c) => sum + c.totalCount, 0),
         withRegistrationFile: chainStats.reduce((sum, c) => sum + c.withRegistrationFileCount, 0),
@@ -304,7 +462,7 @@ agents.get('/', async (c) => {
       if (unclassifiedIds.length > 0) {
         // Use waitUntil to properly register the background task with Workers runtime
         c.executionCtx.waitUntil(
-          enqueueClassificationsBatch(c.env.DB, unclassifiedIds).catch((err) => {
+          enqueueClassificationsWithQueue(c.env, unclassifiedIds).catch((err) => {
             console.error('Failed to enqueue classifications:', err);
           })
         );
@@ -312,9 +470,153 @@ agents.get('/', async (c) => {
 
       await cache.set(cacheKey, response, CACHE_TTL.AGENTS);
       return c.json(response);
-    } catch (error) {
-      console.error('Search error in agents route:', error);
-      return errors.internalError(c, 'Search service error');
+    } catch (vectorSearchError) {
+      // ========== FALLBACK: SDK SEARCH ==========
+      console.warn(
+        'Vector search failed in agents route, falling back to SDK search:',
+        vectorSearchError instanceof Error ? vectorSearchError.message : vectorSearchError
+      );
+
+      try {
+        // Use SDK search with substring matching
+        // DON'T pass mcp/a2a/x402 to SDK - the external SDK doesn't handle false values correctly
+        // We'll apply all boolean filters ourselves after getting results
+        const sdkSearchResult = await sdk.search({
+          query: query.q,
+          chainIds,
+          active: query.active,
+          // Note: mcp/a2a/x402/filterMode NOT passed - we handle them in post-filtering
+          // mcpTools and a2aSkills are passed to SDK for native filtering
+          mcpTools: query.mcpTools,
+          a2aSkills: query.a2aSkills,
+          limit: query.limit * 3, // Over-fetch for post-filtering
+          cursor: query.cursor,
+        });
+
+        // Batch fetch classifications and reputations
+        const agentIds = sdkSearchResult.items.map((item) => item.agent.id);
+        const [classificationsMap, reputationsMap] = await Promise.all([
+          getClassificationsBatch(c.env.DB, agentIds),
+          getReputationsBatch(c.env.DB, agentIds),
+        ]);
+
+        // Enrich SDK search results with OASF and reputation data
+        const enrichedAgents: AgentSummary[] = sdkSearchResult.items.map((item) => {
+          const classificationRow = classificationsMap.get(item.agent.id);
+          const oasf = parseClassificationRow(classificationRow);
+          const reputationRow = reputationsMap.get(item.agent.id);
+          return {
+            ...item.agent,
+            oasf,
+            oasfSource: (oasf ? 'llm-classification' : 'none') as OASFSource,
+            searchScore: item.score,
+            matchReasons: item.matchReasons,
+            reputationScore: reputationRow?.average_score,
+            reputationCount: reputationRow?.feedback_count,
+          };
+        });
+
+        // Determine if we need post-filtering
+        const hasBooleanFilters =
+          query.mcp !== undefined || query.a2a !== undefined || query.x402 !== undefined;
+        const hasOASFFilters =
+          (query.skills && query.skills.length > 0) || (query.domains && query.domains.length > 0);
+
+        // Post-filter using enriched SDK data
+        let postFilteredAgents = enrichedAgents;
+
+        if (hasBooleanFilters || hasOASFFilters) {
+          const isOrMode = query.filterMode === 'OR';
+
+          postFilteredAgents = enrichedAgents.filter((agent) => {
+            // Skills filter (always AND)
+            if (query.skills?.length) {
+              const agentSkillSlugs = agent.oasf?.skills?.map((s) => s.slug) ?? [];
+              const hasMatchingSkill = query.skills.some((reqSkill) =>
+                agentSkillSlugs.includes(reqSkill)
+              );
+              if (!hasMatchingSkill) return false;
+            }
+
+            // Domains filter (always AND)
+            if (query.domains?.length) {
+              const agentDomainSlugs = agent.oasf?.domains?.map((d) => d.slug) ?? [];
+              const hasMatchingDomain = query.domains.some((reqDomain) =>
+                agentDomainSlugs.includes(reqDomain)
+              );
+              if (!hasMatchingDomain) return false;
+            }
+
+            // Boolean filters (mcp, a2a, x402) - apply filterMode logic
+            const boolFilters: boolean[] = [];
+            if (query.mcp !== undefined) boolFilters.push(agent.hasMcp === query.mcp);
+            if (query.a2a !== undefined) boolFilters.push(agent.hasA2a === query.a2a);
+            if (query.x402 !== undefined) boolFilters.push(agent.x402Support === query.x402);
+
+            if (boolFilters.length === 0) return true;
+
+            return isOrMode
+              ? boolFilters.some((b) => b) // OR: at least one must match
+              : boolFilters.every((b) => b); // AND: all must match
+          });
+        }
+
+        // Apply limit after post-filtering
+        const limitedAgents = postFilteredAgents.slice(0, query.limit);
+
+        // Apply reputation filtering
+        const filteredAgents = filterByReputation(limitedAgents, query.minRep, query.maxRep);
+
+        // Apply sorting
+        const sortedAgents = sortAgents(filteredAgents, query.sort, query.order);
+
+        // Fetch chain stats for totals (from KV cache)
+        const chainStats = await getCachedChainStats(c.env, sdk);
+        const stats = {
+          total: chainStats.reduce((sum, c) => sum + c.totalCount, 0),
+          withRegistrationFile: chainStats.reduce((sum, c) => sum + c.withRegistrationFileCount, 0),
+          active: chainStats.reduce((sum, c) => sum + c.activeCount, 0),
+          byChain: chainStats.map((c) => ({
+            chainId: c.chainId,
+            name: c.name,
+            totalCount: c.totalCount,
+            withRegistrationFileCount: c.withRegistrationFileCount,
+            activeCount: c.activeCount,
+          })),
+        };
+
+        const response: AgentListResponse = {
+          success: true,
+          data: sortedAgents,
+          meta: {
+            total: postFilteredAgents.length,
+            hasMore: postFilteredAgents.length > query.limit,
+            nextCursor: sdkSearchResult.nextCursor,
+            stats,
+          },
+        };
+
+        // Trigger background classification for unclassified agents (non-blocking)
+        const unclassifiedIds = sortedAgents
+          .filter((a) => !a.oasf)
+          .slice(0, 10)
+          .map((a) => a.id);
+
+        if (unclassifiedIds.length > 0) {
+          c.executionCtx.waitUntil(
+            enqueueClassificationsWithQueue(c.env, unclassifiedIds).catch((err) => {
+              console.error('Failed to enqueue classifications:', err);
+            })
+          );
+        }
+
+        await cache.set(cacheKey, response, CACHE_TTL.AGENTS);
+        return c.json(response);
+      } catch (sdkError) {
+        // Both searches failed
+        console.error('SDK fallback search also failed in agents route:', sdkError);
+        return errors.internalError(c, 'Search service error');
+      }
     }
   }
 
@@ -327,49 +629,110 @@ agents.get('/', async (c) => {
 
   const isOrMode = query.filterMode === 'OR' && booleanFilters.length > 1;
 
-  let agentsResult: { items: AgentSummary[]; nextCursor?: string };
+  let agentsResult: { items: AgentSummary[]; nextCursor?: string } | undefined;
 
-  // Fetch chain stats for accurate total count (cached)
+  // Fetch chain stats for accurate total count (from KV cache)
   // Use withRegistrationFileCount because this endpoint only returns agents with metadata
-  const chainStats = await sdk.getChainStats();
+  const chainStats = await getCachedChainStats(c.env, sdk);
   const totalAgentsFromStats = chainStats.reduce((sum, c) => sum + c.withRegistrationFileCount, 0);
 
   if (isOrMode) {
     // OR mode: run separate queries for each boolean filter and merge results
-    const baseParams = {
-      chainIds,
-      limit: query.limit,
-      active: query.active,
-      hasRegistrationFile: query.hasRegistrationFile,
-    };
+    // Check if cursor is a cached OR mode cursor for pagination
+    const orModeCache = createCacheService(c.env.CACHE, CACHE_TTL.OR_MODE_AGENTS);
+    let startOffset = 0;
 
-    const queryPromises = booleanFilters.map((filter) =>
-      sdk.getAgents({
-        ...baseParams,
-        hasMcp: filter === 'mcp' ? true : undefined,
-        hasA2a: filter === 'a2a' ? true : undefined,
-        hasX402: filter === 'x402' ? true : undefined,
-      })
-    );
-
-    const results = await Promise.all(queryPromises);
-
-    // Merge and deduplicate by agent ID
-    const agentMap = new Map<string, AgentSummary>();
-    for (const result of results) {
-      for (const agent of result.items) {
-        if (!agentMap.has(agent.id)) {
-          agentMap.set(agent.id, agent);
+    if (query.cursor) {
+      const cachedCursor = decodeOrModeCursor(query.cursor);
+      if (cachedCursor) {
+        // Paginate from cached results
+        const cached = await orModeCache.get<OrModeCachedData>(cachedCursor.k);
+        if (cached) {
+          const pageItems = cached.items.slice(cachedCursor.o, cachedCursor.o + query.limit);
+          const hasMore = cachedCursor.o + query.limit < cached.total;
+          agentsResult = {
+            items: pageItems,
+            nextCursor: hasMore
+              ? encodeOrModeCursor(cachedCursor.k, cachedCursor.o + query.limit)
+              : undefined,
+          };
+          // Skip to enrichment with already-paginated results
+        } else {
+          // Cache expired, use offset as fallback for fresh query
+          startOffset = cachedCursor.o;
         }
       }
     }
 
-    const mergedItems = [...agentMap.values()].slice(0, query.limit);
-    agentsResult = {
-      items: mergedItems,
-      // Cannot provide cursor for merged OR results
-      nextCursor: undefined,
-    };
+    // If we don't have results from cache, fetch fresh data
+    if (!agentsResult) {
+      const baseParams = {
+        chainIds,
+        // Fetch more results for caching (3x limit for pagination headroom)
+        limit: Math.min(query.limit * 3, 100),
+        active: query.active,
+        mcpTools: query.mcpTools,
+        a2aSkills: query.a2aSkills,
+        hasRegistrationFile: query.hasRegistrationFile,
+      };
+
+      const queryPromises = booleanFilters.map((filter) =>
+        sdk.getAgents({
+          ...baseParams,
+          hasMcp: filter === 'mcp' ? true : undefined,
+          hasA2a: filter === 'a2a' ? true : undefined,
+          hasX402: filter === 'x402' ? true : undefined,
+        })
+      );
+
+      const results = await Promise.all(queryPromises);
+
+      // Merge and deduplicate by agent ID
+      const agentMap = new Map<string, AgentSummary>();
+      for (const result of results) {
+        for (const agent of result.items) {
+          if (!agentMap.has(agent.id)) {
+            agentMap.set(agent.id, agent);
+          }
+        }
+      }
+
+      const mergedItems = [...agentMap.values()];
+      const totalMerged = mergedItems.length;
+
+      // Cache merged results if there are more than requested
+      if (totalMerged > query.limit) {
+        const orCacheKey = CACHE_KEYS.orModeAgents(
+          hashQueryParams({
+            chainIds,
+            booleanFilters,
+            active: query.active,
+            hasRegistrationFile: query.hasRegistrationFile,
+          })
+        );
+        const cacheData: OrModeCachedData = {
+          items: mergedItems,
+          total: totalMerged,
+        };
+        await orModeCache.set(orCacheKey, cacheData, CACHE_TTL.OR_MODE_AGENTS);
+
+        // Return paginated slice with cursor
+        const pageItems = mergedItems.slice(startOffset, startOffset + query.limit);
+        const hasMore = startOffset + query.limit < totalMerged;
+        agentsResult = {
+          items: pageItems,
+          nextCursor: hasMore
+            ? encodeOrModeCursor(orCacheKey, startOffset + query.limit)
+            : undefined,
+        };
+      } else {
+        // No caching needed, return all results
+        agentsResult = {
+          items: mergedItems.slice(startOffset, startOffset + query.limit),
+          nextCursor: undefined,
+        };
+      }
+    }
   } else {
     // AND mode (default): single query with all filters
     agentsResult = await sdk.getAgents({
@@ -380,19 +743,25 @@ agents.get('/', async (c) => {
       hasMcp: query.mcp,
       hasA2a: query.a2a,
       hasX402: query.x402,
+      mcpTools: query.mcpTools,
+      a2aSkills: query.a2aSkills,
       hasRegistrationFile: query.hasRegistrationFile,
     });
   }
 
+  // agentsResult is guaranteed to be defined after if/else block
+  // biome-ignore lint/style/noNonNullAssertion: agentsResult is always set in OR mode or AND mode blocks above
+  const finalAgentsResult = agentsResult!;
+
   // Batch fetch classifications and reputations for all agents (N+1 fix)
-  const agentIds = agentsResult.items.map((a) => a.id);
+  const agentIds = finalAgentsResult.items.map((a) => a.id);
   const [classificationsMap, reputationsMap] = await Promise.all([
     getClassificationsBatch(c.env.DB, agentIds),
     getReputationsBatch(c.env.DB, agentIds),
   ]);
 
   // Enrich with classifications and reputations from batch result
-  let enrichedAgents = agentsResult.items.map((agent) => {
+  let enrichedAgents = finalAgentsResult.items.map((agent) => {
     const classificationRow = classificationsMap.get(agent.id);
     const oasf = parseClassificationRow(classificationRow);
     const reputationRow = reputationsMap.get(agent.id);
@@ -406,20 +775,22 @@ agents.get('/', async (c) => {
   });
 
   // Apply domains filtering (post-fetch since SDK doesn't support it)
+  // OASF uses flat structure, exact slug match only
   if (query.domains?.length) {
     enrichedAgents = enrichedAgents.filter((agent) => {
       if (!agent.oasf?.domains) return false;
       const agentDomains = agent.oasf.domains.map((d) => d.slug);
-      return query.domains?.some((d) => agentDomains.includes(d));
+      return query.domains?.some((reqDomain) => agentDomains.includes(reqDomain));
     });
   }
 
   // Apply skills filtering (post-fetch since SDK doesn't support it)
+  // OASF uses flat structure, exact slug match only
   if (query.skills?.length) {
     enrichedAgents = enrichedAgents.filter((agent) => {
       if (!agent.oasf?.skills) return false;
       const agentSkills = agent.oasf.skills.map((s) => s.slug);
-      return query.skills?.some((skill) => agentSkills.includes(skill));
+      return query.skills?.some((reqSkill) => agentSkills.includes(reqSkill));
     });
   }
 
@@ -448,8 +819,8 @@ agents.get('/', async (c) => {
     data: sortedAgents,
     meta: {
       total: totalAgentsFromStats,
-      hasMore: !!agentsResult.nextCursor,
-      nextCursor: agentsResult.nextCursor,
+      hasMore: !!finalAgentsResult.nextCursor,
+      nextCursor: finalAgentsResult.nextCursor,
       stats,
     },
   };
@@ -463,7 +834,7 @@ agents.get('/', async (c) => {
   if (unclassifiedIds.length > 0) {
     // Use waitUntil to properly register the background task with Workers runtime
     c.executionCtx.waitUntil(
-      enqueueClassificationsBatch(c.env.DB, unclassifiedIds).catch((err) => {
+      enqueueClassificationsWithQueue(c.env, unclassifiedIds).catch((err) => {
         console.error('Failed to enqueue classifications:', err);
       })
     );

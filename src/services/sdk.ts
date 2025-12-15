@@ -105,6 +105,10 @@ export interface GetAgentsParams {
   hasMcp?: boolean;
   hasA2a?: boolean;
   hasX402?: boolean;
+  /** Filter by MCP tool names */
+  mcpTools?: string[];
+  /** Filter by A2A skill names */
+  a2aSkills?: string[];
   /** Filter by registration file presence. Default: true (only agents with metadata) */
   hasRegistrationFile?: boolean;
 }
@@ -125,6 +129,10 @@ export interface FallbackSearchParams {
   a2a?: boolean;
   /** Filter by x402 support */
   x402?: boolean;
+  /** Filter by MCP tool names */
+  mcpTools?: string[];
+  /** Filter by A2A skill names */
+  a2aSkills?: string[];
   /** Filter mode for boolean filters */
   filterMode?: 'AND' | 'OR';
   /** Maximum results */
@@ -151,6 +159,32 @@ export interface FallbackSearchResult {
   hasMore: boolean;
   nextCursor?: string;
   byChain: Record<number, number>;
+}
+
+/**
+ * Parameters for reputation-based search
+ */
+export interface ReputationSearchParams {
+  /** Chain IDs to search */
+  chainIds?: number[];
+  /** Minimum average reputation score (1-5) */
+  minRep?: number;
+  /** Maximum average reputation score (1-5) - applied via post-filtering */
+  maxRep?: number;
+  /** Maximum results */
+  limit?: number;
+  /** Pagination cursor */
+  cursor?: string;
+}
+
+/**
+ * Result from reputation-based search
+ */
+export interface ReputationSearchResult {
+  items: AgentSummary[];
+  total: number;
+  hasMore: boolean;
+  nextCursor?: string;
 }
 
 /**
@@ -287,6 +321,12 @@ export interface SDKService {
    * Performs substring matching on name/description with basic scoring
    */
   search(params: FallbackSearchParams): Promise<FallbackSearchResult>;
+
+  /**
+   * Search agents by reputation score using SDK's native reputation search
+   * Uses minRep natively, maxRep via post-filtering
+   */
+  searchByReputation(params: ReputationSearchParams): Promise<ReputationSearchResult>;
 }
 
 /**
@@ -312,7 +352,17 @@ export function createSDKService(env: Env): SDKService {
   return {
     // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Multi-chain query and transformation logic requires multiple conditional branches
     async getAgents(params: GetAgentsParams): Promise<GetAgentsResult> {
-      const { chainIds, limit = 20, cursor, active, hasMcp, hasA2a, hasX402 } = params;
+      const {
+        chainIds,
+        limit = 20,
+        cursor,
+        active,
+        hasMcp,
+        hasA2a,
+        hasX402,
+        mcpTools,
+        a2aSkills,
+      } = params;
 
       // Determine which chains to query
       const chainsToQuery = chainIds
@@ -333,6 +383,8 @@ export function createSDKService(env: Env): SDKService {
       if (hasMcp !== undefined) searchParams.mcp = hasMcp;
       if (hasA2a !== undefined) searchParams.a2a = hasA2a;
       if (hasX402 !== undefined) searchParams.x402support = hasX402;
+      if (mcpTools && mcpTools.length > 0) searchParams.mcpTools = mcpTools;
+      if (a2aSkills && a2aSkills.length > 0) searchParams.a2aSkills = a2aSkills;
 
       try {
         // Use SDK with native multi-chain support and cursor-based pagination
@@ -585,10 +637,26 @@ export function createSDKService(env: Env): SDKService {
         mcp,
         a2a,
         x402,
+        mcpTools,
+        a2aSkills,
         filterMode = 'AND',
         limit = 20,
         cursor,
       } = params;
+
+      // Parse cursor to get offset for local pagination
+      // We do local pagination because we re-score and sort results
+      let offset = 0;
+      if (cursor) {
+        try {
+          const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString());
+          if (typeof decoded.offset === 'number') {
+            offset = decoded.offset;
+          }
+        } catch {
+          // Invalid cursor, start from beginning
+        }
+      }
 
       // Determine which chains to query
       const chainsToQuery = chainIds
@@ -619,16 +687,21 @@ export function createSDKService(env: Env): SDKService {
           chains: chainsToQuery.map((c) => c.chainId),
         };
 
-        // Add name filter for substring search if query provided
-        if (query?.trim()) {
-          baseSearchParams.name = query.trim();
-        }
+        // NOTE: Do NOT pass query to SDK - its substring search is broken for old agents
+        // Instead, we fetch all agents and filter locally by name/description
 
         // Only filter by active=true. active=false means "no filter" (show all agents)
         // This matches vector search behavior where active=false doesn't filter
         if (active === true) baseSearchParams.active = true;
 
+        // Add MCP tools and A2A skills filters if provided
+        if (mcpTools && mcpTools.length > 0) baseSearchParams.mcpTools = mcpTools;
+        if (a2aSkills && a2aSkills.length > 0) baseSearchParams.a2aSkills = a2aSkills;
+
         let allItems: AgentSummary[] = [];
+
+        // Calculate how many items to fetch to cover offset + limit + buffer
+        const fetchLimit = Math.min(offset + limit + 50, 200);
 
         if (isOrMode) {
           // OR mode: run separate searches for each boolean filter and merge
@@ -638,7 +711,7 @@ export function createSDKService(env: Env): SDKService {
             if (filter === 'a2a') filterParams.a2a = true;
             if (filter === 'x402') filterParams.x402support = true;
 
-            const result = await sdk.searchAgents(filterParams, ['createdAt:desc'], limit * 2);
+            const result = await sdk.searchAgents(filterParams, ['createdAt:desc'], fetchLimit);
             return result.items;
           });
 
@@ -682,38 +755,111 @@ export function createSDKService(env: Env): SDKService {
           if (a2a !== undefined) baseSearchParams.a2a = a2a;
           if (x402 !== undefined) baseSearchParams.x402support = x402;
 
-          const result = await sdk.searchAgents(
-            baseSearchParams,
-            ['createdAt:desc'],
-            limit * 2, // Fetch extra for scoring/filtering
-            cursor
-          );
+          // SDK doesn't support fuzzy/substring search reliably for old agents
+          // When query provided, search each chain separately for full pagination depth
+          const queryLower = query?.trim().toLowerCase();
 
-          allItems = result.items.map((agent) => {
-            const parts = agent.agentId.split(':');
-            const chainIdStr = parts[0] || '0';
-            const tokenId = parts[1] || '0';
+          if (queryLower) {
+            // Search each chain separately to get full pagination depth
+            const maxPagesPerChain = 20;
+            const pageSize = 100;
 
-            return {
-              id: agent.agentId,
-              chainId: Number.parseInt(chainIdStr, 10),
-              tokenId,
-              name: agent.name,
-              description: agent.description,
-              image: agent.image,
-              active: agent.active,
-              hasMcp: agent.mcp,
-              hasA2a: agent.a2a,
-              x402Support: agent.x402support,
-              supportedTrust: deriveSupportedTrust(agent.x402support),
-              operators: agent.operators || [],
-              ens: agent.ens || undefined,
-              did: agent.did || undefined,
-              walletAddress: agent.walletAddress || undefined,
-              inputModes: agent.mcpPrompts?.length ? ['mcp-prompt'] : undefined,
-              outputModes: agent.mcpResources?.length ? ['mcp-resource'] : undefined,
-            };
-          });
+            // Parallel search each chain
+            const chainSearchPromises = chainsToQuery.map(async (chainConfig) => {
+              const chainItems: AgentSummary[] = [];
+              const chainSdk = getSDK(chainConfig.chainId);
+              const chainParams = { ...baseSearchParams, chains: [chainConfig.chainId] };
+
+              let cursor: string | undefined;
+              let pagesChecked = 0;
+
+              while (pagesChecked < maxPagesPerChain) {
+                const result = await chainSdk.searchAgents(
+                  chainParams,
+                  ['createdAt:desc'],
+                  pageSize,
+                  cursor
+                );
+
+                for (const agent of result.items) {
+                  const nameMatch = agent.name?.toLowerCase().includes(queryLower);
+                  const descMatch = agent.description?.toLowerCase().includes(queryLower);
+                  if (!nameMatch && !descMatch) continue;
+
+                  const parts = agent.agentId.split(':');
+                  const chainIdStr = parts[0] || '0';
+                  const tokenId = parts[1] || '0';
+
+                  chainItems.push({
+                    id: agent.agentId,
+                    chainId: Number.parseInt(chainIdStr, 10),
+                    tokenId,
+                    name: agent.name,
+                    description: agent.description,
+                    image: agent.image,
+                    active: agent.active,
+                    hasMcp: agent.mcp,
+                    hasA2a: agent.a2a,
+                    x402Support: agent.x402support,
+                    supportedTrust: deriveSupportedTrust(agent.x402support),
+                    operators: agent.operators || [],
+                    ens: agent.ens || undefined,
+                    did: agent.did || undefined,
+                    walletAddress: agent.walletAddress || undefined,
+                    inputModes: agent.mcpPrompts?.length ? ['mcp-prompt'] : undefined,
+                    outputModes: agent.mcpResources?.length ? ['mcp-resource'] : undefined,
+                  });
+                }
+
+                cursor = result.nextCursor;
+                pagesChecked++;
+
+                if (!cursor) break;
+              }
+
+              return chainItems;
+            });
+
+            const chainResults = await Promise.all(chainSearchPromises);
+
+            // Merge results from all chains
+            for (const items of chainResults) {
+              allItems.push(...items);
+            }
+          } else {
+            // No query - single search with all chains, limited pagination
+            const result = await sdk.searchAgents(
+              baseSearchParams,
+              ['createdAt:desc'],
+              fetchLimit
+            );
+
+            for (const agent of result.items) {
+              const parts = agent.agentId.split(':');
+              const chainIdStr = parts[0] || '0';
+              const tokenId = parts[1] || '0';
+
+              allItems.push({
+                id: agent.agentId,
+                chainId: Number.parseInt(chainIdStr, 10),
+                tokenId,
+                name: agent.name,
+                description: agent.description,
+                image: agent.image,
+                active: agent.active,
+                hasMcp: agent.mcp,
+                hasA2a: agent.a2a,
+                x402Support: agent.x402support,
+                supportedTrust: deriveSupportedTrust(agent.x402support),
+                operators: agent.operators || [],
+                ens: agent.ens || undefined,
+                did: agent.did || undefined,
+                walletAddress: agent.walletAddress || undefined,
+                inputModes: agent.mcpPrompts?.length ? ['mcp-prompt'] : undefined,
+                outputModes: agent.mcpResources?.length ? ['mcp-resource'] : undefined,
+              });
+            }
+          }
         }
 
         // Calculate scores and generate match reasons
@@ -736,14 +882,16 @@ export function createSDKService(env: Env): SDKService {
           byChain[item.agent.chainId] = (byChain[item.agent.chainId] || 0) + 1;
         }
 
-        // Apply limit
-        const limitedItems = scoredItems.slice(0, limit);
-        const hasMore = scoredItems.length > limit;
+        // Apply offset and limit for local pagination
+        const limitedItems = scoredItems.slice(offset, offset + limit);
+        const hasMore = scoredItems.length > offset + limit;
 
-        // Generate cursor for pagination (simple offset-based)
+        // Generate cursor for pagination with accumulated offset
         let nextCursor: string | undefined;
         if (hasMore) {
-          nextCursor = Buffer.from(JSON.stringify({ offset: limit })).toString('base64url');
+          nextCursor = Buffer.from(JSON.stringify({ offset: offset + limit })).toString(
+            'base64url'
+          );
         }
 
         return {
@@ -755,6 +903,96 @@ export function createSDKService(env: Env): SDKService {
         };
       } catch (error) {
         throw new SDKError('search', error);
+      }
+    },
+
+    async searchByReputation(params: ReputationSearchParams): Promise<ReputationSearchResult> {
+      const { chainIds, minRep, maxRep, limit = 20, cursor } = params;
+
+      // Determine which chains to query
+      const chainsToQuery = chainIds
+        ? SUPPORTED_CHAINS.filter((c) => chainIds.includes(c.chainId))
+        : SUPPORTED_CHAINS;
+
+      if (chainsToQuery.length === 0) {
+        return { items: [], total: 0, hasMore: false };
+      }
+
+      try {
+        const primaryChain = chainsToQuery[0];
+        if (!primaryChain) {
+          return { items: [], total: 0, hasMore: false };
+        }
+        const sdk = getSDK(primaryChain.chainId);
+
+        // Use SDK's native reputation search with minAverageScore
+        // Over-fetch if maxRep is set (we'll need to post-filter)
+        const fetchLimit = maxRep !== undefined ? Math.min(limit * 3, 100) : limit;
+
+        const result = await sdk.searchAgentsByReputation(
+          undefined, // agents - no specific agent filter
+          undefined, // tags
+          undefined, // reviewers
+          undefined, // capabilities
+          undefined, // skills
+          undefined, // tasks
+          undefined, // names
+          minRep, // minAverageScore - the key parameter
+          undefined, // includeRevoked
+          fetchLimit, // pageSize
+          cursor, // cursor for pagination
+          undefined, // sort
+          chainsToQuery.map((c) => c.chainId) // chains
+        );
+
+        // Transform SDK results to our format
+        let items: AgentSummary[] = result.items.map((agent) => {
+          const parts = agent.agentId.split(':');
+          const chainIdStr = parts[0] || '0';
+          const tokenId = parts[1] || '0';
+
+          return {
+            id: agent.agentId,
+            chainId: Number.parseInt(chainIdStr, 10),
+            tokenId,
+            name: agent.name,
+            description: agent.description,
+            image: agent.image,
+            active: agent.active,
+            hasMcp: agent.mcp,
+            hasA2a: agent.a2a,
+            x402Support: agent.x402support,
+            supportedTrust: deriveSupportedTrust(agent.x402support),
+            operators: agent.operators || [],
+            ens: agent.ens || undefined,
+            did: agent.did || undefined,
+            walletAddress: agent.walletAddress || undefined,
+            inputModes: agent.mcpPrompts?.length ? ['mcp-prompt'] : undefined,
+            outputModes: agent.mcpResources?.length ? ['mcp-resource'] : undefined,
+            // Note: reputation data needs to be enriched by caller
+          };
+        });
+
+        // Post-filter by maxRep if specified (SDK doesn't support this natively)
+        // Note: We can't filter by reputationScore here because SDK doesn't return it
+        // The route handler will need to enrich with reputation data and filter
+
+        const total = result.meta?.totalResults ?? items.length;
+        const hasMore = !!result.nextCursor || items.length >= fetchLimit;
+
+        // Apply limit after any post-filtering
+        if (items.length > limit) {
+          items = items.slice(0, limit);
+        }
+
+        return {
+          items,
+          total,
+          hasMore,
+          nextCursor: result.nextCursor,
+        };
+      } catch (error) {
+        throw new SDKError('searchByReputation', error);
       }
     },
   };
