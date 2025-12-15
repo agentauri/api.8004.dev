@@ -43,32 +43,38 @@ export interface SearchService {
 }
 
 /**
- * Search service request body (agent0lab search-service format)
- * Note: Uses flat filter format, not AG0 nested equals/in format
+ * V1 Search filters using AG0 standard operators
  */
-interface SearchRequestBody {
-  query: string;
-  topK: number;
-  minScore?: number;
-  cursor?: string;
-  offset?: number;
-  filters?: {
-    // Flat filters (agent0lab format)
-    chainId?: number;
-    chainIds?: number[]; // Support array of chain IDs
-    active?: boolean;
-    mcp?: boolean;
-    a2a?: boolean;
-    x402support?: boolean;
-    capabilities?: string[];
-    domains?: string[];
-  };
+interface V1SearchFilters {
+  /** Exact match for scalar values */
+  equals?: Record<string, unknown>;
+  /** Value must be in array */
+  in?: Record<string, unknown[]>;
+  /** Value must not be in array */
+  notIn?: Record<string, unknown[]>;
+  /** Fields that must exist (truthy) */
+  exists?: string[];
+  /** Fields that must not exist */
+  notExists?: string[];
 }
 
 /**
- * Search service response (agent0lab format)
+ * V1 Search service request body (AG0 standard format)
  */
-interface SearchResponseBody {
+interface V1SearchRequestBody {
+  query: string;
+  limit: number;
+  offset?: number;
+  cursor?: string;
+  minScore?: number;
+  includeMetadata?: boolean;
+  filters?: V1SearchFilters;
+}
+
+/**
+ * V1 Search service response (AG0 standard format)
+ */
+interface V1SearchResponseBody {
   query: string;
   results: Array<{
     rank: number;
@@ -82,14 +88,14 @@ interface SearchResponseBody {
     matchReasons?: string[];
   }>;
   total: number;
-  timestamp: string;
-  // Optional pagination fields (AG0 standard)
-  pagination?: {
+  pagination: {
     hasMore: boolean;
     nextCursor?: string;
     limit: number;
     offset?: number;
   };
+  requestId: string;
+  timestamp: string;
 }
 
 /**
@@ -276,6 +282,64 @@ function mergeSearchResults(
 }
 
 /**
+ * Convert internal SearchFilters to V1 API format
+ * Note: Boolean false values are ignored (v1 API doesn't support them)
+ */
+function convertToV1Filters(filters: SearchFilters): V1SearchFilters | undefined {
+  const v1: V1SearchFilters = {};
+  let hasFilters = false;
+
+  // equals: scalar values
+  const equals: Record<string, unknown> = {};
+
+  if (filters.chainIds?.length === 1) {
+    equals.chainId = filters.chainIds[0];
+    hasFilters = true;
+  }
+  if (filters.active !== undefined) {
+    equals.active = filters.active;
+    hasFilters = true;
+  }
+
+  if (Object.keys(equals).length > 0) {
+    v1.equals = equals;
+  }
+
+  // in: array values (for multi-value filters)
+  const inFilters: Record<string, unknown[]> = {};
+
+  if (filters.chainIds && filters.chainIds.length > 1) {
+    inFilters.chainId = filters.chainIds;
+    hasFilters = true;
+  }
+  if (filters.skills?.length) {
+    inFilters.capabilities = filters.skills;
+    hasFilters = true;
+  }
+  if (filters.domains?.length) {
+    inFilters.domains = filters.domains;
+    hasFilters = true;
+  }
+
+  if (Object.keys(inFilters).length > 0) {
+    v1.in = inFilters;
+  }
+
+  // exists: truthy boolean values (false/undefined are ignored)
+  const existsFields: string[] = [];
+  if (filters.mcp) existsFields.push('mcp');
+  if (filters.a2a) existsFields.push('a2a');
+  if (filters.x402) existsFields.push('x402support');
+
+  if (existsFields.length > 0) {
+    v1.exists = existsFields;
+    hasFilters = true;
+  }
+
+  return hasFilters ? v1 : undefined;
+}
+
+/**
  * Maximum results to fetch from search-service for caching.
  * Note: The search service (agent0lab) has MAX_TOP_K = 100, so we cap at 100.
  */
@@ -350,9 +414,8 @@ export function createSearchService(
   const baseUrl = searchServiceUrl.replace(/\/$/, '');
 
   /**
-   * Execute a single search request
+   * Execute a single search request using v1 API
    */
-  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Filter building logic requires multiple conditional checks
   async function executeSearch(
     query: string,
     limit: number,
@@ -363,50 +426,28 @@ export function createSearchService(
     // Decode offset from cursor if provided
     const { offset } = cursor ? decodeCursor(cursor) : { offset: 0 };
 
-    const body: SearchRequestBody = {
+    // Build v1 API request body
+    const body: V1SearchRequestBody = {
       query,
-      topK: limit,
+      limit,
       minScore,
+      includeMetadata: true,
     };
 
-    // Use offset-based pagination (more widely supported than cursor)
+    // Use offset-based pagination
     if (offset > 0) {
       body.offset = offset;
     }
 
+    // Convert filters to v1 format
     if (filters) {
-      body.filters = {};
-
-      // Support both single chainId and array of chainIds
-      if (filters.chainIds?.length) {
-        if (filters.chainIds.length === 1) {
-          body.filters.chainId = filters.chainIds[0];
-        } else {
-          // Send array for multi-chain filtering
-          body.filters.chainIds = filters.chainIds;
-        }
-      }
-      if (filters.active !== undefined) {
-        body.filters.active = filters.active;
-      }
-      if (filters.mcp !== undefined) {
-        body.filters.mcp = filters.mcp;
-      }
-      if (filters.a2a !== undefined) {
-        body.filters.a2a = filters.a2a;
-      }
-      if (filters.x402 !== undefined) {
-        body.filters.x402support = filters.x402;
-      }
-      if (filters.skills?.length) {
-        body.filters.capabilities = filters.skills;
-      }
-      if (filters.domains?.length) {
-        body.filters.domains = filters.domains;
+      const v1Filters = convertToV1Filters(filters);
+      if (v1Filters) {
+        body.filters = v1Filters;
       }
     }
 
-    const response = await fetchWithTimeout(`${baseUrl}/api/search`, {
+    const response = await fetchWithTimeout(`${baseUrl}/api/v1/search`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -418,7 +459,7 @@ export function createSearchService(
       throw new Error(`Search service error: ${response.status} ${response.statusText}`);
     }
 
-    const data = (await response.json()) as SearchResponseBody;
+    const data = (await response.json()) as V1SearchResponseBody;
 
     const results: SearchResultItem[] = data.results.map((r) => ({
       agentId: r.agentId,
@@ -430,22 +471,12 @@ export function createSearchService(
       matchReasons: r.matchReasons,
     }));
 
-    // Determine if there are more results
-    // Note: search-service may return total = results.length (not true total)
-    // So we use a heuristic: if we got exactly `limit` results, assume there are more
-    const hasMore =
-      data.pagination?.hasMore ?? (results.length >= limit || offset + results.length < data.total);
+    // Use pagination object from v1 response
+    const hasMore = data.pagination.hasMore;
+    const nextCursor =
+      data.pagination.nextCursor ??
+      (hasMore ? encodeOffsetCursor(offset + results.length) : undefined);
 
-    // Generate nextCursor if there are more results
-    // Use server-provided cursor if available, otherwise generate offset-based cursor
-    let nextCursor: string | undefined;
-    if (hasMore) {
-      nextCursor = data.pagination?.nextCursor ?? encodeOffsetCursor(offset + results.length);
-    }
-
-    // Total from search-service may be capped at results.length
-    // If hasMore is true, we know there are at least more results
-    // Return the server's total but indicate hasMore correctly
     return {
       results,
       total: data.total,
@@ -634,9 +665,9 @@ export function createSearchService(
 
     async healthCheck(): Promise<boolean> {
       try {
-        // agent0lab uses /health, AG0 standard uses /api/v1/health
+        // v1 API health endpoint
         const response = await fetchWithTimeout(
-          `${baseUrl}/health`,
+          `${baseUrl}/api/v1/health`,
           { method: 'GET' },
           5000 // 5 second timeout for health checks
         );
