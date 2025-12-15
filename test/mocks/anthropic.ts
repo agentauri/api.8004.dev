@@ -11,14 +11,14 @@ import { vi } from 'vitest';
 export const mockClassificationResponse = {
   skills: [
     {
-      slug: 'natural_language_processing/text_generation',
+      slug: 'natural_language_processing',
       confidence: 0.95,
       reasoning: 'Agent description indicates text generation capabilities',
     },
   ],
   domains: [
     {
-      slug: 'technology/software_development',
+      slug: 'technology',
       confidence: 0.9,
       reasoning: 'Agent operates in software development domain',
     },

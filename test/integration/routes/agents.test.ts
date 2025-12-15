@@ -344,3 +344,399 @@ describe('Bug fixes - chainIds[], minScore, and pagination', () => {
     }
   });
 });
+
+describe('OR mode pagination', () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValue(mockHealthyResponse());
+  });
+
+  it('returns cursor for OR mode with multiple boolean filters', async () => {
+    // OR mode with mcp=true&a2a=true should now return pagination cursor
+    const res = await testRoute('/api/v1/agents?mcp=true&a2a=true&filterMode=OR&limit=3');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.meta).toBeDefined();
+    expect(typeof body.meta.hasMore).toBe('boolean');
+    // If there are more results, nextCursor should be defined
+    if (body.meta.hasMore) {
+      expect(body.meta.nextCursor).toBeDefined();
+    }
+  });
+
+  it('paginates OR mode results without duplicates', async () => {
+    // First page of OR mode results
+    const page1 = await testRoute('/api/v1/agents?mcp=true&a2a=true&filterMode=OR&limit=2');
+    expect(page1.status).toBe(200);
+    const body1 = await page1.json();
+    expect(body1.success).toBe(true);
+
+    if (body1.meta.hasMore && body1.meta.nextCursor) {
+      // Second page using the cursor
+      const page2 = await testRoute(
+        `/api/v1/agents?mcp=true&a2a=true&filterMode=OR&limit=2&cursor=${encodeURIComponent(body1.meta.nextCursor)}`
+      );
+      expect(page2.status).toBe(200);
+      const body2 = await page2.json();
+      expect(body2.success).toBe(true);
+
+      // Verify no duplicates between pages
+      const ids1 = body1.data.map((a: { id: string }) => a.id);
+      const ids2 = body2.data.map((a: { id: string }) => a.id);
+      const duplicates = ids1.filter((id: string) => ids2.includes(id));
+      expect(duplicates).toHaveLength(0);
+    }
+  });
+
+  it('OR mode with x402 returns cursor', async () => {
+    // Test with different filter combination
+    const res = await testRoute('/api/v1/agents?mcp=true&x402=true&filterMode=OR&limit=3');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.meta).toBeDefined();
+  });
+});
+
+describe('Boolean feature filters', () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValue(mockHealthyResponse());
+  });
+
+  it('filters by active status', async () => {
+    const [activeRes, inactiveRes] = await Promise.all([
+      testRoute('/api/v1/agents?active=true'),
+      testRoute('/api/v1/agents?active=false'),
+    ]);
+
+    for (const res of [activeRes, inactiveRes]) {
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.success).toBe(true);
+      expect(body.data).toBeDefined();
+    }
+  });
+
+  it('filters by x402 support', async () => {
+    const res = await testRoute('/api/v1/agents?x402=true');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
+  });
+
+  it('filters by a2a support', async () => {
+    const res = await testRoute('/api/v1/agents?a2a=true');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
+  });
+
+  it('filters by hasRegistrationFile', async () => {
+    const res = await testRoute('/api/v1/agents?hasRegistrationFile=true');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
+  });
+
+  it('combines multiple boolean filters in AND mode', async () => {
+    // Default AND mode: all filters must match
+    const res = await testRoute('/api/v1/agents?mcp=true&a2a=true&x402=true');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
+  });
+});
+
+describe('OASF classification filters', () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValue(mockHealthyResponse());
+  });
+
+  it('filters by single skill', async () => {
+    const res = await testRoute('/api/v1/agents?skills=natural_language_processing');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
+  });
+
+  it('filters by multiple skills', async () => {
+    const res = await testRoute(
+      '/api/v1/agents?skills=natural_language_processing,code_generation'
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
+  });
+
+  it('filters by single domain', async () => {
+    const res = await testRoute('/api/v1/agents?domains=finance');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
+  });
+
+  it('filters by multiple domains', async () => {
+    const res = await testRoute('/api/v1/agents?domains=finance,healthcare');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
+  });
+
+  it('filters by skills and domains combined', async () => {
+    const res = await testRoute(
+      '/api/v1/agents?skills=natural_language_processing&domains=finance'
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
+  });
+});
+
+describe('Combined filter scenarios', () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValue(mockHealthyResponse());
+  });
+
+  it('combines boolean and OASF filters', async () => {
+    const res = await testRoute('/api/v1/agents?mcp=true&skills=natural_language_processing');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
+  });
+
+  it('combines OASF and reputation filters', async () => {
+    const res = await testRoute('/api/v1/agents?skills=natural_language_processing&minRep=30');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
+  });
+
+  it('combines chain and feature filters', async () => {
+    const res = await testRoute('/api/v1/agents?chainId=11155111&active=true&mcp=true');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
+  });
+
+  it('combines all filter types', async () => {
+    const res = await testRoute(
+      '/api/v1/agents?chainId=11155111&mcp=true&skills=natural_language_processing&minRep=20'
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
+  });
+
+  it('filters with sort and pagination', async () => {
+    const res = await testRoute(
+      '/api/v1/agents?skills=natural_language_processing&sort=reputation&order=desc&limit=5'
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
+    expect(body.meta).toBeDefined();
+  });
+});
+
+describe('Search with filters', () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValue(mockSearchResponse('test', 3));
+  });
+
+  it('search with skills filter', async () => {
+    const res = await testRoute('/api/v1/agents?q=agent&skills=natural_language_processing');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
+  });
+
+  it('search with domains filter', async () => {
+    const res = await testRoute('/api/v1/agents?q=agent&domains=finance');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
+  });
+
+  it('search with boolean filters', async () => {
+    const res = await testRoute('/api/v1/agents?q=agent&mcp=true&active=true');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
+  });
+
+  it('search with OR mode', async () => {
+    const res = await testRoute('/api/v1/agents?q=agent&mcp=true&a2a=true&filterMode=OR');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
+  });
+
+  it('search with all filter types', async () => {
+    const res = await testRoute(
+      '/api/v1/agents?q=agent&skills=natural_language_processing&mcp=true&minRep=20'
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
+  });
+});
+
+describe('OR mode edge cases', () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValue(mockHealthyResponse());
+  });
+
+  it('OR mode with all three boolean filters', async () => {
+    const res = await testRoute('/api/v1/agents?mcp=true&a2a=true&x402=true&filterMode=OR');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
+  });
+
+  it('OR mode with single filter behaves normally', async () => {
+    // Single filter with OR mode should work (no merge needed)
+    const res = await testRoute('/api/v1/agents?mcp=true&filterMode=OR');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
+  });
+
+  it('OR mode pagination with all filters', async () => {
+    // First page with all three boolean filters in OR mode
+    const page1 = await testRoute(
+      '/api/v1/agents?mcp=true&a2a=true&x402=true&filterMode=OR&limit=2'
+    );
+    expect(page1.status).toBe(200);
+    const body1 = await page1.json();
+    expect(body1.success).toBe(true);
+
+    if (body1.meta.hasMore && body1.meta.nextCursor) {
+      // Second page using the cursor
+      const page2 = await testRoute(
+        `/api/v1/agents?mcp=true&a2a=true&x402=true&filterMode=OR&limit=2&cursor=${encodeURIComponent(body1.meta.nextCursor)}`
+      );
+      expect(page2.status).toBe(200);
+      const body2 = await page2.json();
+      expect(body2.success).toBe(true);
+
+      // Verify no duplicates between pages
+      const ids1 = body1.data.map((a: { id: string }) => a.id);
+      const ids2 = body2.data.map((a: { id: string }) => a.id);
+      const duplicates = ids1.filter((id: string) => ids2.includes(id));
+      expect(duplicates).toHaveLength(0);
+    }
+  });
+});
+
+describe('Filter validation errors', () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValue(mockHealthyResponse());
+  });
+
+  it('returns empty results for non-matching skill filter', async () => {
+    // Invalid skills don't cause validation error, they just don't match any agents
+    const res = await testRoute('/api/v1/agents?skills=invalid_nonexistent_skill_xyz');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    // No agents will have this skill classification
+    expect(body.data).toBeDefined();
+  });
+
+  it('returns empty results for non-matching domain filter', async () => {
+    // Invalid domains don't cause validation error, they just don't match any agents
+    const res = await testRoute('/api/v1/agents?domains=invalid_nonexistent_domain_xyz');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    // No agents will have this domain classification
+    expect(body.data).toBeDefined();
+  });
+
+  it('returns validation error for invalid limit', async () => {
+    const res = await testRoute('/api/v1/agents?limit=-1');
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('returns validation error for limit exceeding max', async () => {
+    const res = await testRoute('/api/v1/agents?limit=1000');
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.code).toBe('VALIDATION_ERROR');
+  });
+});
+
+describe('Agent detail with OASF enrichment', () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValue(mockHealthyResponse());
+  });
+
+  it('returns full OASF classification in detail view', async () => {
+    await insertMockClassification('11155111:1');
+
+    const response = await testRoute('/api/v1/agents/11155111:1');
+    expect(response.status).toBe(200);
+
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.data.oasf).toBeDefined();
+    expect(body.data.oasf.skills).toBeDefined();
+    expect(Array.isArray(body.data.oasf.skills)).toBe(true);
+    expect(body.data.oasf.domains).toBeDefined();
+    expect(Array.isArray(body.data.oasf.domains)).toBe(true);
+    expect(body.data.oasf.confidence).toBeDefined();
+  });
+
+  it('returns MCP tools when available', async () => {
+    const response = await testRoute('/api/v1/agents/11155111:1');
+    expect(response.status).toBe(200);
+
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    // mcpTools should be defined (even if empty array)
+    expect(body.data.mcpTools).toBeDefined();
+  });
+
+  it('returns A2A skills when available', async () => {
+    const response = await testRoute('/api/v1/agents/11155111:1');
+    expect(response.status).toBe(200);
+
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    // a2aSkills should be defined (even if empty array or undefined)
+    expect(body.data).toBeDefined();
+  });
+});

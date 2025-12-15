@@ -16,6 +16,7 @@ export interface Env {
 
   // Required secrets
   ANTHROPIC_API_KEY: string;
+  GOOGLE_AI_API_KEY: string;
   SEARCH_SERVICE_URL: string;
   SEPOLIA_RPC_URL: string;
   BASE_SEPOLIA_RPC_URL: string;
@@ -26,6 +27,7 @@ export interface Env {
   CACHE_TTL: string;
   RATE_LIMIT_RPM: string;
   CLASSIFICATION_MODEL: string;
+  FALLBACK_MODEL: string;
 
   // Optional API key for authenticated access
   API_KEY?: string;
@@ -35,6 +37,10 @@ export interface Env {
   IPFS_GATEWAY_URL?: string;
   /** IPFS fetch timeout in milliseconds (default: 10000) */
   IPFS_TIMEOUT_MS?: string;
+
+  // E2E testing configuration
+  /** Enable mock services for deterministic E2E testing (default: false) */
+  MOCK_EXTERNAL_SERVICES?: string;
 }
 
 /**

@@ -410,6 +410,87 @@ describe('API', () => {
 });
 ```
 
+## E2E Test Suite
+
+The E2E test suite verifies ~120 test cases against the production API.
+
+### Running E2E Tests
+
+```bash
+# Run all tests
+API_KEY="your_key" pnpm run test:e2e
+
+# Run specific test suite
+API_KEY="..." pnpm run test:e2e -- --filter=fallback
+API_KEY="..." pnpm run test:e2e -- --filter=pagination
+API_KEY="..." pnpm run test:e2e -- --filter=security
+
+# JSON output (for CI)
+API_KEY="..." pnpm run test:e2e -- --json
+
+# Verbose output
+API_KEY="..." pnpm run test:e2e -- --verbose
+```
+
+### Available Test Suites
+
+| Suite | Description | Tests |
+|-------|-------------|-------|
+| health | Health check endpoint | ~2 |
+| basic | Basic agent filters (single filters) | ~11 |
+| boolean | AND/OR filter modes | ~8 |
+| oasf | Skills/domains filtering | ~6 |
+| sorting | Sort and order parameters | ~8 |
+| search | Semantic search (GET q= and POST /search) | ~25 |
+| fallback | Vector search -> SDK fallback | ~27 |
+| pagination | Offset and cursor pagination | ~12 |
+| reputation | Reputation filters (minRep/maxRep) | ~5 |
+| advanced | Complex filter combinations | ~5 |
+| edge | Edge cases and boundary conditions | ~12 |
+| error | Error handling and validation | ~6 |
+| detail | Single agent detail endpoint | ~9 |
+| taxonomy | OASF taxonomy endpoint | ~5 |
+| security | Security tests (SQL injection, XSS, auth) | ~7 |
+| consistency | SDK vs Search result consistency | ~4 |
+
+### Test Structure
+
+```
+scripts/e2e-tests/
+├── run-tests.ts           # Entry point, CLI args
+├── test-runner.ts         # Custom test framework
+├── utils/
+│   ├── api-client.ts      # HTTP client with retry
+│   └── assertions.ts      # Domain-specific assertions
+└── tests/
+    ├── health.ts
+    ├── agents-basic.ts
+    ├── agents-boolean.ts
+    ├── agents-oasf.ts
+    ├── agents-sorting.ts
+    ├── agents-reputation.ts
+    ├── agents-advanced.ts
+    ├── agents-edge-cases.ts
+    ├── agents-detail.ts
+    ├── agents-pagination.ts
+    ├── search.ts
+    ├── search-fallback.ts
+    ├── taxonomy.ts
+    ├── security.ts
+    ├── error-handling.ts
+    └── consistency.ts
+```
+
+### Key Test Categories
+
+1. **Search Fallback Tests**: Verify that when vector search returns 0 results, the API falls back to SDK substring search with all filters working correctly.
+
+2. **Pagination Tests**: Verify both offset-based (page=N) and cursor-based pagination work correctly, including across pages with filters applied.
+
+3. **Filter Combination Tests**: Verify AND mode (all filters must match) and OR mode (any boolean filter can match) work correctly.
+
+4. **Security Tests**: Verify SQL injection and XSS payloads are sanitized, rate limiting is in place, and authentication works.
+
 ## OASF Taxonomy
 
 The service uses OASF v0.8.0 taxonomy:

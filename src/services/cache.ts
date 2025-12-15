@@ -32,26 +32,29 @@ export interface CacheService {
 
 /**
  * Cache TTL constants in seconds
+ * TTL values are aligned to prevent data inconsistency between related caches
  */
 export const CACHE_TTL = {
-  /** Agent list cache: 5 minutes */
-  AGENTS: 300,
-  /** Single agent cache: 5 minutes */
-  AGENT_DETAIL: 300,
-  /** Classification cache: 24 hours */
-  CLASSIFICATION: 86400,
-  /** Chain stats cache: 15 minutes */
-  CHAIN_STATS: 900,
-  /** Platform stats cache: 15 minutes */
-  PLATFORM_STATS: 900,
+  /** Agent list cache: 3 minutes (reduced for fresher data) */
+  AGENTS: 180,
+  /** Single agent cache: 3 minutes (aligned with AGENTS) */
+  AGENT_DETAIL: 180,
+  /** Classification cache: 6 hours (reduced from 24h for fresher classifications) */
+  CLASSIFICATION: 21600,
+  /** Chain stats cache: 5 minutes (reduced for more accurate counts) */
+  CHAIN_STATS: 300,
+  /** Platform stats cache: 5 minutes (aligned with CHAIN_STATS) */
+  PLATFORM_STATS: 300,
   /** Taxonomy cache: 1 hour */
   TAXONOMY: 3600,
-  /** Search results cache: 5 minutes */
-  SEARCH: 300,
-  /** Search results for pagination: 5 minutes */
-  SEARCH_RESULTS: 300,
+  /** Search results cache: 3 minutes (aligned with AGENTS) */
+  SEARCH: 180,
+  /** Search results for pagination: 3 minutes (aligned with SEARCH) */
+  SEARCH_RESULTS: 180,
   /** IPFS metadata cache: 1 hour (content is immutable) */
   IPFS_METADATA: 3600,
+  /** OR mode agents results for pagination: 3 minutes (aligned with AGENTS) */
+  OR_MODE_AGENTS: 180,
 } as const;
 
 /**
@@ -70,6 +73,8 @@ export const CACHE_KEYS = {
   /** Search results for pagination (stores full result set) */
   searchResults: (hash: string) => `search:results:${hash}`,
   ipfsMetadata: (agentId: string) => `ipfs:metadata:${agentId}`,
+  /** OR mode agents results for pagination (stores merged result set) */
+  orModeAgents: (hash: string) => `agents:or:${hash}`,
 } as const;
 
 /**
@@ -78,6 +83,13 @@ export const CACHE_KEYS = {
 function hashObject(obj: Record<string, unknown>): string {
   const sorted = JSON.stringify(obj, Object.keys(obj).sort());
   return createHash('sha256').update(sorted).digest('hex').substring(0, 16);
+}
+
+/**
+ * Create a hash from query parameters for cache keys (public API)
+ */
+export function hashQueryParams(params: Record<string, unknown>): string {
+  return hashObject(params);
 }
 
 /**

@@ -1,0 +1,205 @@
+name: Watch Critical Releases
+
+on:
+  schedule:
+    # Run every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      force_check:
+        description: 'Force check even if versions match'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check-agent0-sdk:
+    name: Check agent0-ts releases
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get current SDK version
+        id: current
+        run: |
+          CURRENT_VERSION=$(jq -r '.dependencies["agent0-sdk"] // "0.0.0"' package.json | sed 's/[\^~]//')
+          echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "Current agent0-sdk version: $CURRENT_VERSION"
+
+      - name: Get latest release
+        id: latest
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              const { data: release } = await github.rest.repos.getLatestRelease({
+                owner: 'agent0lab',
+                repo: 'agent0-ts'
+              });
+              const version = release.tag_name.replace(/^v/, '');
+              core.setOutput('version', version);
+              core.setOutput('url', release.html_url);
+              core.setOutput('name', release.name || release.tag_name);
+              core.setOutput('body', release.body || 'No release notes');
+              console.log(`Latest agent0-ts release: ${version}`);
+            } catch (error) {
+              console.log('No releases found or repo not accessible');
+              core.setOutput('version', '0.0.0');
+            }
+
+      - name: Compare versions and create issue
+        if: steps.latest.outputs.version != '0.0.0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const currentVersion = '${{ steps.current.outputs.version }}';
+            const latestVersion = '${{ steps.latest.outputs.version }}';
+            const forceCheck = '${{ inputs.force_check }}' === 'true';
+
+            console.log(`Comparing: current=${currentVersion} vs latest=${latestVersion}`);
+
+            // Simple version comparison (handles semver)
+            const isNewer = latestVersion.localeCompare(currentVersion, undefined, { numeric: true, sensitivity: 'base' }) > 0;
+
+            if (isNewer || forceCheck) {
+              // Check if issue already exists
+              const issues = await github.rest.issues.listForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open',
+                labels: 'dependency-update,agent0-sdk'
+              });
+
+              const existingIssue = issues.data.find(i => i.title.includes(latestVersion));
+
+              if (!existingIssue) {
+                const releaseUrl = '${{ steps.latest.outputs.url }}';
+                const releaseName = '${{ steps.latest.outputs.name }}';
+
+                await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title: `🚀 New agent0-sdk release: ${latestVersion}`,
+                  body: `## New Release Available\n\n` +
+                        `**Package:** \`agent0-sdk\`\n` +
+                        `**Current Version:** \`${currentVersion}\`\n` +
+                        `**Latest Version:** \`${latestVersion}\`\n\n` +
+                        `### Release: ${releaseName}\n\n` +
+                        `📦 [View Release](${releaseUrl})\n\n` +
+                        `### Action Required\n\n` +
+                        `1. Review the [changelog](${releaseUrl})\n` +
+                        `2. Check for breaking changes\n` +
+                        `3. Update with: \`pnpm update agent0-sdk\`\n` +
+                        `4. Run tests: \`pnpm test\`\n` +
+                        `5. Run E2E tests: \`pnpm run test:e2e\`\n\n` +
+                        `---\n` +
+                        `*This issue was automatically created by the release watcher workflow.*`,
+                  labels: ['dependency-update', 'agent0-sdk', 'critical-update']
+                });
+                console.log(`Created issue for agent0-sdk ${latestVersion}`);
+              } else {
+                console.log(`Issue already exists for agent0-sdk ${latestVersion}`);
+              }
+            } else {
+              console.log('No new version available');
+            }
+
+  check-search-service:
+    name: Check search-service releases
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get tracked version
+        id: current
+        run: |
+          if [ -f ".github/release-versions.json" ]; then
+            CURRENT_VERSION=$(jq -r '.["search-service"] // "0.0.0"' .github/release-versions.json)
+          else
+            CURRENT_VERSION="0.0.0"
+          fi
+          echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "Current tracked search-service version: $CURRENT_VERSION"
+
+      - name: Get latest release
+        id: latest
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              const { data: release } = await github.rest.repos.getLatestRelease({
+                owner: 'agent0lab',
+                repo: 'search-service'
+              });
+              const version = release.tag_name.replace(/^v/, '');
+              core.setOutput('version', version);
+              core.setOutput('url', release.html_url);
+              core.setOutput('name', release.name || release.tag_name);
+              core.setOutput('body', release.body || 'No release notes');
+              console.log(`Latest search-service release: ${version}`);
+            } catch (error) {
+              console.log('No releases found or repo not accessible');
+              core.setOutput('version', '0.0.0');
+            }
+
+      - name: Compare versions and create issue
+        if: steps.latest.outputs.version != '0.0.0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const currentVersion = '${{ steps.current.outputs.version }}';
+            const latestVersion = '${{ steps.latest.outputs.version }}';
+            const forceCheck = '${{ inputs.force_check }}' === 'true';
+
+            console.log(`Comparing: current=${currentVersion} vs latest=${latestVersion}`);
+
+            const isNewer = latestVersion.localeCompare(currentVersion, undefined, { numeric: true, sensitivity: 'base' }) > 0;
+
+            if (isNewer || forceCheck) {
+              const issues = await github.rest.issues.listForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open',
+                labels: 'dependency-update,search-service'
+              });
+
+              const existingIssue = issues.data.find(i => i.title.includes(latestVersion));
+
+              if (!existingIssue) {
+                const releaseUrl = '${{ steps.latest.outputs.url }}';
+                const releaseName = '${{ steps.latest.outputs.name }}';
+
+                await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title: `🚀 New search-service release: ${latestVersion}`,
+                  body: `## New Release Available\n\n` +
+                        `**Service:** \`search-service\`\n` +
+                        `**Tracked Version:** \`${currentVersion}\`\n` +
+                        `**Latest Version:** \`${latestVersion}\`\n\n` +
+                        `### Release: ${releaseName}\n\n` +
+                        `📦 [View Release](${releaseUrl})\n\n` +
+                        `### Action Required\n\n` +
+                        `1. Review the [changelog](${releaseUrl})\n` +
+                        `2. Check for API changes in \`src/services/search.ts\`\n` +
+                        `3. Update \`.github/release-versions.json\` after verification\n` +
+                        `4. Run E2E tests: \`pnpm run test:e2e\`\n\n` +
+                        `> ⚠️ **Note:** search-service is an external API, not an npm package.\n` +
+                        `> Changes may require updates to the API client code.\n\n` +
+                        `---\n` +
+                        `*This issue was automatically created by the release watcher workflow.*`,
+                  labels: ['dependency-update', 'search-service', 'critical-update']
+                });
+                console.log(`Created issue for search-service ${latestVersion}`);
+              } else {
+                console.log(`Issue already exists for search-service ${latestVersion}`);
+              }
+            } else {
+              console.log('No new version available');
+            }

@@ -1,22 +1,22 @@
 /**
  * OASF Taxonomy type definitions
  * @module types/taxonomy
+ * @see https://github.com/agntcy/oasf
  */
 
 /**
  * Taxonomy category (skill or domain)
+ * Note: OASF uses a flat structure with no hierarchies
  */
 export interface TaxonomyCategory {
   /** Unique identifier */
   id: number;
-  /** URL-friendly slug */
+  /** URL-friendly slug (exact match required, no hierarchies) */
   slug: string;
   /** Display name */
   name: string;
   /** Category description */
   description?: string;
-  /** Child categories */
-  children?: TaxonomyCategory[];
 }
 
 /**

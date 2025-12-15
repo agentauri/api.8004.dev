@@ -14,6 +14,15 @@ updates:
       - "dependencies"
       - "npm"
     groups:
+      # Critical dependencies - agent0-sdk from agent0lab/agent0-ts
+      # These are prioritized and labeled separately for visibility
+      critical-dependencies:
+        patterns:
+          - "agent0-sdk"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
       dev-dependencies:
         patterns:
           - "@types/*"

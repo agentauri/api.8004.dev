@@ -123,12 +123,12 @@ describe('CACHE_KEYS', () => {
 
 describe('CACHE_TTL', () => {
   it('has correct TTL values', () => {
-    expect(CACHE_TTL.AGENTS).toBe(300);
-    expect(CACHE_TTL.AGENT_DETAIL).toBe(300);
-    expect(CACHE_TTL.CLASSIFICATION).toBe(86400);
-    expect(CACHE_TTL.CHAIN_STATS).toBe(900);
+    expect(CACHE_TTL.AGENTS).toBe(180);
+    expect(CACHE_TTL.AGENT_DETAIL).toBe(180);
+    expect(CACHE_TTL.CLASSIFICATION).toBe(21600);
+    expect(CACHE_TTL.CHAIN_STATS).toBe(300);
     expect(CACHE_TTL.TAXONOMY).toBe(3600);
-    expect(CACHE_TTL.SEARCH).toBe(300);
+    expect(CACHE_TTL.SEARCH).toBe(180);
     expect(CACHE_TTL.IPFS_METADATA).toBe(3600);
   });
 });

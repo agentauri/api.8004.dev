@@ -198,9 +198,10 @@ describe('Queue queries', () => {
   describe('enqueueClassificationsBatch', () => {
     it('enqueues multiple agents', async () => {
       const agentIds = ['11155111:200', '11155111:201', '11155111:202'];
-      const count = await enqueueClassificationsBatch(env.DB, agentIds);
+      const enqueued = await enqueueClassificationsBatch(env.DB, agentIds);
 
-      expect(count).toBe(3);
+      expect(enqueued).toHaveLength(3);
+      expect(enqueued).toEqual(agentIds);
 
       // Verify all are enqueued
       for (const agentId of agentIds) {
@@ -209,9 +210,9 @@ describe('Queue queries', () => {
       }
     });
 
-    it('returns 0 for empty array', async () => {
-      const count = await enqueueClassificationsBatch(env.DB, []);
-      expect(count).toBe(0);
+    it('returns empty array for empty input', async () => {
+      const enqueued = await enqueueClassificationsBatch(env.DB, []);
+      expect(enqueued).toEqual([]);
     });
 
     it('skips agents with pending jobs', async () => {
@@ -222,10 +223,11 @@ describe('Queue queries', () => {
       await enqueueClassification(env.DB, agentId1);
 
       // Now try to batch enqueue both
-      const count = await enqueueClassificationsBatch(env.DB, [agentId1, agentId2]);
+      const enqueued = await enqueueClassificationsBatch(env.DB, [agentId1, agentId2]);
 
       // Should only enqueue agent2
-      expect(count).toBe(1);
+      expect(enqueued).toHaveLength(1);
+      expect(enqueued).toContain(agentId2);
     });
 
     it('skips agents with processing jobs', async () => {
@@ -236,10 +238,10 @@ describe('Queue queries', () => {
       await markJobProcessing(env.DB, id);
 
       // Try to batch enqueue same agent
-      const count = await enqueueClassificationsBatch(env.DB, [agentId]);
+      const enqueued = await enqueueClassificationsBatch(env.DB, [agentId]);
 
       // Should skip since already processing
-      expect(count).toBe(0);
+      expect(enqueued).toEqual([]);
     });
   });
 

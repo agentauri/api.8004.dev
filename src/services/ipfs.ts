@@ -15,9 +15,10 @@ import { CACHE_KEYS, CACHE_TTL } from './cache';
 export const DEFAULT_IPFS_GATEWAY = 'https://ipfs.io/ipfs/';
 
 /**
- * Default timeout for IPFS fetches (10 seconds)
+ * Default timeout for IPFS fetches (5 seconds)
+ * Reduced from 10s to prevent cascading delays
  */
-export const DEFAULT_IPFS_TIMEOUT_MS = 10_000;
+export const DEFAULT_IPFS_TIMEOUT_MS = 5_000;
 
 /**
  * Zod schema for social links validation

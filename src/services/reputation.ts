@@ -130,6 +130,57 @@ function calculateReputationFromFeedback(feedback: AgentFeedbackRow[]): {
 }
 
 /**
+ * Get score distribution bucket for a score
+ */
+function getScoreBucket(score: number): 'low' | 'medium' | 'high' {
+  if (score <= 33) return 'low';
+  if (score <= 66) return 'medium';
+  return 'high';
+}
+
+/**
+ * Incrementally update reputation with a new feedback score
+ * Uses formula: newAvg = (oldAvg * oldCount + newScore) / (oldCount + 1)
+ */
+function calculateIncrementalReputation(
+  current: AgentReputationRow | null,
+  newScore: number
+): {
+  count: number;
+  averageScore: number;
+  low: number;
+  medium: number;
+  high: number;
+} {
+  const bucket = getScoreBucket(newScore);
+
+  if (!current) {
+    // First feedback - simple calculation
+    return {
+      count: 1,
+      averageScore: newScore,
+      low: bucket === 'low' ? 1 : 0,
+      medium: bucket === 'medium' ? 1 : 0,
+      high: bucket === 'high' ? 1 : 0,
+    };
+  }
+
+  // Incremental update
+  const newCount = current.feedback_count + 1;
+  const newAverage =
+    Math.round(((current.average_score * current.feedback_count + newScore) / newCount) * 100) /
+    100;
+
+  return {
+    count: newCount,
+    averageScore: newAverage,
+    low: current.low_count + (bucket === 'low' ? 1 : 0),
+    medium: current.medium_count + (bucket === 'medium' ? 1 : 0),
+    high: current.high_count + (bucket === 'high' ? 1 : 0),
+  };
+}
+
+/**
  * Create reputation service
  */
 export function createReputationService(db: D1Database): ReputationService {
@@ -160,8 +211,22 @@ export function createReputationService(db: D1Database): ReputationService {
       // Insert feedback
       const id = await insertFeedback(db, feedback);
 
-      // Recalculate reputation
-      await this.recalculateReputation(feedback.agent_id, feedback.chain_id);
+      // Use incremental update instead of full recalculation
+      // This is O(1) instead of O(n) where n is total feedback count
+      const currentReputation = await getReputation(db, feedback.agent_id);
+      const calculated = calculateIncrementalReputation(currentReputation, feedback.score);
+
+      // Upsert updated reputation
+      await upsertReputation(db, {
+        agent_id: feedback.agent_id,
+        chain_id: feedback.chain_id,
+        feedback_count: calculated.count,
+        average_score: calculated.averageScore,
+        low_count: calculated.low,
+        medium_count: calculated.medium,
+        high_count: calculated.high,
+        last_calculated_at: new Date().toISOString(),
+      });
 
       return id;
     },

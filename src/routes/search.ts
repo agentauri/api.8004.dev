@@ -122,7 +122,7 @@ search.post('/', async (c) => {
   try {
     // ========== PRIMARY: VECTOR SEARCH ==========
     const searchResultsCache = createCacheService(c.env.CACHE, CACHE_TTL.SEARCH_RESULTS);
-    const searchService = createSearchService(c.env.SEARCH_SERVICE_URL, searchResultsCache);
+    const searchService = createSearchService(c.env.SEARCH_SERVICE_URL, searchResultsCache, c.env);
 
     // Determine over-fetch amount based on filters
     const hasBooleanFilters =

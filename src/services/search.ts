@@ -5,8 +5,9 @@
 
 import { createHash } from 'node:crypto';
 import { fetchWithTimeout } from '@/lib/utils/fetch';
-import type { SearchFilters, SearchResultItem, SearchServiceResult } from '@/types';
+import type { Env, SearchFilters, SearchResultItem, SearchServiceResult } from '@/types';
 import { CACHE_KEYS, CACHE_TTL, type CacheService } from './cache';
+import { createMockSearchService } from './mock/mock-search';
 
 /**
  * Search parameters
@@ -281,6 +282,19 @@ function mergeSearchResults(
 const MAX_SEARCH_RESULTS = 100;
 
 /**
+ * Request coalescing for concurrent identical search requests.
+ * Prevents duplicate network calls when multiple requests arrive before the first completes.
+ * Key is the hash of search parameters, value is the pending promise.
+ */
+const pendingSearches = new Map<string, Promise<SearchServiceResult>>();
+
+/**
+ * Timeout to clear stale pending requests (ms).
+ * Requests older than this are removed to prevent memory leaks.
+ */
+const PENDING_REQUEST_TIMEOUT_MS = 30_000;
+
+/**
  * Validate search service URL
  * SECURITY: Prevents SSRF by only allowing HTTPS URLs to known domains
  */
@@ -314,9 +328,19 @@ function isValidSearchServiceUrl(url: string): boolean {
  * Create search service client
  * @param searchServiceUrl - Base URL for search service
  * @param cache - Optional cache service for pagination support
+ * @param env - Optional environment bindings for mock mode
  * @throws Error if URL is invalid or unsafe
  */
-export function createSearchService(searchServiceUrl: string, cache?: CacheService): SearchService {
+export function createSearchService(
+  searchServiceUrl: string,
+  cache?: CacheService,
+  env?: Env
+): SearchService {
+  // Use mock service for deterministic E2E testing
+  if (env?.MOCK_EXTERNAL_SERVICES === 'true') {
+    return createMockSearchService();
+  }
+
   // SECURITY: Validate URL before using
   if (!isValidSearchServiceUrl(searchServiceUrl)) {
     throw new Error(
@@ -430,144 +454,182 @@ export function createSearchService(searchServiceUrl: string, cache?: CacheServi
     };
   }
 
-  return {
-    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Search logic with cache and OR mode requires multiple branches
-    async search(params: SearchParams): Promise<SearchServiceResult> {
-      const { query, limit = 20, minScore = 0.3, cursor, offset, filters } = params;
+  /**
+   * Internal search implementation (used by coalescing wrapper)
+   */
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Search logic with cache and OR mode requires multiple branches
+  async function searchInternal(params: SearchParams): Promise<SearchServiceResult> {
+    const { query, limit = 20, minScore = 0.3, cursor, offset, filters } = params;
 
-      // Determine starting offset
-      // Priority: explicit offset > cursor > 0
-      let startOffset = 0;
+    // Determine starting offset
+    // Priority: explicit offset > cursor > 0
+    let startOffset = 0;
 
-      // If explicit offset is provided, use it directly
-      if (offset !== undefined && offset > 0) {
-        startOffset = offset;
-      } else if (cursor && cache) {
-        // Check if cursor is a cached cursor (pagination from cache)
-        const cachedCursor = decodeCachedCursor(cursor);
-        if (cachedCursor) {
-          const cached = await cache.get<CachedSearchData>(cachedCursor.k);
-          if (cached) {
-            return paginateFromCache(cached, cachedCursor.k, cachedCursor.o, limit);
-          }
-          // Cache expired - use offset from cursor as fallback
-          startOffset = cachedCursor.o;
+    // If explicit offset is provided, use it directly
+    if (offset !== undefined && offset > 0) {
+      startOffset = offset;
+    } else if (cursor && cache) {
+      // Check if cursor is a cached cursor (pagination from cache)
+      const cachedCursor = decodeCachedCursor(cursor);
+      if (cachedCursor) {
+        const cached = await cache.get<CachedSearchData>(cachedCursor.k);
+        if (cached) {
+          return paginateFromCache(cached, cachedCursor.k, cachedCursor.o, limit);
         }
+        // Cache expired - use offset from cursor as fallback
+        startOffset = cachedCursor.o;
       }
+    }
 
-      // Check if OR mode with multiple boolean filters
-      const booleanFilters: Array<'mcp' | 'a2a' | 'x402'> = [];
-      if (filters?.mcp) booleanFilters.push('mcp');
-      if (filters?.a2a) booleanFilters.push('a2a');
-      if (filters?.x402) booleanFilters.push('x402');
+    // Check if OR mode with multiple boolean filters
+    const booleanFilters: Array<'mcp' | 'a2a' | 'x402'> = [];
+    if (filters?.mcp) booleanFilters.push('mcp');
+    if (filters?.a2a) booleanFilters.push('a2a');
+    if (filters?.x402) booleanFilters.push('x402');
 
-      const isOrMode = filters?.filterMode === 'OR' && booleanFilters.length > 1;
+    const isOrMode = filters?.filterMode === 'OR' && booleanFilters.length > 1;
 
-      if (isOrMode) {
-        // OR mode: run separate searches for each boolean filter and merge results
-        const baseFilters: SearchFilters = {
-          chainIds: filters?.chainIds,
-          active: filters?.active,
-          skills: filters?.skills,
-          domains: filters?.domains,
-        };
+    if (isOrMode) {
+      // OR mode: run separate searches for each boolean filter and merge results
+      const baseFilters: SearchFilters = {
+        chainIds: filters?.chainIds,
+        active: filters?.active,
+        skills: filters?.skills,
+        domains: filters?.domains,
+      };
 
-        // Calculate smart fetch limit: request enough results per filter to fill the page after merge
-        // With N filters, each filter contributes ~limit/N results on average, so fetch limit*2 per filter
-        // to account for deduplication
-        const perFilterLimit = Math.min(limit * 2, MAX_SEARCH_RESULTS);
+      // Calculate smart fetch limit: request enough results per filter to fill the page after merge
+      // With N filters, each filter contributes ~limit/N results on average, so fetch limit*2 per filter
+      // to account for deduplication
+      const perFilterLimit = Math.min(limit * 2, MAX_SEARCH_RESULTS);
 
-        // Fetch results for each filter with smart limit
-        const searchPromises = booleanFilters.map(async (filter) => {
-          const result = await executeSearch(query, perFilterLimit, minScore, {
-            ...baseFilters,
-            [filter]: true,
-          });
-          return { result, filterKey: filter };
+      // Fetch results for each filter with smart limit
+      const searchPromises = booleanFilters.map(async (filter) => {
+        const result = await executeSearch(query, perFilterLimit, minScore, {
+          ...baseFilters,
+          [filter]: true,
         });
+        return { result, filterKey: filter };
+      });
 
-        const results = await Promise.all(searchPromises);
-        const merged = mergeSearchResults(results, MAX_SEARCH_RESULTS);
+      const results = await Promise.all(searchPromises);
+      const merged = mergeSearchResults(results, MAX_SEARCH_RESULTS);
 
-        // Cache merged results if there are more than limit
-        if (cache && merged.total > limit) {
-          const cacheKey = CACHE_KEYS.searchResults(hashSearchParams(query, minScore, filters));
-          const cacheData: CachedSearchData = {
-            results: merged.results,
-            total: merged.total,
-            byChain: merged.byChain || {},
-          };
-          await cache.set(cacheKey, cacheData, CACHE_TTL.SEARCH_RESULTS);
-
-          return paginateFromCache(cacheData, cacheKey, startOffset, limit);
-        }
-
-        // No caching needed, return limited results
-        const paginatedResults = merged.results.slice(startOffset, startOffset + limit);
-        const hasMore = startOffset + limit < merged.results.length;
-
-        return {
-          ...merged,
-          results: paginatedResults,
-          hasMore,
-          nextCursor: hasMore ? encodeOffsetCursor(startOffset + limit) : undefined,
-        };
-      }
-
-      // AND mode (default): single search or multi-chain merge
-      // Check if multi-chain filter - need to run separate searches per chain and merge
-      const hasMultipleChains = filters?.chainIds && filters.chainIds.length > 1;
-
-      let allResults: SearchServiceResult;
-      let byChain: Record<number, number>;
-
-      if (hasMultipleChains && filters?.chainIds) {
-        // Multi-chain: run separate searches for each chain and merge
-        // Calculate smart fetch limit: request enough results per chain to fill the page after merge
-        const perChainLimit = Math.min(limit * 2, MAX_SEARCH_RESULTS);
-
-        const chainSearches = filters.chainIds.map(async (chainId) => {
-          const singleChainFilters = { ...filters, chainIds: [chainId] };
-          const result = await executeSearch(query, perChainLimit, minScore, singleChainFilters);
-          return { result, filterKey: `chain:${chainId}` };
-        });
-
-        const results = await Promise.all(chainSearches);
-        const merged = mergeSearchResults(results, MAX_SEARCH_RESULTS);
-        allResults = merged;
-        byChain = merged.byChain || computeByChain(merged.results);
-      } else {
-        // Single chain or no chain filter: single search
-        // Use smart limit: fetch limit*2 for potential pagination, capped at max
-        const smartLimit = Math.min(limit * 2, MAX_SEARCH_RESULTS);
-        allResults = await executeSearch(query, smartLimit, minScore, filters);
-        byChain = computeByChain(allResults.results);
-      }
-
-      // Cache results if there are more than limit
-      if (cache && allResults.results.length > limit) {
+      // Cache merged results if there are more than limit
+      if (cache && merged.total > limit) {
         const cacheKey = CACHE_KEYS.searchResults(hashSearchParams(query, minScore, filters));
         const cacheData: CachedSearchData = {
-          results: allResults.results,
-          total: allResults.results.length,
-          byChain,
+          results: merged.results,
+          total: merged.total,
+          byChain: merged.byChain || {},
         };
         await cache.set(cacheKey, cacheData, CACHE_TTL.SEARCH_RESULTS);
 
         return paginateFromCache(cacheData, cacheKey, startOffset, limit);
       }
 
-      // No caching needed (few results or no cache service)
-      const paginatedResults = allResults.results.slice(startOffset, startOffset + limit);
-      const hasMore = startOffset + limit < allResults.results.length;
+      // No caching needed, return limited results
+      const paginatedResults = merged.results.slice(startOffset, startOffset + limit);
+      const hasMore = startOffset + limit < merged.results.length;
 
       return {
+        ...merged,
         results: paginatedResults,
-        total: allResults.results.length,
         hasMore,
         nextCursor: hasMore ? encodeOffsetCursor(startOffset + limit) : undefined,
+      };
+    }
+
+    // AND mode (default): single search or multi-chain merge
+    // Check if multi-chain filter - need to run separate searches per chain and merge
+    const hasMultipleChains = filters?.chainIds && filters.chainIds.length > 1;
+
+    let allResults: SearchServiceResult;
+    let byChain: Record<number, number>;
+
+    if (hasMultipleChains && filters?.chainIds) {
+      // Multi-chain: run separate searches for each chain and merge
+      // Calculate smart fetch limit: request enough results per chain to fill the page after merge
+      const perChainLimit = Math.min(limit * 2, MAX_SEARCH_RESULTS);
+
+      const chainSearches = filters.chainIds.map(async (chainId) => {
+        const singleChainFilters = { ...filters, chainIds: [chainId] };
+        const result = await executeSearch(query, perChainLimit, minScore, singleChainFilters);
+        return { result, filterKey: `chain:${chainId}` };
+      });
+
+      const results = await Promise.all(chainSearches);
+      const merged = mergeSearchResults(results, MAX_SEARCH_RESULTS);
+      allResults = merged;
+      byChain = merged.byChain || computeByChain(merged.results);
+    } else {
+      // Single chain or no chain filter: single search
+      // Use smart limit: fetch limit*2 for potential pagination, capped at max
+      const smartLimit = Math.min(limit * 2, MAX_SEARCH_RESULTS);
+      allResults = await executeSearch(query, smartLimit, minScore, filters);
+      byChain = computeByChain(allResults.results);
+    }
+
+    // Cache results if there are more than limit
+    if (cache && allResults.results.length > limit) {
+      const cacheKey = CACHE_KEYS.searchResults(hashSearchParams(query, minScore, filters));
+      const cacheData: CachedSearchData = {
+        results: allResults.results,
+        total: allResults.results.length,
         byChain,
       };
+      await cache.set(cacheKey, cacheData, CACHE_TTL.SEARCH_RESULTS);
+
+      return paginateFromCache(cacheData, cacheKey, startOffset, limit);
+    }
+
+    // No caching needed (few results or no cache service)
+    const paginatedResults = allResults.results.slice(startOffset, startOffset + limit);
+    const hasMore = startOffset + limit < allResults.results.length;
+
+    return {
+      results: paginatedResults,
+      total: allResults.results.length,
+      hasMore,
+      nextCursor: hasMore ? encodeOffsetCursor(startOffset + limit) : undefined,
+      byChain,
+    };
+  }
+
+  return {
+    async search(params: SearchParams): Promise<SearchServiceResult> {
+      const { query, minScore = 0.3, filters, cursor, offset } = params;
+
+      // Generate coalescing key from search parameters
+      // Only coalesce if no cursor/offset (first page requests)
+      if (!cursor && !offset) {
+        const coalescingKey = hashSearchParams(query, minScore, filters);
+
+        // Check if there's already a pending request for the same search
+        const pending = pendingSearches.get(coalescingKey);
+        if (pending) {
+          return pending;
+        }
+
+        // Create the promise and store it for coalescing
+        const promise = searchInternal(params);
+        pendingSearches.set(coalescingKey, promise);
+
+        // Set timeout to clean up stale entries
+        setTimeout(() => {
+          pendingSearches.delete(coalescingKey);
+        }, PENDING_REQUEST_TIMEOUT_MS);
+
+        try {
+          return await promise;
+        } finally {
+          // Clean up immediately after completion
+          pendingSearches.delete(coalescingKey);
+        }
+      }
+
+      // For paginated requests, execute directly without coalescing
+      return searchInternal(params);
     },
 
     async healthCheck(): Promise<boolean> {

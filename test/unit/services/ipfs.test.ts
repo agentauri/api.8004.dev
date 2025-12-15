@@ -118,7 +118,7 @@ describe('DEFAULT constants', () => {
   });
 
   it('has correct default timeout', () => {
-    expect(DEFAULT_IPFS_TIMEOUT_MS).toBe(10_000);
+    expect(DEFAULT_IPFS_TIMEOUT_MS).toBe(5_000);
   });
 });
 
