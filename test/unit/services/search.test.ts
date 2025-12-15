@@ -39,9 +39,9 @@ describe('createSearchService', () => {
       const service = createSearchService(baseUrl);
       await service.search({ query: 'test query' });
 
-      // agent0lab uses /api/search, not /api/v1/search
+      // v1 API endpoint
       expect(mockFetch).toHaveBeenCalledWith(
-        `${baseUrl}/api/search`,
+        `${baseUrl}/api/v1/search`,
         expect.objectContaining({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -50,9 +50,9 @@ describe('createSearchService', () => {
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(body.query).toBe('test query');
-      // topK uses smart limit: Math.min(limit * 2, MAX_SEARCH_RESULTS=100)
+      // v1 API uses limit with smart sizing: Math.min(limit * 2, MAX_SEARCH_RESULTS=100)
       // Default limit=20 → 20*2=40
-      expect(body.topK).toBe(40);
+      expect(body.limit).toBe(40);
       expect(body.minScore).toBe(0.3);
     });
 
@@ -74,9 +74,9 @@ describe('createSearchService', () => {
       await service.search({ query: 'test', limit: 50, minScore: 0.5 });
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      // topK uses smart limit: Math.min(limit * 2, MAX_SEARCH_RESULTS=100)
+      // v1 API uses limit with smart sizing: Math.min(limit * 2, MAX_SEARCH_RESULTS=100)
       // limit=50 → 50*2=100 (capped at MAX)
-      expect(body.topK).toBe(100);
+      expect(body.limit).toBe(100);
       expect(body.minScore).toBe(0.5);
     });
 
@@ -101,7 +101,8 @@ describe('createSearchService', () => {
       });
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body.filters.chainId).toBe(11155111);
+      // v1 API: single chainId uses equals operator
+      expect(body.filters.equals.chainId).toBe(11155111);
     });
 
     it('runs separate searches for multiple chainIds and merges results', async () => {
@@ -128,9 +129,9 @@ describe('createSearchService', () => {
       expect(mockFetch).toHaveBeenCalledTimes(2);
       const body1 = JSON.parse(mockFetch.mock.calls[0][1].body);
       const body2 = JSON.parse(mockFetch.mock.calls[1][1].body);
-      // Each call should have a single chainId
-      expect(body1.filters.chainId).toBe(11155111);
-      expect(body2.filters.chainId).toBe(84532);
+      // v1 API: each call has single chainId in equals operator
+      expect(body1.filters.equals.chainId).toBe(11155111);
+      expect(body2.filters.equals.chainId).toBe(84532);
     });
 
     it('applies skills filter as capabilities', async () => {
@@ -154,10 +155,11 @@ describe('createSearchService', () => {
       });
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body.filters.capabilities).toEqual(['nlp', 'code']);
+      // v1 API: skills mapped to capabilities in 'in' operator
+      expect(body.filters.in.capabilities).toEqual(['nlp', 'code']);
     });
 
-    it('applies boolean filters with flat format', async () => {
+    it('applies boolean filters with v1 operator format', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
         json: () =>
@@ -178,12 +180,13 @@ describe('createSearchService', () => {
       });
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      // Flat filter format (not nested in equals)
-      expect(body.filters.active).toBe(true);
-      expect(body.filters.mcp).toBe(true);
-      expect(body.filters.a2a).toBe(false);
-      // x402 maps to x402support
-      expect(body.filters.x402support).toBe(true);
+      // v1 API: scalar values use equals operator
+      expect(body.filters.equals.active).toBe(true);
+      // v1 API: boolean true values use exists operator
+      // Note: a2a=false is ignored (v1 API doesn't support filtering for false)
+      expect(body.filters.exists).toEqual(['mcp', 'x402support']);
+      // a2a=false should NOT be in the filters
+      expect(body.filters.exists).not.toContain('a2a');
     });
 
     it('transforms response to service format', async () => {
@@ -257,9 +260,9 @@ describe('createSearchService', () => {
       const service = createSearchService('https://search.example.com/');
       await service.search({ query: 'test' });
 
-      // agent0lab uses /api/search
+      // v1 API endpoint
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://search.example.com/api/search',
+        'https://search.example.com/api/v1/search',
         expect.any(Object)
       );
     });
@@ -287,8 +290,8 @@ describe('createSearchService', () => {
       // Should only make one request with both filters (AND mode)
       expect(mockFetch).toHaveBeenCalledTimes(1);
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body.filters.mcp).toBe(true);
-      expect(body.filters.a2a).toBe(true);
+      // v1 API: boolean true values use exists operator
+      expect(body.filters.exists).toEqual(['mcp', 'a2a']);
     });
 
     it('runs separate searches for OR mode with multiple boolean filters', async () => {
@@ -325,15 +328,13 @@ describe('createSearchService', () => {
       // Should make two separate requests (one for mcp, one for a2a)
       expect(mockFetch).toHaveBeenCalledTimes(2);
 
-      // First call should have mcp=true only
+      // First call should have mcp=true only (in exists array)
       const body1 = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body1.filters.mcp).toBe(true);
-      expect(body1.filters.a2a).toBeUndefined();
+      expect(body1.filters.exists).toEqual(['mcp']);
 
-      // Second call should have a2a=true only
+      // Second call should have a2a=true only (in exists array)
       const body2 = JSON.parse(mockFetch.mock.calls[1][1].body);
-      expect(body2.filters.a2a).toBe(true);
-      expect(body2.filters.mcp).toBeUndefined();
+      expect(body2.filters.exists).toEqual(['a2a']);
     });
 
     it('merges and deduplicates OR results by agentId', async () => {
@@ -477,9 +478,9 @@ describe('createSearchService', () => {
       const result = await service.healthCheck();
 
       expect(result).toBe(true);
-      // agent0lab uses /health, not /api/v1/health
+      // v1 API health endpoint
       expect(mockFetch).toHaveBeenCalledWith(
-        `${baseUrl}/health`,
+        `${baseUrl}/api/v1/health`,
         expect.objectContaining({ method: 'GET' })
       );
     });
