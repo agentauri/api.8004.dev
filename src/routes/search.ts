@@ -154,6 +154,12 @@ search.post('/', async (c) => {
       filters: upstreamFilters,
     });
 
+    // If vector search returns 0 results, fall back to SDK search
+    // This handles cases where agents aren't indexed in vector DB
+    if (searchResults.results.length === 0 && !body.cursor) {
+      throw new Error('Vector search returned 0 results, trying SDK fallback');
+    }
+
     // Batch fetch classifications
     const agentIds = searchResults.results.map((r) => r.agentId);
     const classificationsMap = await getClassificationsBatch(c.env.DB, agentIds);
