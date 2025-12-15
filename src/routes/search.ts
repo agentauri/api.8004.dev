@@ -304,15 +304,14 @@ search.post('/', async (c) => {
 
     try {
       // Use SDK search with substring matching
+      // DON'T pass mcp/a2a/x402 to SDK - the external SDK doesn't handle false values correctly
+      // We'll apply all boolean filters ourselves via applyFilters after getting results
       const sdkSearchResult = await sdk.search({
         query: body.query,
         chainIds: body.filters?.chainIds,
         active: body.filters?.active,
-        mcp: body.filters?.mcp,
-        a2a: body.filters?.a2a,
-        x402: body.filters?.x402,
-        filterMode: body.filters?.filterMode,
-        limit: body.limit * 3, // Over-fetch for OASF filtering
+        // Note: mcp/a2a/x402/filterMode NOT passed - we handle them in applyFilters
+        limit: body.limit * 3, // Over-fetch for post-filtering
         cursor: body.cursor,
       });
 
