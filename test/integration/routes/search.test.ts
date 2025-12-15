@@ -396,6 +396,78 @@ describe('Search fallback to SDK', () => {
     expect(body.meta.searchMode).toBe('fallback');
     expect(body.meta.byChain).toBeDefined();
   });
+
+  it('applies mcp=true filter correctly in fallback mode', async () => {
+    // Vector search fails
+    mockFetch.mockRejectedValueOnce(new Error('Search service error'));
+
+    const response = await testRoute('/api/v1/search', {
+      method: 'POST',
+      body: {
+        query: 'Agent',
+        filters: { mcp: true },
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.meta.searchMode).toBe('fallback');
+    // All returned agents should have hasMcp=true
+    if (body.data.length > 0) {
+      for (const agent of body.data) {
+        expect(agent.hasMcp).toBe(true);
+      }
+    }
+  });
+
+  it('applies mcp=false filter correctly in fallback mode', async () => {
+    // Vector search fails
+    mockFetch.mockRejectedValueOnce(new Error('Search service error'));
+
+    const response = await testRoute('/api/v1/search', {
+      method: 'POST',
+      body: {
+        query: 'Agent',
+        filters: { mcp: false },
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.meta.searchMode).toBe('fallback');
+    // All returned agents should have hasMcp=false
+    if (body.data.length > 0) {
+      for (const agent of body.data) {
+        expect(agent.hasMcp).toBe(false);
+      }
+    }
+  });
+
+  it('applies a2a=false filter correctly in fallback mode', async () => {
+    // Vector search fails
+    mockFetch.mockRejectedValueOnce(new Error('Search service error'));
+
+    const response = await testRoute('/api/v1/search', {
+      method: 'POST',
+      body: {
+        query: 'Agent',
+        filters: { a2a: false },
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.meta.searchMode).toBe('fallback');
+    // All returned agents should have hasA2a=false
+    if (body.data.length > 0) {
+      for (const agent of body.data) {
+        expect(agent.hasA2a).toBe(false);
+      }
+    }
+  });
 });
 
 describe('Search with advanced filters', () => {

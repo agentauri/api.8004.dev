@@ -1,6 +1,7 @@
 /**
- * OASF Taxonomy data (v0.8.0)
+ * OASF Taxonomy data (aligned with official OASF schema)
  * @module lib/oasf/taxonomy
+ * @see https://github.com/agntcy/oasf
  */
 
 import type { TaxonomyCategory, TaxonomyData, TaxonomyType } from '@/types';
@@ -8,261 +9,270 @@ import type { TaxonomyCategory, TaxonomyData, TaxonomyType } from '@/types';
 /**
  * OASF Schema version
  */
-export const OASF_VERSION = '0.8.0';
+export const OASF_VERSION = '1.0.0';
 
 /**
- * Skill taxonomy categories
- * Based on OASF v0.8.0 skill_categories
+ * Skill taxonomy categories (15 official categories)
+ * Based on official OASF schema - flat structure, no hierarchies
+ * @see https://github.com/agntcy/oasf
  */
 export const SKILL_TAXONOMY: TaxonomyCategory[] = [
   {
     id: 1,
     slug: 'natural_language_processing',
     name: 'Natural Language Processing',
-    description: 'Text understanding and generation capabilities',
-    children: [
-      { id: 11, slug: 'text_generation', name: 'Text Generation' },
-      { id: 12, slug: 'text_summarization', name: 'Text Summarization' },
-      { id: 13, slug: 'sentiment_analysis', name: 'Sentiment Analysis' },
-      { id: 14, slug: 'translation', name: 'Translation' },
-      { id: 15, slug: 'question_answering', name: 'Question Answering' },
-      { id: 16, slug: 'named_entity_recognition', name: 'Named Entity Recognition' },
-      { id: 17, slug: 'text_classification', name: 'Text Classification' },
-    ],
+    description: 'Text understanding, generation, and language-related capabilities',
   },
   {
     id: 2,
-    slug: 'code_generation',
-    name: 'Code Generation',
-    description: 'Programming and software development capabilities',
-    children: [
-      { id: 21, slug: 'code_completion', name: 'Code Completion' },
-      { id: 22, slug: 'code_review', name: 'Code Review' },
-      { id: 23, slug: 'debugging', name: 'Debugging' },
-      { id: 24, slug: 'refactoring', name: 'Refactoring' },
-      { id: 25, slug: 'test_generation', name: 'Test Generation' },
-      { id: 26, slug: 'documentation', name: 'Documentation' },
-    ],
+    slug: 'images_computer_vision',
+    name: 'Images / Computer Vision',
+    description: 'Image processing, recognition, and visual understanding',
   },
   {
     id: 3,
-    slug: 'data_analysis',
-    name: 'Data Analysis',
-    description: 'Data processing and insight generation',
-    children: [
-      { id: 31, slug: 'data_visualization', name: 'Data Visualization' },
-      { id: 32, slug: 'statistical_analysis', name: 'Statistical Analysis' },
-      { id: 33, slug: 'data_transformation', name: 'Data Transformation' },
-      { id: 34, slug: 'pattern_recognition', name: 'Pattern Recognition' },
-      { id: 35, slug: 'anomaly_detection', name: 'Anomaly Detection' },
-    ],
+    slug: 'audio',
+    name: 'Audio',
+    description: 'Audio processing, speech recognition, and sound analysis',
   },
   {
     id: 4,
-    slug: 'reasoning',
-    name: 'Reasoning',
-    description: 'Logical reasoning and problem-solving',
-    children: [
-      { id: 41, slug: 'logical_reasoning', name: 'Logical Reasoning' },
-      { id: 42, slug: 'mathematical_reasoning', name: 'Mathematical Reasoning' },
-      { id: 43, slug: 'causal_reasoning', name: 'Causal Reasoning' },
-      { id: 44, slug: 'planning', name: 'Planning' },
-      { id: 45, slug: 'decision_making', name: 'Decision Making' },
-    ],
+    slug: 'tabular_text',
+    name: 'Tabular / Text',
+    description: 'Structured data processing and text extraction',
   },
   {
     id: 5,
-    slug: 'automation',
-    name: 'Automation',
-    description: 'Task automation and workflow management',
-    children: [
-      { id: 51, slug: 'workflow_automation', name: 'Workflow Automation' },
-      { id: 52, slug: 'task_scheduling', name: 'Task Scheduling' },
-      { id: 53, slug: 'process_orchestration', name: 'Process Orchestration' },
-      { id: 54, slug: 'integration', name: 'Integration' },
-    ],
+    slug: 'analytical_skills',
+    name: 'Analytical Skills',
+    description: 'Data analysis, statistical processing, and insight generation',
   },
   {
     id: 6,
-    slug: 'communication',
-    name: 'Communication',
-    description: 'Interpersonal and multi-agent communication',
-    children: [
-      { id: 61, slug: 'conversation', name: 'Conversation' },
-      { id: 62, slug: 'negotiation', name: 'Negotiation' },
-      { id: 63, slug: 'collaboration', name: 'Collaboration' },
-      { id: 64, slug: 'delegation', name: 'Delegation' },
-    ],
+    slug: 'retrieval_augmented_generation',
+    name: 'Retrieval Augmented Generation',
+    description: 'Knowledge retrieval, RAG pipelines, and information synthesis',
   },
   {
     id: 7,
-    slug: 'knowledge_management',
-    name: 'Knowledge Management',
-    description: 'Information retrieval and knowledge synthesis',
-    children: [
-      { id: 71, slug: 'information_retrieval', name: 'Information Retrieval' },
-      { id: 72, slug: 'knowledge_synthesis', name: 'Knowledge Synthesis' },
-      { id: 73, slug: 'fact_checking', name: 'Fact Checking' },
-      { id: 74, slug: 'research', name: 'Research' },
-    ],
+    slug: 'multi_modal',
+    name: 'Multi-modal',
+    description: 'Processing and generating content across multiple modalities',
   },
   {
     id: 8,
-    slug: 'blockchain',
-    name: 'Blockchain',
-    description: 'Web3 and blockchain-specific capabilities',
-    children: [
-      { id: 81, slug: 'smart_contract_interaction', name: 'Smart Contract Interaction' },
-      { id: 82, slug: 'transaction_management', name: 'Transaction Management' },
-      { id: 83, slug: 'defi_operations', name: 'DeFi Operations' },
-      { id: 84, slug: 'nft_management', name: 'NFT Management' },
-      { id: 85, slug: 'wallet_management', name: 'Wallet Management' },
-    ],
+    slug: 'security_privacy',
+    name: 'Security & Privacy',
+    description: 'Security analysis, privacy protection, and threat detection',
+  },
+  {
+    id: 9,
+    slug: 'data_engineering',
+    name: 'Data Engineering',
+    description: 'Data pipelines, transformation, and infrastructure',
+  },
+  {
+    id: 10,
+    slug: 'agent_orchestration',
+    name: 'Agent Orchestration',
+    description: 'Multi-agent coordination, workflow automation, and task delegation',
+  },
+  {
+    id: 11,
+    slug: 'evaluation_monitoring',
+    name: 'Evaluation & Monitoring',
+    description: 'Performance evaluation, quality monitoring, and metrics tracking',
+  },
+  {
+    id: 12,
+    slug: 'devops_mlops',
+    name: 'DevOps / MLOps',
+    description: 'Development operations, ML operations, and deployment automation',
+  },
+  {
+    id: 13,
+    slug: 'governance_compliance',
+    name: 'Governance & Compliance',
+    description: 'Regulatory compliance, policy enforcement, and governance frameworks',
+  },
+  {
+    id: 14,
+    slug: 'tool_interaction',
+    name: 'Tool Interaction',
+    description: 'API integration, tool usage, and external system interaction',
+  },
+  {
+    id: 15,
+    slug: 'advanced_reasoning_planning',
+    name: 'Advanced Reasoning & Planning',
+    description: 'Complex reasoning, strategic planning, and decision making',
   },
 ];
 
 /**
- * Domain taxonomy categories
- * Based on OASF v0.8.0 domain_categories
+ * Domain taxonomy categories (24 official categories)
+ * Based on official OASF schema - flat structure, no hierarchies
+ * @see https://github.com/agntcy/oasf
  */
 export const DOMAIN_TAXONOMY: TaxonomyCategory[] = [
   {
     id: 1,
-    slug: 'finance',
-    name: 'Finance',
-    description: 'Financial services and markets',
-    children: [
-      { id: 11, slug: 'trading', name: 'Trading' },
-      { id: 12, slug: 'banking', name: 'Banking' },
-      { id: 13, slug: 'insurance', name: 'Insurance' },
-      { id: 14, slug: 'investment', name: 'Investment' },
-      { id: 15, slug: 'accounting', name: 'Accounting' },
-      { id: 16, slug: 'defi', name: 'DeFi' },
-    ],
+    slug: 'technology',
+    name: 'Technology',
+    description: 'Software, IT, and technology services',
   },
   {
     id: 2,
-    slug: 'healthcare',
-    name: 'Healthcare',
-    description: 'Medical and health services',
-    children: [
-      { id: 21, slug: 'diagnosis', name: 'Diagnosis' },
-      { id: 22, slug: 'patient_care', name: 'Patient Care' },
-      { id: 23, slug: 'medical_research', name: 'Medical Research' },
-      { id: 24, slug: 'pharmaceuticals', name: 'Pharmaceuticals' },
-    ],
+    slug: 'finance_business',
+    name: 'Finance and Business',
+    description: 'Financial services, banking, and business operations',
   },
   {
     id: 3,
-    slug: 'technology',
-    name: 'Technology',
-    description: 'Software and technology services',
-    children: [
-      { id: 31, slug: 'software_development', name: 'Software Development' },
-      { id: 32, slug: 'cybersecurity', name: 'Cybersecurity' },
-      { id: 33, slug: 'devops', name: 'DevOps' },
-      { id: 34, slug: 'cloud_computing', name: 'Cloud Computing' },
-      { id: 35, slug: 'data_engineering', name: 'Data Engineering' },
-    ],
+    slug: 'life_science',
+    name: 'Life Science',
+    description: 'Biotechnology, pharmaceuticals, and life sciences research',
   },
   {
     id: 4,
-    slug: 'business',
-    name: 'Business',
-    description: 'Business operations and strategy',
-    children: [
-      { id: 41, slug: 'marketing', name: 'Marketing' },
-      { id: 42, slug: 'sales', name: 'Sales' },
-      { id: 43, slug: 'customer_service', name: 'Customer Service' },
-      { id: 44, slug: 'human_resources', name: 'Human Resources' },
-      { id: 45, slug: 'operations', name: 'Operations' },
-      { id: 46, slug: 'strategy', name: 'Strategy' },
-    ],
+    slug: 'trust_safety',
+    name: 'Trust and Safety',
+    description: 'Content moderation, safety systems, and trust frameworks',
   },
   {
     id: 5,
-    slug: 'education',
-    name: 'Education',
-    description: 'Learning and educational services',
-    children: [
-      { id: 51, slug: 'tutoring', name: 'Tutoring' },
-      { id: 52, slug: 'assessment', name: 'Assessment' },
-      { id: 53, slug: 'curriculum_design', name: 'Curriculum Design' },
-      { id: 54, slug: 'research_assistance', name: 'Research Assistance' },
-    ],
+    slug: 'human_resources',
+    name: 'Human Resources',
+    description: 'HR management, recruitment, and workforce operations',
   },
   {
     id: 6,
-    slug: 'legal',
-    name: 'Legal',
-    description: 'Legal services and compliance',
-    children: [
-      { id: 61, slug: 'contract_analysis', name: 'Contract Analysis' },
-      { id: 62, slug: 'compliance', name: 'Compliance' },
-      { id: 63, slug: 'legal_research', name: 'Legal Research' },
-      { id: 64, slug: 'intellectual_property', name: 'Intellectual Property' },
-    ],
+    slug: 'education',
+    name: 'Education',
+    description: 'Learning, training, and educational services',
   },
   {
     id: 7,
-    slug: 'creative',
-    name: 'Creative',
-    description: 'Creative and artistic services',
-    children: [
-      { id: 71, slug: 'content_creation', name: 'Content Creation' },
-      { id: 72, slug: 'design', name: 'Design' },
-      { id: 73, slug: 'writing', name: 'Writing' },
-      { id: 74, slug: 'media_production', name: 'Media Production' },
-    ],
+    slug: 'industrial_manufacturing',
+    name: 'Industrial Manufacturing',
+    description: 'Manufacturing, production, and industrial processes',
   },
   {
     id: 8,
-    slug: 'web3',
-    name: 'Web3',
-    description: 'Blockchain and decentralized applications',
-    children: [
-      { id: 81, slug: 'dao_governance', name: 'DAO Governance' },
-      { id: 82, slug: 'token_economics', name: 'Token Economics' },
-      { id: 83, slug: 'nft_marketplace', name: 'NFT Marketplace' },
-      { id: 84, slug: 'protocol_development', name: 'Protocol Development' },
-    ],
+    slug: 'transportation',
+    name: 'Transportation',
+    description: 'Logistics, mobility, and transportation services',
+  },
+  {
+    id: 9,
+    slug: 'healthcare',
+    name: 'Healthcare',
+    description: 'Medical services, patient care, and health systems',
+  },
+  {
+    id: 10,
+    slug: 'legal',
+    name: 'Legal',
+    description: 'Legal services, compliance, and regulatory affairs',
+  },
+  {
+    id: 11,
+    slug: 'agriculture',
+    name: 'Agriculture',
+    description: 'Farming, agtech, and agricultural sciences',
+  },
+  {
+    id: 12,
+    slug: 'energy',
+    name: 'Energy',
+    description: 'Energy production, utilities, and power systems',
+  },
+  {
+    id: 13,
+    slug: 'media_entertainment',
+    name: 'Media and Entertainment',
+    description: 'Media production, entertainment, and creative industries',
+  },
+  {
+    id: 14,
+    slug: 'real_estate',
+    name: 'Real Estate',
+    description: 'Property management, real estate services, and construction',
+  },
+  {
+    id: 15,
+    slug: 'hospitality_tourism',
+    name: 'Hospitality and Tourism',
+    description: 'Hotels, travel, and tourism services',
+  },
+  {
+    id: 16,
+    slug: 'telecommunications',
+    name: 'Telecommunications',
+    description: 'Telecom services, networks, and communications infrastructure',
+  },
+  {
+    id: 17,
+    slug: 'environmental_science',
+    name: 'Environmental Science',
+    description: 'Environmental research, sustainability, and climate science',
+  },
+  {
+    id: 18,
+    slug: 'government_public_sector',
+    name: 'Government and Public Sector',
+    description: 'Government services, public administration, and civic operations',
+  },
+  {
+    id: 19,
+    slug: 'research_development',
+    name: 'Research and Development',
+    description: 'Scientific research, R&D, and innovation',
+  },
+  {
+    id: 20,
+    slug: 'retail_ecommerce',
+    name: 'Retail and E-commerce',
+    description: 'Retail operations, e-commerce, and consumer services',
+  },
+  {
+    id: 21,
+    slug: 'social_services',
+    name: 'Social Services',
+    description: 'Social welfare, community services, and non-profit operations',
+  },
+  {
+    id: 22,
+    slug: 'sports_fitness',
+    name: 'Sports and Fitness',
+    description: 'Sports, athletics, and fitness services',
+  },
+  {
+    id: 23,
+    slug: 'insurance',
+    name: 'Insurance',
+    description: 'Insurance services, risk management, and actuarial operations',
+  },
+  {
+    id: 24,
+    slug: 'marketing_advertising',
+    name: 'Marketing and Advertising',
+    description: 'Marketing services, advertising, and brand management',
   },
 ];
 
 /**
- * Get all skill slugs (flattened)
+ * Get all skill slugs (flat list - no hierarchy)
  */
 export function getAllSkillSlugs(): string[] {
-  const slugs: string[] = [];
-
-  for (const category of SKILL_TAXONOMY) {
-    slugs.push(category.slug);
-    if (category.children) {
-      for (const child of category.children) {
-        slugs.push(`${category.slug}/${child.slug}`);
-      }
-    }
-  }
-
-  return slugs;
+  return SKILL_TAXONOMY.map((category) => category.slug);
 }
 
 /**
- * Get all domain slugs (flattened)
+ * Get all domain slugs (flat list - no hierarchy)
  */
 export function getAllDomainSlugs(): string[] {
-  const slugs: string[] = [];
-
-  for (const category of DOMAIN_TAXONOMY) {
-    slugs.push(category.slug);
-    if (category.children) {
-      for (const child of category.children) {
-        slugs.push(`${category.slug}/${child.slug}`);
-      }
-    }
-  }
-
-  return slugs;
+  return DOMAIN_TAXONOMY.map((category) => category.slug);
 }
 
 /**
@@ -293,4 +303,152 @@ export function getTaxonomy(type: TaxonomyType): TaxonomyData {
     default:
       return { ...base, skills: SKILL_TAXONOMY, domains: DOMAIN_TAXONOMY };
   }
+}
+
+/**
+ * Mapping from old slugs to new OASF slugs
+ * Used for migrating existing classifications
+ */
+export const SKILL_MIGRATION_MAP: Record<string, string> = {
+  // Direct mappings
+  natural_language_processing: 'natural_language_processing',
+  // Old hierarchical to flat
+  'natural_language_processing/text_generation': 'natural_language_processing',
+  'natural_language_processing/text_summarization': 'natural_language_processing',
+  'natural_language_processing/sentiment_analysis': 'natural_language_processing',
+  'natural_language_processing/translation': 'natural_language_processing',
+  'natural_language_processing/question_answering': 'natural_language_processing',
+  'natural_language_processing/named_entity_recognition': 'natural_language_processing',
+  'natural_language_processing/text_classification': 'natural_language_processing',
+  // Code generation → analytical_skills or tool_interaction
+  code_generation: 'tool_interaction',
+  'code_generation/code_completion': 'tool_interaction',
+  'code_generation/code_review': 'analytical_skills',
+  'code_generation/debugging': 'tool_interaction',
+  'code_generation/refactoring': 'tool_interaction',
+  'code_generation/test_generation': 'tool_interaction',
+  'code_generation/documentation': 'natural_language_processing',
+  // Data analysis → analytical_skills
+  data_analysis: 'analytical_skills',
+  'data_analysis/data_visualization': 'analytical_skills',
+  'data_analysis/statistical_analysis': 'analytical_skills',
+  'data_analysis/data_transformation': 'data_engineering',
+  'data_analysis/pattern_recognition': 'analytical_skills',
+  'data_analysis/anomaly_detection': 'analytical_skills',
+  // Reasoning → advanced_reasoning_planning
+  reasoning: 'advanced_reasoning_planning',
+  'reasoning/logical_reasoning': 'advanced_reasoning_planning',
+  'reasoning/mathematical_reasoning': 'advanced_reasoning_planning',
+  'reasoning/causal_reasoning': 'advanced_reasoning_planning',
+  'reasoning/planning': 'advanced_reasoning_planning',
+  'reasoning/decision_making': 'advanced_reasoning_planning',
+  // Automation → agent_orchestration
+  automation: 'agent_orchestration',
+  'automation/workflow_automation': 'agent_orchestration',
+  'automation/task_scheduling': 'agent_orchestration',
+  'automation/process_orchestration': 'agent_orchestration',
+  'automation/integration': 'tool_interaction',
+  // Communication → natural_language_processing
+  communication: 'natural_language_processing',
+  'communication/conversation': 'natural_language_processing',
+  'communication/negotiation': 'advanced_reasoning_planning',
+  'communication/collaboration': 'agent_orchestration',
+  'communication/delegation': 'agent_orchestration',
+  // Knowledge management → retrieval_augmented_generation
+  knowledge_management: 'retrieval_augmented_generation',
+  'knowledge_management/information_retrieval': 'retrieval_augmented_generation',
+  'knowledge_management/knowledge_synthesis': 'retrieval_augmented_generation',
+  'knowledge_management/fact_checking': 'retrieval_augmented_generation',
+  'knowledge_management/research': 'retrieval_augmented_generation',
+  // Blockchain → tool_interaction (blockchain is a domain, not skill)
+  blockchain: 'tool_interaction',
+  'blockchain/smart_contract_interaction': 'tool_interaction',
+  'blockchain/transaction_management': 'tool_interaction',
+  'blockchain/defi_operations': 'tool_interaction',
+  'blockchain/nft_management': 'tool_interaction',
+  'blockchain/wallet_management': 'tool_interaction',
+  // Multimedia → images_computer_vision or audio
+  multimedia: 'multi_modal',
+  'multimedia/video_processing': 'images_computer_vision',
+  'multimedia/audio_processing': 'audio',
+  'multimedia/image_processing': 'images_computer_vision',
+  'multimedia/transcription': 'audio',
+  'multimedia/media_conversion': 'multi_modal',
+  'multimedia/highlight_extraction': 'multi_modal',
+};
+
+/**
+ * Mapping from old domain slugs to new OASF domain slugs
+ * Used for migrating existing classifications
+ */
+export const DOMAIN_MIGRATION_MAP: Record<string, string> = {
+  // Direct mappings
+  healthcare: 'healthcare',
+  technology: 'technology',
+  education: 'education',
+  legal: 'legal',
+  // Finance → finance_business
+  finance: 'finance_business',
+  'finance/trading': 'finance_business',
+  'finance/banking': 'finance_business',
+  'finance/insurance': 'insurance',
+  'finance/investment': 'finance_business',
+  'finance/accounting': 'finance_business',
+  'finance/defi': 'finance_business',
+  // Healthcare children
+  'healthcare/diagnosis': 'healthcare',
+  'healthcare/patient_care': 'healthcare',
+  'healthcare/medical_research': 'life_science',
+  'healthcare/pharmaceuticals': 'life_science',
+  // Technology children
+  'technology/software_development': 'technology',
+  'technology/cybersecurity': 'technology',
+  'technology/devops': 'technology',
+  'technology/cloud_computing': 'technology',
+  'technology/data_engineering': 'technology',
+  'technology/media_production': 'media_entertainment',
+  // Business → finance_business
+  business: 'finance_business',
+  'business/marketing': 'marketing_advertising',
+  'business/sales': 'retail_ecommerce',
+  'business/customer_service': 'retail_ecommerce',
+  'business/human_resources': 'human_resources',
+  'business/operations': 'finance_business',
+  'business/strategy': 'finance_business',
+  // Education children
+  'education/tutoring': 'education',
+  'education/assessment': 'education',
+  'education/curriculum_design': 'education',
+  'education/research_assistance': 'research_development',
+  // Legal children
+  'legal/contract_analysis': 'legal',
+  'legal/compliance': 'legal',
+  'legal/legal_research': 'legal',
+  'legal/intellectual_property': 'legal',
+  // Creative → media_entertainment
+  creative: 'media_entertainment',
+  'creative/content_creation': 'media_entertainment',
+  'creative/design': 'media_entertainment',
+  'creative/writing': 'media_entertainment',
+  'creative/media_production': 'media_entertainment',
+  // Web3 → technology
+  web3: 'technology',
+  'web3/dao_governance': 'technology',
+  'web3/token_economics': 'finance_business',
+  'web3/nft_marketplace': 'retail_ecommerce',
+  'web3/protocol_development': 'technology',
+};
+
+/**
+ * Migrate an old skill slug to new OASF format
+ */
+export function migrateSkillSlug(oldSlug: string): string | null {
+  return SKILL_MIGRATION_MAP[oldSlug] || null;
+}
+
+/**
+ * Migrate an old domain slug to new OASF format
+ */
+export function migrateDomainSlug(oldSlug: string): string | null {
+  return DOMAIN_MIGRATION_MAP[oldSlug] || null;
 }

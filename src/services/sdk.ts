@@ -14,6 +14,7 @@ import type {
 } from '@/types';
 import { SDK } from 'agent0-sdk';
 import type { SearchParams } from 'agent0-sdk';
+import { createMockSDKService } from './mock/mock-sdk';
 
 /**
  * Type guard for string extras fields
@@ -331,8 +332,14 @@ export interface SDKService {
 
 /**
  * Create SDK service using agent0-sdk
+ * When MOCK_EXTERNAL_SERVICES=true, returns a mock implementation for E2E testing
  */
 export function createSDKService(env: Env): SDKService {
+  // Use mock service for deterministic E2E testing
+  if (env.MOCK_EXTERNAL_SERVICES === 'true') {
+    return createMockSDKService();
+  }
+
   // Cache SDK instances per chain
   const sdkInstances = new Map<number, SDK>();
 
@@ -828,11 +835,7 @@ export function createSDKService(env: Env): SDKService {
             }
           } else {
             // No query - single search with all chains, limited pagination
-            const result = await sdk.searchAgents(
-              baseSearchParams,
-              ['createdAt:desc'],
-              fetchLimit
-            );
+            const result = await sdk.searchAgents(baseSearchParams, ['createdAt:desc'], fetchLimit);
 
             for (const agent of result.items) {
               const parts = agent.agentId.split(':');

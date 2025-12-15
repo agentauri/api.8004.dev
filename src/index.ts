@@ -148,10 +148,12 @@ async function processClassificationJob(job: ClassificationJob, env: Env): Promi
       throw new Error(`Agent not found: ${agentId}`);
     }
 
-    // Classify the agent
+    // Classify the agent (Gemini primary, Claude fallback)
     const classifier = createClassifierService(
+      env.GOOGLE_AI_API_KEY,
+      env.CLASSIFICATION_MODEL || 'gemini-2.0-flash',
       env.ANTHROPIC_API_KEY,
-      env.CLASSIFICATION_MODEL || 'claude-3-haiku-20240307'
+      env.FALLBACK_MODEL || 'claude-3-haiku-20240307'
     );
 
     const result = await classifier.classify({

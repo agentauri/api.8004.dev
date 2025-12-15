@@ -26,9 +26,9 @@ async function checkDatabase(db: D1Database): Promise<ServiceStatus> {
 /**
  * Check search service connectivity
  */
-async function checkSearchService(url: string): Promise<ServiceStatus> {
+async function checkSearchService(url: string, env?: Env): Promise<ServiceStatus> {
   try {
-    const searchService = createSearchService(url);
+    const searchService = createSearchService(url, undefined, env);
     const healthy = await searchService.healthCheck();
     return healthy ? 'ok' : 'error';
   } catch (error) {
@@ -62,7 +62,7 @@ health.get('/', async (c) => {
   // Run health checks in parallel
   const [dbStatus, searchStatus, classifierStatus] = await Promise.all([
     checkDatabase(env.DB),
-    checkSearchService(env.SEARCH_SERVICE_URL),
+    checkSearchService(env.SEARCH_SERVICE_URL, env),
     checkClassifier(env.ANTHROPIC_API_KEY),
   ]);
 

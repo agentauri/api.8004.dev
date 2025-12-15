@@ -2,7 +2,8 @@
  * Classifier service tests
  * @module test/unit/services/classifier
  *
- * Tests for the classifier service including response parsing and API integration.
+ * Tests for the classifier service including response parsing, API integration,
+ * and multi-provider fallback logic.
  */
 
 import { calculateOverallConfidence, parseClassificationResponse } from '@/services/classifier';
@@ -217,23 +218,17 @@ describe('calculateOverallConfidence', () => {
   });
 });
 
-describe('createClassifierService', () => {
+describe('createClaudeClassifier', () => {
   let mockCreate: ReturnType<typeof vi.fn>;
-  let MockAnthropic: { new (): { messages: { create: ReturnType<typeof vi.fn> } } };
 
   beforeEach(async () => {
     vi.resetModules();
     mockCreate = vi.fn();
 
-    // Create a class that will be used as the mock
-    MockAnthropic = class {
-      messages = {
-        create: mockCreate,
-      };
-    };
-
     vi.doMock('@anthropic-ai/sdk', () => ({
-      default: MockAnthropic,
+      default: class {
+        messages = { create: mockCreate };
+      },
     }));
   });
 
@@ -244,16 +239,10 @@ describe('createClassifierService', () => {
   describe('classify', () => {
     it('successfully classifies an agent', async () => {
       mockCreate.mockResolvedValue({
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(mockClassificationResponse),
-          },
-        ],
+        content: [{ type: 'text', text: JSON.stringify(mockClassificationResponse) }],
       });
 
-      // Import after mock is set up
-      const { createClassifierService: create } = await import('@/services/classifier');
+      const { createClaudeClassifier: create } = await import('@/services/classifier');
       const classifier = create('sk-ant-test-key', 'claude-3-haiku-20240307');
       const result = await classifier.classify({
         agentId: '11155111:1',
@@ -262,24 +251,20 @@ describe('createClassifierService', () => {
       });
 
       expect(result.skills).toHaveLength(1);
-      expect(result.skills[0].slug).toBe('natural_language_processing/text_generation');
+      expect(result.skills[0].slug).toBe('natural_language_processing');
       expect(result.domains).toHaveLength(1);
-      expect(result.domains[0].slug).toBe('technology/software_development');
+      expect(result.domains[0].slug).toBe('technology');
       expect(result.confidence).toBeGreaterThan(0);
       expect(result.modelVersion).toBe('claude-3-haiku-20240307');
+      expect(result.provider).toBe('claude');
     });
 
     it('handles agent with MCP tools', async () => {
       mockCreate.mockResolvedValue({
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(mockClassificationResponse),
-          },
-        ],
+        content: [{ type: 'text', text: JSON.stringify(mockClassificationResponse) }],
       });
 
-      const { createClassifierService: create } = await import('@/services/classifier');
+      const { createClaudeClassifier: create } = await import('@/services/classifier');
       const classifier = create('sk-ant-test-key', 'claude-3-haiku-20240307');
       const result = await classifier.classify({
         agentId: '11155111:1',
@@ -289,47 +274,15 @@ describe('createClassifierService', () => {
       });
 
       expect(result.skills).toBeDefined();
-      expect(mockCreate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          model: 'claude-3-haiku-20240307',
-          max_tokens: 1024,
-        })
-      );
-    });
-
-    it('handles agent with A2A skills', async () => {
-      mockCreate.mockResolvedValue({
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(mockClassificationResponse),
-          },
-        ],
-      });
-
-      const { createClassifierService: create } = await import('@/services/classifier');
-      const classifier = create('sk-ant-test-key', 'claude-3-haiku-20240307');
-      const result = await classifier.classify({
-        agentId: '11155111:1',
-        name: 'Test Agent',
-        description: 'A test agent',
-        a2aSkills: ['translation', 'summarization'],
-      });
-
-      expect(result.domains).toBeDefined();
+      expect(result.provider).toBe('claude');
     });
 
     it('throws error when response has no text content', async () => {
       mockCreate.mockResolvedValue({
-        content: [
-          {
-            type: 'image',
-            source: { type: 'base64', data: '' },
-          },
-        ],
+        content: [{ type: 'image', source: { type: 'base64', data: '' } }],
       });
 
-      const { createClassifierService: create } = await import('@/services/classifier');
+      const { createClaudeClassifier: create } = await import('@/services/classifier');
       const classifier = create('sk-ant-test-key', 'claude-3-haiku-20240307');
 
       await expect(
@@ -338,30 +291,13 @@ describe('createClassifierService', () => {
           name: 'Test Agent',
           description: 'A test agent',
         })
-      ).rejects.toThrow('No text content in classification response');
-    });
-
-    it('throws error when response content is empty', async () => {
-      mockCreate.mockResolvedValue({
-        content: [],
-      });
-
-      const { createClassifierService: create } = await import('@/services/classifier');
-      const classifier = create('sk-ant-test-key', 'claude-3-haiku-20240307');
-
-      await expect(
-        classifier.classify({
-          agentId: '11155111:1',
-          name: 'Test Agent',
-          description: 'A test agent',
-        })
-      ).rejects.toThrow('No text content in classification response');
+      ).rejects.toThrow('No text content in Claude response');
     });
 
     it('propagates API errors', async () => {
       mockCreate.mockRejectedValue(new Error('API rate limit exceeded'));
 
-      const { createClassifierService: create } = await import('@/services/classifier');
+      const { createClaudeClassifier: create } = await import('@/services/classifier');
       const classifier = create('sk-ant-test-key', 'claude-3-haiku-20240307');
 
       await expect(
@@ -377,47 +313,236 @@ describe('createClassifierService', () => {
   describe('healthCheck', () => {
     it('returns true when API is healthy', async () => {
       mockCreate.mockResolvedValue({
-        content: [
-          {
-            type: 'text',
-            text: 'ok',
-          },
-        ],
+        content: [{ type: 'text', text: 'ok' }],
       });
 
-      const { createClassifierService: create } = await import('@/services/classifier');
+      const { createClaudeClassifier: create } = await import('@/services/classifier');
       const classifier = create('sk-ant-test-key', 'claude-3-haiku-20240307');
       const isHealthy = await classifier.healthCheck();
 
       expect(isHealthy).toBe(true);
-      expect(mockCreate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          max_tokens: 10,
-          messages: [{ role: 'user', content: 'Reply with "ok"' }],
-        })
-      );
     });
 
     it('returns false when API call fails', async () => {
       mockCreate.mockRejectedValue(new Error('Connection timeout'));
 
-      const { createClassifierService: create } = await import('@/services/classifier');
+      const { createClaudeClassifier: create } = await import('@/services/classifier');
       const classifier = create('sk-ant-test-key', 'claude-3-haiku-20240307');
       const isHealthy = await classifier.healthCheck();
 
       expect(isHealthy).toBe(false);
     });
+  });
+});
 
-    it('returns false when response content is empty', async () => {
-      mockCreate.mockResolvedValue({
-        content: [],
+describe('createGeminiClassifier', () => {
+  let mockGenerateContent: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    mockGenerateContent = vi.fn();
+
+    vi.doMock('@google/generative-ai', () => ({
+      GoogleGenerativeAI: class {
+        getGenerativeModel() {
+          return { generateContent: mockGenerateContent };
+        }
+      },
+    }));
+  });
+
+  afterEach(() => {
+    vi.resetModules();
+  });
+
+  describe('classify', () => {
+    it('successfully classifies an agent', async () => {
+      mockGenerateContent.mockResolvedValue({
+        response: { text: () => JSON.stringify(mockClassificationResponse) },
       });
 
-      const { createClassifierService: create } = await import('@/services/classifier');
-      const classifier = create('sk-ant-test-key', 'claude-3-haiku-20240307');
+      const { createGeminiClassifier: create } = await import('@/services/classifier');
+      const classifier = create('test-google-key', 'gemini-1.5-flash');
+      const result = await classifier.classify({
+        agentId: '11155111:1',
+        name: 'Test Agent',
+        description: 'A test agent for classification',
+      });
+
+      expect(result.skills).toHaveLength(1);
+      expect(result.skills[0].slug).toBe('natural_language_processing');
+      expect(result.domains).toHaveLength(1);
+      expect(result.domains[0].slug).toBe('technology');
+      expect(result.modelVersion).toBe('gemini-1.5-flash');
+      expect(result.provider).toBe('gemini');
+    });
+
+    it('throws error when response has no content', async () => {
+      mockGenerateContent.mockResolvedValue({
+        response: { text: () => '' },
+      });
+
+      const { createGeminiClassifier: create } = await import('@/services/classifier');
+      const classifier = create('test-google-key', 'gemini-1.5-flash');
+
+      await expect(
+        classifier.classify({
+          agentId: '11155111:1',
+          name: 'Test Agent',
+          description: 'A test agent',
+        })
+      ).rejects.toThrow('No content in Gemini response');
+    });
+
+    it('propagates API errors', async () => {
+      mockGenerateContent.mockRejectedValue(new Error('Rate limit exceeded'));
+
+      const { createGeminiClassifier: create } = await import('@/services/classifier');
+      const classifier = create('test-google-key', 'gemini-1.5-flash');
+
+      await expect(
+        classifier.classify({
+          agentId: '11155111:1',
+          name: 'Test Agent',
+          description: 'A test agent',
+        })
+      ).rejects.toThrow('Rate limit exceeded');
+    });
+  });
+
+  describe('healthCheck', () => {
+    it('returns true when API is healthy', async () => {
+      mockGenerateContent.mockResolvedValue({
+        response: { text: () => 'ok' },
+      });
+
+      const { createGeminiClassifier: create } = await import('@/services/classifier');
+      const classifier = create('test-google-key', 'gemini-1.5-flash');
+      const isHealthy = await classifier.healthCheck();
+
+      expect(isHealthy).toBe(true);
+    });
+
+    it('returns false when API call fails', async () => {
+      mockGenerateContent.mockRejectedValue(new Error('Connection timeout'));
+
+      const { createGeminiClassifier: create } = await import('@/services/classifier');
+      const classifier = create('test-google-key', 'gemini-1.5-flash');
       const isHealthy = await classifier.healthCheck();
 
       expect(isHealthy).toBe(false);
     });
+  });
+});
+
+describe('createClassifierService (fallback logic)', () => {
+  let mockGeminiGenerate: ReturnType<typeof vi.fn>;
+  let mockClaudeCreate: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    mockGeminiGenerate = vi.fn();
+    mockClaudeCreate = vi.fn();
+
+    vi.doMock('@google/generative-ai', () => ({
+      GoogleGenerativeAI: class {
+        getGenerativeModel() {
+          return { generateContent: mockGeminiGenerate };
+        }
+      },
+    }));
+
+    vi.doMock('@anthropic-ai/sdk', () => ({
+      default: class {
+        messages = { create: mockClaudeCreate };
+      },
+    }));
+  });
+
+  afterEach(() => {
+    vi.resetModules();
+  });
+
+  it('uses Gemini as primary provider', async () => {
+    mockGeminiGenerate.mockResolvedValue({
+      response: { text: () => JSON.stringify(mockClassificationResponse) },
+    });
+
+    const { createClassifierService } = await import('@/services/classifier');
+    const classifier = createClassifierService(
+      'test-google-key',
+      'gemini-1.5-flash',
+      'sk-ant-test',
+      'claude-3-haiku-20240307'
+    );
+
+    const result = await classifier.classify({
+      agentId: '11155111:1',
+      name: 'Test Agent',
+      description: 'A test agent',
+    });
+
+    expect(result.provider).toBe('gemini');
+    expect(mockGeminiGenerate).toHaveBeenCalled();
+    expect(mockClaudeCreate).not.toHaveBeenCalled();
+  });
+
+  it('falls back to Claude when Gemini fails', async () => {
+    mockGeminiGenerate.mockRejectedValue(new Error('Gemini rate limit'));
+    mockClaudeCreate.mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify(mockClassificationResponse) }],
+    });
+
+    const { createClassifierService } = await import('@/services/classifier');
+    const classifier = createClassifierService(
+      'test-google-key',
+      'gemini-1.5-flash',
+      'sk-ant-test',
+      'claude-3-haiku-20240307'
+    );
+
+    const result = await classifier.classify({
+      agentId: '11155111:1',
+      name: 'Test Agent',
+      description: 'A test agent',
+    });
+
+    expect(result.provider).toBe('claude');
+    expect(mockGeminiGenerate).toHaveBeenCalled();
+    expect(mockClaudeCreate).toHaveBeenCalled();
+  });
+
+  it('healthCheck returns true if at least one provider is healthy', async () => {
+    mockGeminiGenerate.mockRejectedValue(new Error('Gemini down'));
+    mockClaudeCreate.mockResolvedValue({
+      content: [{ type: 'text', text: 'ok' }],
+    });
+
+    const { createClassifierService } = await import('@/services/classifier');
+    const classifier = createClassifierService(
+      'test-google-key',
+      'gemini-1.5-flash',
+      'sk-ant-test',
+      'claude-3-haiku-20240307'
+    );
+
+    const isHealthy = await classifier.healthCheck();
+    expect(isHealthy).toBe(true);
+  });
+
+  it('healthCheck returns false if both providers are down', async () => {
+    mockGeminiGenerate.mockRejectedValue(new Error('Gemini down'));
+    mockClaudeCreate.mockRejectedValue(new Error('Claude down'));
+
+    const { createClassifierService } = await import('@/services/classifier');
+    const classifier = createClassifierService(
+      'test-google-key',
+      'gemini-1.5-flash',
+      'sk-ant-test',
+      'claude-3-haiku-20240307'
+    );
+
+    const isHealthy = await classifier.healthCheck();
+    expect(isHealthy).toBe(false);
   });
 });

@@ -65,8 +65,8 @@ export function createMockAgent(overrides: Record<string, unknown> = {}) {
  */
 export function createMockClassification(overrides: Record<string, unknown> = {}) {
   return {
-    skills: [{ slug: 'natural_language_processing/text_generation', confidence: 0.95 }],
-    domains: [{ slug: 'technology/software_development', confidence: 0.9 }],
+    skills: [{ slug: 'natural_language_processing', confidence: 0.95 }],
+    domains: [{ slug: 'technology', confidence: 0.9 }],
     confidence: 0.92,
     classifiedAt: new Date().toISOString(),
     modelVersion: 'claude-3-haiku-20240307',

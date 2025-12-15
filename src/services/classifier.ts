@@ -1,6 +1,9 @@
 /**
- * OASF Classifier service using Claude API
+ * OASF Classifier service using Claude and Gemini APIs
  * @module services/classifier
+ *
+ * Primary provider: Google Gemini (fast and economical)
+ * Fallback provider: Claude (reliable backup)
  */
 
 import { buildClassificationPrompt } from '@/lib/oasf/prompt';
@@ -11,6 +14,15 @@ import type {
   SkillClassification,
 } from '@/types';
 import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
+/**
+ * Classification result with provider info
+ */
+export interface ClassificationResultWithProvider extends ClassificationResult {
+  /** Which provider was used for classification */
+  provider?: 'gemini' | 'claude';
+}
 
 /**
  * Classifier service interface
@@ -19,7 +31,7 @@ export interface ClassifierService {
   /**
    * Classify an agent according to OASF taxonomy
    */
-  classify(agent: AgentClassificationInput): Promise<ClassificationResult>;
+  classify(agent: AgentClassificationInput): Promise<ClassificationResultWithProvider>;
 
   /**
    * Check if the classifier is available
@@ -28,7 +40,7 @@ export interface ClassifierService {
 }
 
 /**
- * Expected JSON response from Claude
+ * Expected JSON response from LLM
  */
 interface ClassificationResponse {
   skills: Array<{
@@ -93,16 +105,16 @@ export function calculateOverallConfidence(
 const CLASSIFICATION_TIMEOUT_MS = 30_000;
 
 /**
- * Create classifier service
+ * Create Claude classifier
  */
-export function createClassifierService(apiKey: string, model: string): ClassifierService {
+export function createClaudeClassifier(apiKey: string, model: string): ClassifierService {
   const anthropic = new Anthropic({
     apiKey,
     timeout: CLASSIFICATION_TIMEOUT_MS,
   });
 
   return {
-    async classify(agent: AgentClassificationInput): Promise<ClassificationResult> {
+    async classify(agent: AgentClassificationInput): Promise<ClassificationResultWithProvider> {
       const prompt = buildClassificationPrompt(agent);
 
       const message = await anthropic.messages.create({
@@ -119,7 +131,7 @@ export function createClassifierService(apiKey: string, model: string): Classifi
       // Extract text content
       const textContent = message.content.find((c) => c.type === 'text');
       if (!textContent || textContent.type !== 'text') {
-        throw new Error('No text content in classification response');
+        throw new Error('No text content in Claude response');
       }
 
       const parsed = parseClassificationResponse(textContent.text);
@@ -144,6 +156,7 @@ export function createClassifierService(apiKey: string, model: string): Classifi
         domains,
         confidence,
         modelVersion: model,
+        provider: 'claude',
       };
     },
 
@@ -165,6 +178,103 @@ export function createClassifierService(apiKey: string, model: string): Classifi
       } catch {
         return false;
       }
+    },
+  };
+}
+
+/**
+ * Create Gemini classifier
+ */
+export function createGeminiClassifier(apiKey: string, model: string): ClassifierService {
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const geminiModel = genAI.getGenerativeModel({ model });
+
+  return {
+    async classify(agent: AgentClassificationInput): Promise<ClassificationResultWithProvider> {
+      const prompt = buildClassificationPrompt(agent);
+
+      const result = await geminiModel.generateContent(prompt);
+      const response = result.response;
+      const text = response.text();
+
+      if (!text) {
+        throw new Error('No content in Gemini response');
+      }
+
+      const parsed = parseClassificationResponse(text);
+
+      // Transform to our types
+      const skills: SkillClassification[] = parsed.skills.map((s) => ({
+        slug: s.slug,
+        confidence: s.confidence,
+        reasoning: s.reasoning,
+      }));
+
+      const domains: DomainClassification[] = parsed.domains.map((d) => ({
+        slug: d.slug,
+        confidence: d.confidence,
+        reasoning: d.reasoning,
+      }));
+
+      const confidence = calculateOverallConfidence(skills, domains);
+
+      return {
+        skills,
+        domains,
+        confidence,
+        modelVersion: model,
+        provider: 'gemini',
+      };
+    },
+
+    async healthCheck(): Promise<boolean> {
+      try {
+        const result = await geminiModel.generateContent('Reply with "ok"');
+        const response = result.response;
+        return response.text().length > 0;
+      } catch {
+        return false;
+      }
+    },
+  };
+}
+
+/**
+ * Create classifier service with Gemini as primary and Claude as fallback
+ */
+export function createClassifierService(
+  geminiApiKey: string,
+  geminiModel: string,
+  claudeApiKey: string,
+  claudeModel: string
+): ClassifierService {
+  const gemini = createGeminiClassifier(geminiApiKey, geminiModel);
+  const claude = createClaudeClassifier(claudeApiKey, claudeModel);
+
+  return {
+    async classify(agent: AgentClassificationInput): Promise<ClassificationResultWithProvider> {
+      // Try Gemini first
+      try {
+        return await gemini.classify(agent);
+      } catch (geminiError) {
+        console.warn(
+          'Gemini classification failed, falling back to Claude:',
+          geminiError instanceof Error ? geminiError.message : geminiError
+        );
+
+        // Fallback to Claude
+        return await claude.classify(agent);
+      }
+    },
+
+    async healthCheck(): Promise<boolean> {
+      // Return true if at least one provider is healthy
+      const [geminiHealthy, claudeHealthy] = await Promise.all([
+        gemini.healthCheck(),
+        claude.healthCheck(),
+      ]);
+
+      return geminiHealthy || claudeHealthy;
     },
   };
 }

@@ -253,7 +253,7 @@ agents.get('/', async (c) => {
   // If search query provided, use semantic search
   if (query.q) {
     try {
-      const searchService = createSearchService(c.env.SEARCH_SERVICE_URL);
+      const searchService = createSearchService(c.env.SEARCH_SERVICE_URL, undefined, c.env);
 
       // Determine if we need post-filtering (these filters don't work upstream)
       const hasBooleanFilters =

@@ -172,7 +172,7 @@ describe('rateLimitConfigs', () => {
 
   it('has classification config', () => {
     expect(rateLimitConfigs.classification).toEqual({
-      limit: 10,
+      limit: 100,
       window: 60,
       keyPrefix: 'ratelimit:classify',
     });

@@ -303,10 +303,7 @@ export function assertChainIds(agents: Agent[], chainIds: number[]): void {
 /**
  * Assert that search response has a specific searchMode
  */
-export function assertSearchMode<T>(
-  json: ApiResponse<T>,
-  expected: 'vector' | 'fallback'
-): void {
+export function assertSearchMode<T>(json: ApiResponse<T>, expected: 'vector' | 'fallback'): void {
   assertHasMeta(json);
   if (json.meta?.searchMode !== expected) {
     throw new AssertionError(

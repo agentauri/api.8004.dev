@@ -128,6 +128,6 @@ export const rateLimitConfigs = {
   /** Higher rate limit with API key: 300 requests per minute */
   withApiKey: { limit: 300, window: 60 },
 
-  /** Classification rate limit: 10 requests per minute */
-  classification: { limit: 10, window: 60, keyPrefix: 'ratelimit:classify' },
+  /** Classification rate limit: 100 requests per minute (temporarily increased) */
+  classification: { limit: 100, window: 60, keyPrefix: 'ratelimit:classify' },
 } as const;

@@ -16,6 +16,13 @@ import type {
 } from './schema';
 
 /**
+ * Maximum number of placeholders in a single SQLite query.
+ * SQLite has a limit of 999 host parameters (SQLITE_MAX_VARIABLE_NUMBER).
+ * We use 500 to leave margin for other parameters in complex queries.
+ */
+const MAX_BATCH_SIZE = 500;
+
+/**
  * Get classification for an agent
  */
 export async function getClassification(
@@ -31,8 +38,9 @@ export async function getClassification(
 }
 
 /**
- * Get classifications for multiple agents in a single query
+ * Get classifications for multiple agents with automatic chunking
  * Returns a Map for O(1) lookup by agentId
+ * Handles SQLite's 999 placeholder limit by chunking large queries
  */
 export async function getClassificationsBatch(
   db: D1Database,
@@ -42,19 +50,23 @@ export async function getClassificationsBatch(
     return new Map();
   }
 
-  // Build placeholders for IN clause
-  const placeholders = agentIds.map(() => '?').join(',');
-  const query = `SELECT * FROM agent_classifications WHERE agent_id IN (${placeholders})`;
-
-  const result = await db
-    .prepare(query)
-    .bind(...agentIds)
-    .all<AgentClassificationRow>();
-
-  // Convert to Map for O(1) lookup
   const classificationsMap = new Map<string, AgentClassificationRow>();
-  for (const row of result.results) {
-    classificationsMap.set(row.agent_id, row);
+
+  // Process in chunks to avoid SQLite placeholder limit
+  for (let i = 0; i < agentIds.length; i += MAX_BATCH_SIZE) {
+    const chunk = agentIds.slice(i, i + MAX_BATCH_SIZE);
+    const placeholders = chunk.map(() => '?').join(',');
+    const query = `SELECT * FROM agent_classifications WHERE agent_id IN (${placeholders})`;
+
+    const result = await db
+      .prepare(query)
+      .bind(...chunk)
+      .all<AgentClassificationRow>();
+
+    // Add results to map
+    for (const row of result.results) {
+      classificationsMap.set(row.agent_id, row);
+    }
   }
 
   return classificationsMap;
@@ -190,31 +202,59 @@ export async function enqueueClassification(db: D1Database, agentId: string): Pr
 
 /**
  * Enqueue classification for multiple agents in a single operation
- * Skips agents that already have pending/processing jobs
+ * Skips agents that already have pending/processing jobs OR already have classifications
+ * Handles SQLite's 999 placeholder limit by chunking large queries
+ * @returns Array of agent IDs that were actually enqueued
  */
 export async function enqueueClassificationsBatch(
   db: D1Database,
   agentIds: string[]
-): Promise<number> {
-  if (agentIds.length === 0) return 0;
+): Promise<string[]> {
+  if (agentIds.length === 0) return [];
 
-  // Get existing pending/processing jobs
-  const placeholders = agentIds.map(() => '?').join(',');
-  const existingJobs = await db
-    .prepare(
-      `SELECT agent_id FROM classification_queue
-       WHERE agent_id IN (${placeholders})
-       AND status IN ('pending', 'processing')`
-    )
-    .bind(...agentIds)
-    .all<{ agent_id: string }>();
+  const existingSet = new Set<string>();
 
-  const existingSet = new Set(existingJobs.results.map((r) => r.agent_id));
+  // 1. Skip agents with pending/processing jobs in queue
+  for (let i = 0; i < agentIds.length; i += MAX_BATCH_SIZE) {
+    const chunk = agentIds.slice(i, i + MAX_BATCH_SIZE);
+    const placeholders = chunk.map(() => '?').join(',');
+    const existingJobs = await db
+      .prepare(
+        `SELECT agent_id FROM classification_queue
+         WHERE agent_id IN (${placeholders})
+         AND status IN ('pending', 'processing')`
+      )
+      .bind(...chunk)
+      .all<{ agent_id: string }>();
+
+    for (const r of existingJobs.results) {
+      existingSet.add(r.agent_id);
+    }
+  }
+
+  // 2. Skip agents that already have classifications in DB
+  // This prevents re-classification when getClassificationsBatch temporarily fails
+  for (let i = 0; i < agentIds.length; i += MAX_BATCH_SIZE) {
+    const chunk = agentIds.slice(i, i + MAX_BATCH_SIZE);
+    const placeholders = chunk.map(() => '?').join(',');
+    const existingClassifications = await db
+      .prepare(
+        `SELECT agent_id FROM agent_classifications
+         WHERE agent_id IN (${placeholders})`
+      )
+      .bind(...chunk)
+      .all<{ agent_id: string }>();
+
+    for (const r of existingClassifications.results) {
+      existingSet.add(r.agent_id);
+    }
+  }
+
   const toEnqueue = agentIds.filter((id) => !existingSet.has(id));
 
-  if (toEnqueue.length === 0) return 0;
+  if (toEnqueue.length === 0) return [];
 
-  // Insert new jobs in batch
+  // Insert new jobs in batch (D1 batch limit is separate from placeholder limit)
   const insertStatements = toEnqueue.map((agentId) => {
     const id = crypto.randomUUID().replace(/-/g, '');
     return db
@@ -226,7 +266,7 @@ export async function enqueueClassificationsBatch(
   });
 
   await db.batch(insertStatements);
-  return toEnqueue.length;
+  return toEnqueue;
 }
 
 /**
@@ -363,8 +403,9 @@ export async function getReputation(
 }
 
 /**
- * Get reputations for multiple agents in a single query
+ * Get reputations for multiple agents with automatic chunking
  * Returns a Map for O(1) lookup by agentId
+ * Handles SQLite's 999 placeholder limit by chunking large queries
  */
 export async function getReputationsBatch(
   db: D1Database,
@@ -374,17 +415,23 @@ export async function getReputationsBatch(
     return new Map();
   }
 
-  const placeholders = agentIds.map(() => '?').join(',');
-  const query = `SELECT * FROM agent_reputation WHERE agent_id IN (${placeholders})`;
-
-  const result = await db
-    .prepare(query)
-    .bind(...agentIds)
-    .all<AgentReputationRow>();
-
   const reputationsMap = new Map<string, AgentReputationRow>();
-  for (const row of result.results) {
-    reputationsMap.set(row.agent_id, row);
+
+  // Process in chunks to avoid SQLite placeholder limit
+  for (let i = 0; i < agentIds.length; i += MAX_BATCH_SIZE) {
+    const chunk = agentIds.slice(i, i + MAX_BATCH_SIZE);
+    const placeholders = chunk.map(() => '?').join(',');
+    const query = `SELECT * FROM agent_reputation WHERE agent_id IN (${placeholders})`;
+
+    const result = await db
+      .prepare(query)
+      .bind(...chunk)
+      .all<AgentReputationRow>();
+
+    // Add results to map
+    for (const row of result.results) {
+      reputationsMap.set(row.agent_id, row);
+    }
   }
 
   return reputationsMap;

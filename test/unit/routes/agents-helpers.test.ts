@@ -270,14 +270,13 @@ describe('sortAgents', () => {
       createMockAgent({ id: '11155111:3', searchScore: 0.6 }),
     ];
 
-    // Relevance sort uses inverse formula: (scoreB - scoreA) * multiplier
-    // desc (multiplier=-1): lower scores first (inverse of expected)
-    // This behavior may need review, but tests document current behavior
+    // desc: higher scores first (most relevant first)
     const descResult = sortAgents(agents, 'relevance', 'desc');
-    expect(descResult.map((a) => a.searchScore)).toEqual([0.3, 0.6, 0.9]);
+    expect(descResult.map((a) => a.searchScore)).toEqual([0.9, 0.6, 0.3]);
 
+    // asc: lower scores first (least relevant first)
     const ascResult = sortAgents(agents, 'relevance', 'asc');
-    expect(ascResult.map((a) => a.searchScore)).toEqual([0.9, 0.6, 0.3]);
+    expect(ascResult.map((a) => a.searchScore)).toEqual([0.3, 0.6, 0.9]);
   });
 
   it('uses default sort (relevance desc) when not specified', () => {
@@ -286,8 +285,8 @@ describe('sortAgents', () => {
       createMockAgent({ id: '11155111:2', searchScore: 0.9 }),
     ];
 
-    // Default: relevance desc - documents current behavior
+    // Default: relevance desc - higher scores first
     const result = sortAgents(agents, undefined, undefined);
-    expect(result.map((a) => a.searchScore)).toEqual([0.3, 0.9]);
+    expect(result.map((a) => a.searchScore)).toEqual([0.9, 0.3]);
   });
 });

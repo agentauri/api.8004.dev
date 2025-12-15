@@ -11,6 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:e2e": "tsx scripts/e2e-tests/run-tests.ts",
+    "test:e2e:local": "tsx scripts/e2e-tests/run-tests.ts --local",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
@@ -31,6 +33,7 @@
   "homepage": "https://github.com/agent0lab/8004-backend#readme",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
+    "@google/generative-ai": "^0.24.1",
     "agent0-sdk": "^0.31.0",
     "hono": "^4.6.12",
     "viem": "^2.41.2",
@@ -42,6 +45,7 @@
     "@cloudflare/workers-types": "^4.20241127.0",
     "@vitest/coverage-istanbul": "2.1.9",
     "@vitest/coverage-v8": "^2.1.8",
+    "tsx": "^4.21.0",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8",
     "wrangler": "^3.93.0"

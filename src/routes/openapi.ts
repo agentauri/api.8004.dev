@@ -125,13 +125,13 @@ function generateOpenAPISpec(): object {
               name: 'skills',
               in: 'query',
               description: 'Filter by OASF skill slugs (comma-separated)',
-              schema: { type: 'string', example: 'natural_language_processing/text_generation' },
+              schema: { type: 'string', example: 'natural_language_processing,tool_interaction' },
             },
             {
               name: 'domains',
               in: 'query',
               description: 'Filter by OASF domain slugs (comma-separated)',
-              schema: { type: 'string', example: 'technology/software_development' },
+              schema: { type: 'string', example: 'technology,finance_business' },
             },
             {
               name: 'filterMode',
@@ -690,7 +690,7 @@ function generateOpenAPISpec(): object {
           type: 'object',
           required: ['slug', 'confidence'],
           properties: {
-            slug: { type: 'string', example: 'natural_language_processing/text_generation' },
+            slug: { type: 'string', example: 'natural_language_processing' },
             confidence: { type: 'number', minimum: 0, maximum: 1 },
             reasoning: { type: 'string' },
           },
@@ -699,7 +699,7 @@ function generateOpenAPISpec(): object {
           type: 'object',
           required: ['slug', 'confidence'],
           properties: {
-            slug: { type: 'string', example: 'technology/software_development' },
+            slug: { type: 'string', example: 'technology' },
             confidence: { type: 'number', minimum: 0, maximum: 1 },
             reasoning: { type: 'string' },
           },
