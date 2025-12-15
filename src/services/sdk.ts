@@ -185,7 +185,7 @@ export function calculateBasicScore(query: string, name: string, description: st
 
   // Partial word match in name = 0.5+
   const queryWords = queryLower.split(/\s+/).filter((w) => w.length > 0);
-  const nameWords = nameLower.split(/\s+/);
+  const nameWords = nameLower.split(/\s+/).filter((w) => w.length > 0);
   const matchingNameWords = queryWords.filter((qw) =>
     nameWords.some((nw) => nw.includes(qw) || qw.includes(nw))
   );
@@ -194,7 +194,7 @@ export function calculateBasicScore(query: string, name: string, description: st
   }
 
   // Partial word match in description = 0.3+
-  const descWords = descLower.split(/\s+/);
+  const descWords = descLower.split(/\s+/).filter((w) => w.length > 0);
   const matchingDescWords = queryWords.filter((qw) =>
     descWords.some((dw) => dw.includes(qw) || qw.includes(dw))
   );
