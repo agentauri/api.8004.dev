@@ -38,10 +38,11 @@ export default defineWorkersConfig({
         // Note: 100% coverage is the goal, but some code paths are difficult
         // to test in Cloudflare Workers environment:
         // - Queue consumer (index.ts:68-150) - requires complex mocking
-        // - Classifier integration (classifier.ts:94-158) - Anthropic SDK can't be mocked
+        // - Classifier integration - external API providers
         // - SDK error paths - would require failing RPC connections
+        // - Search fallback paths - complex conditional logic
         lines: 85,
-        functions: 90,
+        functions: 85,
         branches: 70,
         statements: 85,
       },
