@@ -105,6 +105,13 @@ export interface SearchStats {
 }
 
 /**
+ * Search mode indicator
+ * - 'vector': Semantic/vector search using external service (primary)
+ * - 'fallback': SDK-based substring search (when vector search is unavailable)
+ */
+export type SearchMode = 'vector' | 'fallback';
+
+/**
  * Search API response
  */
 export interface SearchResponse {
@@ -123,5 +130,7 @@ export interface SearchResponse {
     byChain?: Record<number, number>;
     /** Platform-wide agent statistics */
     stats?: SearchStats;
+    /** Search mode used (vector or fallback) */
+    searchMode?: SearchMode;
   };
 }

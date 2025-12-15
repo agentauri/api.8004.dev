@@ -13,7 +13,7 @@ describe('POST /api/v1/search', () => {
     mockFetch.mockReset();
   });
 
-  it('performs semantic search', async () => {
+  it('performs semantic search with vector mode', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       json: () =>
@@ -59,6 +59,7 @@ describe('POST /api/v1/search', () => {
     expect(body.data).toHaveLength(2);
     expect(body.meta.query).toBe('AI assistant');
     expect(body.meta.total).toBe(2);
+    expect(body.meta.searchMode).toBe('vector');
   });
 
   it('includes search scores in results', async () => {
@@ -203,9 +204,9 @@ describe('POST /api/v1/search', () => {
     const fetchCall = mockFetch.mock.calls.find((call) => call[0].includes('/search'));
     if (fetchCall) {
       const body = JSON.parse(fetchCall[1].body);
-      // topK uses smart limit: Math.min(limit * 2, MAX_SEARCH_RESULTS=100)
-      // limit=10 → 10*2=20
-      expect(body.topK).toBe(20);
+      // topK uses smart limit: Math.min(limit * OVER_FETCH_MULTIPLIER, MAX_SEARCH_RESULTS=100)
+      // limit=10 with 6x multiplier → 60
+      expect(body.topK).toBe(60);
       expect(body.minScore).toBe(0.5);
       expect(body.filters).toBeDefined();
     }
@@ -231,5 +232,335 @@ describe('POST /api/v1/search', () => {
     });
 
     expect(response.status).toBe(200);
+  });
+});
+
+describe('Search fallback to SDK', () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+  });
+
+  it('falls back to SDK search when vector search fails', async () => {
+    // First call (vector search) fails, SDK search succeeds via mock
+    mockFetch.mockRejectedValueOnce(new Error('Vector search service unavailable'));
+
+    const response = await testRoute('/api/v1/search', {
+      method: 'POST',
+      body: { query: 'Test Agent' },
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.meta.searchMode).toBe('fallback');
+  });
+
+  it('returns results with basic scores in fallback mode', async () => {
+    // Vector search fails
+    mockFetch.mockRejectedValueOnce(new Error('Search service error'));
+
+    const response = await testRoute('/api/v1/search', {
+      method: 'POST',
+      body: { query: 'Test' },
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.meta.searchMode).toBe('fallback');
+    // Results should have searchScore from basic scoring algorithm
+    if (body.data.length > 0) {
+      expect(body.data[0].searchScore).toBeDefined();
+      expect(body.data[0].searchScore).toBeGreaterThan(0);
+      expect(body.data[0].searchScore).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('returns match reasons in fallback mode', async () => {
+    // Vector search fails
+    mockFetch.mockRejectedValueOnce(new Error('Search service error'));
+
+    const response = await testRoute('/api/v1/search', {
+      method: 'POST',
+      body: { query: 'Test' },
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    // Results should have matchReasons
+    if (body.data.length > 0) {
+      expect(body.data[0].matchReasons).toBeDefined();
+      expect(Array.isArray(body.data[0].matchReasons)).toBe(true);
+    }
+  });
+
+  it('applies boolean filters in fallback mode', async () => {
+    // Vector search fails
+    mockFetch.mockRejectedValueOnce(new Error('Search service error'));
+
+    const response = await testRoute('/api/v1/search', {
+      method: 'POST',
+      body: {
+        query: 'Agent',
+        filters: {
+          mcp: true,
+        },
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.meta.searchMode).toBe('fallback');
+  });
+
+  it('applies OR mode filters in fallback mode', async () => {
+    // Vector search fails
+    mockFetch.mockRejectedValueOnce(new Error('Search service error'));
+
+    const response = await testRoute('/api/v1/search', {
+      method: 'POST',
+      body: {
+        query: 'Agent',
+        filters: {
+          mcp: true,
+          a2a: true,
+          filterMode: 'OR',
+        },
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.meta.searchMode).toBe('fallback');
+  });
+
+  it('includes OASF classifications in fallback mode', async () => {
+    await insertMockClassification('11155111:1');
+
+    // Vector search fails
+    mockFetch.mockRejectedValueOnce(new Error('Search service error'));
+
+    const response = await testRoute('/api/v1/search', {
+      method: 'POST',
+      body: { query: 'Test Agent' },
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.meta.searchMode).toBe('fallback');
+    // Find the agent with classification
+    const agentWithClassification = body.data.find(
+      (a: { id: string }) => a.id === '11155111:1'
+    );
+    if (agentWithClassification) {
+      expect(agentWithClassification.oasf).toBeDefined();
+    }
+  });
+
+  it('returns 500 when both vector search and SDK fallback fail', async () => {
+    const { mockConfig } = await import('../../mocks/agent0-sdk');
+
+    // Vector search fails
+    mockFetch.mockRejectedValueOnce(new Error('Search service error'));
+    // SDK search also fails
+    mockConfig.searchAgentsError = new Error('SDK also failed');
+
+    const response = await testRoute('/api/v1/search', {
+      method: 'POST',
+      body: { query: 'test' },
+    });
+
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(body.success).toBe(false);
+    expect(body.code).toBe('INTERNAL_ERROR');
+
+    // Clean up
+    mockConfig.searchAgentsError = null;
+  });
+
+  it('returns byChain breakdown in fallback mode', async () => {
+    // Vector search fails
+    mockFetch.mockRejectedValueOnce(new Error('Search service error'));
+
+    const response = await testRoute('/api/v1/search', {
+      method: 'POST',
+      body: { query: 'Agent' },
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.meta.searchMode).toBe('fallback');
+    expect(body.meta.byChain).toBeDefined();
+  });
+});
+
+describe('Search with advanced filters', () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+  });
+
+  it('search with skills filter', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          query: 'AI',
+          results: [
+            {
+              rank: 1,
+              vectorId: 'v1',
+              agentId: '11155111:1',
+              chainId: 11155111,
+              name: 'AI Agent',
+              description: 'An AI agent with NLP',
+              score: 0.9,
+              metadata: {},
+            },
+          ],
+          total: 1,
+          pagination: { hasMore: false, limit: 20 },
+          requestId: 'test-id',
+          timestamp: new Date().toISOString(),
+        }),
+    });
+
+    const response = await testRoute('/api/v1/search', {
+      method: 'POST',
+      body: {
+        query: 'AI',
+        filters: {
+          skills: ['natural_language_processing'],
+        },
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+  });
+
+  it('search with domains filter', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          query: 'finance',
+          results: [
+            {
+              rank: 1,
+              vectorId: 'v1',
+              agentId: '11155111:2',
+              chainId: 11155111,
+              name: 'Finance Bot',
+              description: 'A finance assistant',
+              score: 0.85,
+              metadata: {},
+            },
+          ],
+          total: 1,
+          pagination: { hasMore: false, limit: 20 },
+          requestId: 'test-id',
+          timestamp: new Date().toISOString(),
+        }),
+    });
+
+    const response = await testRoute('/api/v1/search', {
+      method: 'POST',
+      body: {
+        query: 'finance',
+        filters: {
+          domains: ['finance'],
+        },
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+  });
+
+  it('search with OR mode filters', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          query: 'assistant',
+          results: [
+            {
+              rank: 1,
+              vectorId: 'v1',
+              agentId: '11155111:3',
+              chainId: 11155111,
+              name: 'MCP Agent',
+              description: 'An MCP assistant',
+              score: 0.88,
+              metadata: {},
+            },
+          ],
+          total: 1,
+          pagination: { hasMore: false, limit: 20 },
+          requestId: 'test-id',
+          timestamp: new Date().toISOString(),
+        }),
+    });
+
+    const response = await testRoute('/api/v1/search', {
+      method: 'POST',
+      body: {
+        query: 'assistant',
+        filters: {
+          mcp: true,
+          a2a: true,
+        },
+        filterMode: 'OR',
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+  });
+
+  it('search returns pagination info', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          query: 'test',
+          results: [
+            {
+              rank: 1,
+              vectorId: 'v1',
+              agentId: '11155111:1',
+              chainId: 11155111,
+              name: 'Test Agent',
+              description: 'Test',
+              score: 0.9,
+              metadata: {},
+            },
+          ],
+          total: 10,
+          pagination: { hasMore: true, limit: 1 },
+          requestId: 'test-id',
+          timestamp: new Date().toISOString(),
+        }),
+    });
+
+    const response = await testRoute('/api/v1/search', {
+      method: 'POST',
+      body: { query: 'test', limit: 1 },
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.meta).toBeDefined();
+    expect(body.meta.total).toBeDefined();
   });
 });

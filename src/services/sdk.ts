@@ -110,6 +110,133 @@ export interface GetAgentsParams {
 }
 
 /**
+ * Parameters for fallback search (used when vector search fails)
+ */
+export interface FallbackSearchParams {
+  /** Search query (used for name/description substring match) */
+  query: string;
+  /** Chain IDs to search */
+  chainIds?: number[];
+  /** Filter by active status */
+  active?: boolean;
+  /** Filter by MCP support */
+  mcp?: boolean;
+  /** Filter by A2A support */
+  a2a?: boolean;
+  /** Filter by x402 support */
+  x402?: boolean;
+  /** Filter mode for boolean filters */
+  filterMode?: 'AND' | 'OR';
+  /** Maximum results */
+  limit?: number;
+  /** Pagination cursor */
+  cursor?: string;
+}
+
+/**
+ * Individual search result with score
+ */
+export interface FallbackSearchResultItem {
+  agent: AgentSummary;
+  score: number;
+  matchReasons: string[];
+}
+
+/**
+ * Fallback search result
+ */
+export interface FallbackSearchResult {
+  items: FallbackSearchResultItem[];
+  total: number;
+  hasMore: boolean;
+  nextCursor?: string;
+  byChain: Record<number, number>;
+}
+
+/**
+ * Calculate basic search score based on name/description match quality
+ * @param query - The search query
+ * @param name - Agent name
+ * @param description - Agent description
+ * @returns Score between 0 and 1
+ */
+export function calculateBasicScore(query: string, name: string, description: string): number {
+  const queryLower = query.toLowerCase().trim();
+  const nameLower = (name || '').toLowerCase();
+  const descLower = (description || '').toLowerCase();
+
+  // Empty query matches everything with base score
+  if (!queryLower) return 0.5;
+
+  // Exact name match = 1.0
+  if (nameLower === queryLower) return 1.0;
+
+  // Name starts with query = 0.9
+  if (nameLower.startsWith(queryLower)) return 0.9;
+
+  // Name contains query = 0.8
+  if (nameLower.includes(queryLower)) return 0.8;
+
+  // Description starts with query = 0.7
+  if (descLower.startsWith(queryLower)) return 0.7;
+
+  // Description contains query = 0.6
+  if (descLower.includes(queryLower)) return 0.6;
+
+  // Partial word match in name = 0.5+
+  const queryWords = queryLower.split(/\s+/).filter((w) => w.length > 0);
+  const nameWords = nameLower.split(/\s+/);
+  const matchingNameWords = queryWords.filter((qw) =>
+    nameWords.some((nw) => nw.includes(qw) || qw.includes(nw))
+  );
+  if (matchingNameWords.length > 0) {
+    return 0.5 + 0.3 * (matchingNameWords.length / queryWords.length);
+  }
+
+  // Partial word match in description = 0.3+
+  const descWords = descLower.split(/\s+/);
+  const matchingDescWords = queryWords.filter((qw) =>
+    descWords.some((dw) => dw.includes(qw) || qw.includes(dw))
+  );
+  if (matchingDescWords.length > 0) {
+    return 0.3 + 0.2 * (matchingDescWords.length / queryWords.length);
+  }
+
+  // Default for filter-only matches (no text match)
+  return 0.3;
+}
+
+/**
+ * Generate match reasons based on query and agent data
+ */
+function generateMatchReasons(
+  query: string,
+  name: string,
+  description: string,
+  filters: { mcp?: boolean; a2a?: boolean; x402?: boolean }
+): string[] {
+  const reasons: string[] = [];
+  const queryLower = query.toLowerCase().trim();
+  const nameLower = (name || '').toLowerCase();
+  const descLower = (description || '').toLowerCase();
+
+  if (queryLower) {
+    if (nameLower.includes(queryLower)) {
+      reasons.push('name_match');
+    }
+    if (descLower.includes(queryLower)) {
+      reasons.push('description_match');
+    }
+  }
+
+  if (filters.mcp) reasons.push('has_mcp');
+  if (filters.a2a) reasons.push('has_a2a');
+  if (filters.x402) reasons.push('has_x402');
+
+  return reasons.length > 0 ? reasons : ['filter_match'];
+}
+
+/**
  * Request coalescing for getChainStats - prevents duplicate concurrent calls
  * when multiple requests arrive before cache is populated
  */
@@ -154,6 +281,12 @@ export interface SDKService {
    * Get agent count by chain
    */
   getChainStats(): Promise<ChainStats[]>;
+
+  /**
+   * Fallback search using SDK (used when vector search is unavailable)
+   * Performs substring matching on name/description with basic scoring
+   */
+  search(params: FallbackSearchParams): Promise<FallbackSearchResult>;
 }
 
 /**
@@ -438,6 +571,186 @@ export function createSDKService(env: Env): SDKService {
       } finally {
         // Clear the pending promise so new requests can be made
         pendingChainStatsPromise = null;
+      }
+    },
+
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Fallback search with OR mode requires multiple branches
+    async search(params: FallbackSearchParams): Promise<FallbackSearchResult> {
+      const {
+        query,
+        chainIds,
+        active,
+        mcp,
+        a2a,
+        x402,
+        filterMode = 'AND',
+        limit = 20,
+        cursor,
+      } = params;
+
+      // Determine which chains to query
+      const chainsToQuery = chainIds
+        ? SUPPORTED_CHAINS.filter((c) => chainIds.includes(c.chainId))
+        : SUPPORTED_CHAINS;
+
+      if (chainsToQuery.length === 0) {
+        return { items: [], total: 0, hasMore: false, byChain: {} };
+      }
+
+      // Check if OR mode with multiple boolean filters
+      const booleanFilters: Array<'mcp' | 'a2a' | 'x402'> = [];
+      if (mcp) booleanFilters.push('mcp');
+      if (a2a) booleanFilters.push('a2a');
+      if (x402) booleanFilters.push('x402');
+
+      const isOrMode = filterMode === 'OR' && booleanFilters.length > 1;
+
+      try {
+        const primaryChain = chainsToQuery[0];
+        if (!primaryChain) {
+          return { items: [], total: 0, hasMore: false, byChain: {} };
+        }
+        const sdk = getSDK(primaryChain.chainId);
+
+        // Build base search params
+        const baseSearchParams: SearchParams = {
+          chains: chainsToQuery.map((c) => c.chainId),
+        };
+
+        // Add name filter for substring search if query provided
+        if (query && query.trim()) {
+          baseSearchParams.name = query.trim();
+        }
+
+        if (active !== undefined) baseSearchParams.active = active;
+
+        let allItems: AgentSummary[] = [];
+
+        if (isOrMode) {
+          // OR mode: run separate searches for each boolean filter and merge
+          const searchPromises = booleanFilters.map(async (filter) => {
+            const filterParams: SearchParams = { ...baseSearchParams };
+            if (filter === 'mcp') filterParams.mcp = true;
+            if (filter === 'a2a') filterParams.a2a = true;
+            if (filter === 'x402') filterParams.x402support = true;
+
+            const result = await sdk.searchAgents(filterParams, ['createdAt:desc'], limit * 2);
+            return result.items;
+          });
+
+          const results = await Promise.all(searchPromises);
+
+          // Merge and deduplicate by agentId
+          const agentMap = new Map<string, AgentSummary>();
+          for (const items of results) {
+            for (const agent of items) {
+              if (!agentMap.has(agent.agentId)) {
+                const parts = agent.agentId.split(':');
+                const chainIdStr = parts[0] || '0';
+                const tokenId = parts[1] || '0';
+
+                agentMap.set(agent.agentId, {
+                  id: agent.agentId,
+                  chainId: Number.parseInt(chainIdStr, 10),
+                  tokenId,
+                  name: agent.name,
+                  description: agent.description,
+                  image: agent.image,
+                  active: agent.active,
+                  hasMcp: agent.mcp,
+                  hasA2a: agent.a2a,
+                  x402Support: agent.x402support,
+                  supportedTrust: deriveSupportedTrust(agent.x402support),
+                  operators: agent.operators || [],
+                  ens: agent.ens || undefined,
+                  did: agent.did || undefined,
+                  walletAddress: agent.walletAddress || undefined,
+                  inputModes: agent.mcpPrompts?.length ? ['mcp-prompt'] : undefined,
+                  outputModes: agent.mcpResources?.length ? ['mcp-resource'] : undefined,
+                });
+              }
+            }
+          }
+          allItems = [...agentMap.values()];
+        } else {
+          // AND mode: single search with all filters
+          if (mcp !== undefined) baseSearchParams.mcp = mcp;
+          if (a2a !== undefined) baseSearchParams.a2a = a2a;
+          if (x402 !== undefined) baseSearchParams.x402support = x402;
+
+          const result = await sdk.searchAgents(
+            baseSearchParams,
+            ['createdAt:desc'],
+            limit * 2, // Fetch extra for scoring/filtering
+            cursor
+          );
+
+          allItems = result.items.map((agent) => {
+            const parts = agent.agentId.split(':');
+            const chainIdStr = parts[0] || '0';
+            const tokenId = parts[1] || '0';
+
+            return {
+              id: agent.agentId,
+              chainId: Number.parseInt(chainIdStr, 10),
+              tokenId,
+              name: agent.name,
+              description: agent.description,
+              image: agent.image,
+              active: agent.active,
+              hasMcp: agent.mcp,
+              hasA2a: agent.a2a,
+              x402Support: agent.x402support,
+              supportedTrust: deriveSupportedTrust(agent.x402support),
+              operators: agent.operators || [],
+              ens: agent.ens || undefined,
+              did: agent.did || undefined,
+              walletAddress: agent.walletAddress || undefined,
+              inputModes: agent.mcpPrompts?.length ? ['mcp-prompt'] : undefined,
+              outputModes: agent.mcpResources?.length ? ['mcp-resource'] : undefined,
+            };
+          });
+        }
+
+        // Calculate scores and generate match reasons
+        const scoredItems: FallbackSearchResultItem[] = allItems.map((agent) => ({
+          agent,
+          score: calculateBasicScore(query, agent.name, agent.description),
+          matchReasons: generateMatchReasons(query, agent.name, agent.description, {
+            mcp: agent.hasMcp,
+            a2a: agent.hasA2a,
+            x402: agent.x402Support,
+          }),
+        }));
+
+        // Sort by score descending
+        scoredItems.sort((a, b) => b.score - a.score);
+
+        // Calculate byChain breakdown
+        const byChain: Record<number, number> = {};
+        for (const item of scoredItems) {
+          byChain[item.agent.chainId] = (byChain[item.agent.chainId] || 0) + 1;
+        }
+
+        // Apply limit
+        const limitedItems = scoredItems.slice(0, limit);
+        const hasMore = scoredItems.length > limit;
+
+        // Generate cursor for pagination (simple offset-based)
+        let nextCursor: string | undefined;
+        if (hasMore) {
+          nextCursor = Buffer.from(JSON.stringify({ offset: limit })).toString('base64url');
+        }
+
+        return {
+          items: limitedItems,
+          total: scoredItems.length,
+          hasMore,
+          nextCursor,
+          byChain,
+        };
+      } catch (error) {
+        throw new SDKError('search', error);
       }
     },
   };
