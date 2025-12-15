@@ -314,4 +314,37 @@ export function registerSearchTests(): void {
       }
     });
   });
+
+  describe('Search Input Validation', () => {
+    it('POST /search with empty query returns error', async () => {
+      const { json } = await post('/search', { query: '', limit: 5 });
+      // Should return validation error
+      if (json.success) {
+        throw new Error('Expected error for empty query');
+      }
+      if (!json.error) {
+        throw new Error('Expected error message');
+      }
+    });
+
+    it('POST /search with very long query is handled', async () => {
+      // Query longer than reasonable limit (e.g., 1000 chars)
+      const longQuery = 'a'.repeat(1001);
+      const { json } = await post('/search', { query: longQuery, limit: 5 });
+      // API may accept long queries or return error - just verify it doesn't crash
+      // This documents the actual behavior
+      if (json.success) {
+        console.log('  Note: API accepts long queries');
+      }
+    });
+
+    it('POST /search with whitespace-only query is handled', async () => {
+      const { json } = await post('/search', { query: '   ', limit: 5 });
+      // API may trim whitespace or return error - just verify it doesn't crash
+      // This documents the actual behavior
+      if (json.success) {
+        console.log('  Note: API accepts whitespace-only queries');
+      }
+    });
+  });
 }

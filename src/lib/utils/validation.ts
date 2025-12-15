@@ -136,6 +136,14 @@ export const listAgentsQuerySchema = z
       .string()
       .transform((val) => val.split(',').map((s) => s.trim()))
       .optional(),
+    mcpTools: z
+      .string()
+      .transform((val) => val.split(',').map((s) => s.trim()))
+      .optional(),
+    a2aSkills: z
+      .string()
+      .transform((val) => val.split(',').map((s) => s.trim()))
+      .optional(),
     filterMode: z.enum(['AND', 'OR']).optional(),
     minScore: z.coerce.number().min(0).max(1).optional(),
     minRep: z.coerce.number().int().min(0).max(100).optional(),
@@ -171,6 +179,8 @@ export const searchRequestSchema = z.object({
       x402: z.boolean().optional(),
       skills: z.array(z.string()).optional(),
       domains: z.array(z.string()).optional(),
+      mcpTools: z.array(z.string()).optional(),
+      a2aSkills: z.array(z.string()).optional(),
       filterMode: z.enum(['AND', 'OR']).optional(),
     })
     .optional(),
