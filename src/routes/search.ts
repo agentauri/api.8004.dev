@@ -73,9 +73,7 @@ function applyFilters(
 
     if (booleanFilters.length === 0) return true;
 
-    return isOrMode
-      ? booleanFilters.some((b) => b)
-      : booleanFilters.every((b) => b);
+    return isOrMode ? booleanFilters.some((b) => b) : booleanFilters.every((b) => b);
   });
 }
 
@@ -251,7 +249,8 @@ search.post('/', async (c) => {
         hasA2a = a2aSkills.length > 0;
         x402Support = meta.x402support === true;
         supportedTrust = [];
-        if (supportedTrusts.includes('x402') || meta.x402support === true) supportedTrust.push('x402');
+        if (supportedTrusts.includes('x402') || meta.x402support === true)
+          supportedTrust.push('x402');
         if (supportedTrusts.includes('eas')) supportedTrust.push('eas');
         image = typeof meta.image === 'string' ? meta.image : undefined;
         operators = Array.isArray(meta.operators) ? meta.operators : [];

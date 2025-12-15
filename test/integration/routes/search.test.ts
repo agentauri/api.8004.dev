@@ -353,9 +353,7 @@ describe('Search fallback to SDK', () => {
     expect(body.success).toBe(true);
     expect(body.meta.searchMode).toBe('fallback');
     // Find the agent with classification
-    const agentWithClassification = body.data.find(
-      (a: { id: string }) => a.id === '11155111:1'
-    );
+    const agentWithClassification = body.data.find((a: { id: string }) => a.id === '11155111:1');
     if (agentWithClassification) {
       expect(agentWithClassification.oasf).toBeDefined();
     }
