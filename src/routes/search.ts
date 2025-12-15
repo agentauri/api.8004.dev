@@ -333,11 +333,9 @@ search.post('/', async (c) => {
         };
       });
 
-      // Apply OASF filters only (boolean filters already applied by SDK)
-      const oasfOnlyFilters = body.filters
-        ? { skills: body.filters.skills, domains: body.filters.domains }
-        : undefined;
-      const filteredAgents = applyFilters(agentsWithOasf, oasfOnlyFilters);
+      // Apply ALL filters including boolean filters (mcp, a2a, x402)
+      // The SDK doesn't reliably filter these, so we must apply them here
+      const filteredAgents = applyFilters(agentsWithOasf, body.filters);
 
       finalAgents = filteredAgents.slice(0, body.limit);
       total = filteredAgents.length;
