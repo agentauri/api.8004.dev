@@ -114,6 +114,7 @@ export class SDK {
 
   /**
    * Search agents with optional filters
+   * Returns chain-specific agents to avoid duplicates in multi-chain queries
    */
   searchAgents = vi.fn().mockImplementation(async () => {
     // Check for chain-specific error
@@ -125,7 +126,12 @@ export class SDK {
     if (mockConfig.searchAgentsError) {
       throw mockConfig.searchAgentsError;
     }
-    return { ...mockSDKAgentList };
+    // Return chain-specific agents to avoid duplicates in multi-chain queries
+    const chainSpecificAgents = mockSDKAgentList.items.filter((agent) => {
+      const agentChainId = Number.parseInt(agent.agentId.split(':')[0] || '0', 10);
+      return agentChainId === this.chainId;
+    });
+    return { items: chainSpecificAgents, nextCursor: undefined };
   });
 
   /**
