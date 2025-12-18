@@ -4,9 +4,13 @@
  */
 
 import {
+  enqueueClassificationsBatch,
+  getClassifiedAgentIds,
+  getQueuedAgentIds,
   getQueueStatus,
   incrementJobAttempts,
   markJobProcessing,
+  resetFailedJobs,
   updateQueueStatus,
   upsertClassification,
 } from '@/db/queries';
@@ -212,6 +216,72 @@ async function syncEASAttestations(env: Env): Promise<void> {
   console.info('EAS attestation sync complete');
 }
 
+/**
+ * Batch size for classification jobs per cron run
+ * Processes 50 agents per hour = ~1,200 agents/day
+ */
+const CLASSIFICATION_BATCH_SIZE = 50;
+
+/**
+ * Scheduled handler for batch agent classification
+ * Finds unclassified agents and queues them for classification
+ */
+async function batchClassifyAgents(env: Env): Promise<void> {
+  console.info('Starting batch classification...');
+
+  try {
+    // 1. Get already classified and queued agent IDs
+    const [classifiedIds, queuedIds] = await Promise.all([
+      getClassifiedAgentIds(env.DB),
+      getQueuedAgentIds(env.DB),
+    ]);
+
+    console.info(`Found ${classifiedIds.size} classified, ${queuedIds.size} queued agents`);
+
+    // 2. Get agents from SDK (with registration files)
+    const sdk = createSDKService(env);
+    // Fetch more agents to find unclassified ones (3x batch size)
+    const agentsResult = await sdk.getAgents({
+      limit: CLASSIFICATION_BATCH_SIZE * 3,
+      hasRegistrationFile: true,
+    });
+
+    // 3. Filter to only unclassified agents
+    const unclassifiedAgents = agentsResult.items.filter(
+      (agent) => !classifiedIds.has(agent.id) && !queuedIds.has(agent.id)
+    );
+
+    console.info(`Found ${unclassifiedAgents.length} unclassified agents`);
+
+    if (unclassifiedAgents.length === 0) {
+      // No new agents to classify, try to retry some failed jobs
+      const resetCount = await resetFailedJobs(env.DB, CLASSIFICATION_BATCH_SIZE);
+      if (resetCount > 0) {
+        console.info(`Reset ${resetCount} failed jobs for retry`);
+      } else {
+        console.info('No agents to classify and no failed jobs to retry');
+      }
+      return;
+    }
+
+    // 4. Take batch size and queue for classification
+    const toClassify = unclassifiedAgents.slice(0, CLASSIFICATION_BATCH_SIZE);
+    const agentIds = toClassify.map((a) => a.id);
+
+    // 5. Enqueue in database and send to queue
+    const enqueuedIds = await enqueueClassificationsBatch(env.DB, agentIds);
+
+    // Send to Cloudflare Queue
+    for (const agentId of enqueuedIds) {
+      await env.CLASSIFICATION_QUEUE.send({ agentId, force: false });
+    }
+
+    console.info(`Queued ${enqueuedIds.length} agents for classification`);
+  } catch (error) {
+    console.error('Batch classification failed:', error instanceof Error ? error.message : error);
+  }
+}
+
 // Export for Cloudflare Workers
 export default {
   fetch: (request: Request, env: Env, ctx: ExecutionContext) => {
@@ -237,10 +307,13 @@ export default {
   },
 
   /**
-   * Scheduled handler for periodic tasks
+   * Scheduled handler for periodic tasks (runs every hour via cron)
    */
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     // Sync EAS attestations every hour
     ctx.waitUntil(syncEASAttestations(env));
+
+    // Batch classify unclassified agents (50 per hour)
+    ctx.waitUntil(batchClassifyAgents(env));
   },
 };

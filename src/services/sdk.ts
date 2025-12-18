@@ -6,7 +6,10 @@
 import { SDKError } from '@/lib/utils/errors';
 import type {
   AgentDetail,
+  AgentHealthCheck,
+  AgentHealthScore,
   AgentSummary,
+  AgentWarning,
   ChainStats,
   Env,
   SupportedChainId,
@@ -49,6 +52,7 @@ function deriveSupportedTrust(x402Support: boolean): TrustMethod[] {
   // EAS attestations will be added in future when reputation system is integrated
   return methods;
 }
+
 
 /**
  * Chain configuration
@@ -290,6 +294,303 @@ const SUBGRAPH_URLS: Record<number, string> = {
 };
 
 /**
+ * Subgraph extra fields not exposed by SDK's AgentSummary
+ */
+interface SubgraphAgentExtras {
+  agentURI?: string;
+  a2aEndpoint?: string;
+  a2aVersion?: string;
+  mcpEndpoint?: string;
+  mcpVersion?: string;
+  updatedAt?: string;
+  createdAt?: string;
+}
+
+/**
+ * Fetch extra agent fields directly from subgraph
+ * The SDK's AgentSummary doesn't expose agentURI, endpoints, versions, etc.
+ * @param chainId - Chain ID
+ * @param agentId - Agent ID in format "chainId:tokenId"
+ * @returns Extra fields from subgraph
+ */
+async function fetchAgentExtrasFromSubgraph(
+  chainId: number,
+  agentId: string
+): Promise<SubgraphAgentExtras> {
+  const url = SUBGRAPH_URLS[chainId];
+  if (!url) return {};
+
+  try {
+    const query = `{
+      agent(id: "${agentId}") {
+        agentURI
+        updatedAt
+        createdAt
+        registrationFile {
+          a2aEndpoint
+          a2aVersion
+          mcpEndpoint
+          mcpVersion
+        }
+      }
+    }`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+    });
+
+    if (!response.ok) return {};
+
+    const data = (await response.json()) as {
+      data?: {
+        agent?: {
+          agentURI?: string;
+          updatedAt?: string;
+          createdAt?: string;
+          registrationFile?: {
+            a2aEndpoint?: string;
+            a2aVersion?: string;
+            mcpEndpoint?: string;
+            mcpVersion?: string;
+          };
+        };
+      };
+    };
+
+    const agent = data?.data?.agent;
+    if (!agent) return {};
+
+    return {
+      agentURI: agent.agentURI || undefined,
+      a2aEndpoint: agent.registrationFile?.a2aEndpoint || undefined,
+      a2aVersion: agent.registrationFile?.a2aVersion || undefined,
+      mcpEndpoint: agent.registrationFile?.mcpEndpoint || undefined,
+      mcpVersion: agent.registrationFile?.mcpVersion || undefined,
+      updatedAt: agent.updatedAt || undefined,
+      createdAt: agent.createdAt || undefined,
+    };
+  } catch {
+    // Silently fail - the SDK data is still usable
+    return {};
+  }
+}
+
+/**
+ * Compute warnings for an agent based on its data quality
+ */
+function computeAgentWarnings(agent: {
+  name?: string;
+  description?: string;
+  image?: string;
+  mcp?: boolean;
+  a2a?: boolean;
+  mcpEndpoint?: string;
+  a2aEndpoint?: string;
+  reputationCount?: number;
+}): AgentWarning[] {
+  const warnings: AgentWarning[] = [];
+
+  // Metadata warnings
+  if (!agent.name || agent.name.trim() === '') {
+    warnings.push({
+      type: 'metadata',
+      message: 'Agent name is missing',
+      severity: 'high',
+    });
+  }
+
+  if (!agent.description || agent.description.trim() === '') {
+    warnings.push({
+      type: 'metadata',
+      message: 'Agent description is missing',
+      severity: 'medium',
+    });
+  } else if (agent.description.length < 50) {
+    warnings.push({
+      type: 'metadata',
+      message: 'Agent description is too short (less than 50 characters)',
+      severity: 'low',
+    });
+  }
+
+  if (!agent.image || agent.image.trim() === '') {
+    warnings.push({
+      type: 'metadata',
+      message: 'Agent image is missing',
+      severity: 'low',
+    });
+  }
+
+  // Endpoint warnings
+  if (agent.mcp && (!agent.mcpEndpoint || agent.mcpEndpoint.trim() === '')) {
+    warnings.push({
+      type: 'endpoint',
+      message: 'MCP capability claimed but no endpoint configured',
+      severity: 'high',
+    });
+  }
+
+  if (agent.a2a && (!agent.a2aEndpoint || agent.a2aEndpoint.trim() === '')) {
+    warnings.push({
+      type: 'endpoint',
+      message: 'A2A capability claimed but no endpoint configured',
+      severity: 'high',
+    });
+  }
+
+  // Reputation warnings
+  if (agent.reputationCount === 0 || agent.reputationCount === undefined) {
+    warnings.push({
+      type: 'reputation',
+      message: 'No feedback received yet',
+      severity: 'low',
+    });
+  }
+
+  return warnings;
+}
+
+/**
+ * Compute health score for an agent based on its data quality
+ */
+function computeAgentHealthScore(agent: {
+  name?: string;
+  description?: string;
+  image?: string;
+  mcp?: boolean;
+  a2a?: boolean;
+  mcpEndpoint?: string;
+  a2aEndpoint?: string;
+  reputationCount?: number;
+  reputationScore?: number;
+}): AgentHealthScore {
+  const checks: AgentHealthCheck[] = [];
+
+  // Metadata check (40% weight)
+  let metadataScore = 0;
+  let metadataMessage = '';
+  const hasName = agent.name && agent.name.trim() !== '';
+  const hasDescription = agent.description && agent.description.trim() !== '';
+  const hasGoodDescription = hasDescription && agent.description!.length >= 50;
+  const hasImage = agent.image && agent.image.trim() !== '';
+
+  if (hasName) metadataScore += 40;
+  if (hasDescription) metadataScore += 30;
+  if (hasGoodDescription) metadataScore += 10;
+  if (hasImage) metadataScore += 20;
+
+  if (metadataScore === 100) {
+    metadataMessage = 'All metadata complete';
+  } else if (metadataScore >= 70) {
+    metadataMessage = 'Metadata mostly complete';
+  } else if (metadataScore >= 40) {
+    metadataMessage = 'Some metadata missing';
+  } else {
+    metadataMessage = 'Critical metadata missing';
+  }
+
+  checks.push({
+    category: 'metadata',
+    status: metadataScore >= 70 ? 'pass' : metadataScore >= 40 ? 'warning' : 'fail',
+    score: metadataScore,
+    message: metadataMessage,
+  });
+
+  // Endpoints check (40% weight)
+  let endpointsScore = 100;
+  let endpointsMessage = 'No endpoints required';
+
+  const hasMcpWithEndpoint = !agent.mcp || (agent.mcpEndpoint && agent.mcpEndpoint.trim() !== '');
+  const hasA2aWithEndpoint = !agent.a2a || (agent.a2aEndpoint && agent.a2aEndpoint.trim() !== '');
+
+  if (agent.mcp || agent.a2a) {
+    endpointsScore = 0;
+    const issues: string[] = [];
+
+    if (agent.mcp && hasMcpWithEndpoint) {
+      endpointsScore += 50;
+    } else if (agent.mcp) {
+      issues.push('MCP');
+    }
+
+    if (agent.a2a && hasA2aWithEndpoint) {
+      endpointsScore += 50;
+    } else if (agent.a2a) {
+      issues.push('A2A');
+    }
+
+    // Normalize score if only one protocol is used
+    if (agent.mcp && !agent.a2a) {
+      endpointsScore = hasMcpWithEndpoint ? 100 : 0;
+    } else if (agent.a2a && !agent.mcp) {
+      endpointsScore = hasA2aWithEndpoint ? 100 : 0;
+    }
+
+    if (endpointsScore === 100) {
+      endpointsMessage = 'All endpoints configured';
+    } else if (issues.length > 0) {
+      endpointsMessage = `Missing ${issues.join(' and ')} endpoint`;
+    }
+  }
+
+  checks.push({
+    category: 'endpoints',
+    status: endpointsScore >= 70 ? 'pass' : endpointsScore >= 40 ? 'warning' : 'fail',
+    score: endpointsScore,
+    message: endpointsMessage,
+  });
+
+  // Reputation check (20% weight)
+  let reputationScore = 0;
+  let reputationMessage = '';
+
+  const feedbackCount = agent.reputationCount ?? 0;
+  const avgScore = agent.reputationScore ?? 0;
+
+  if (feedbackCount === 0) {
+    reputationScore = 50; // Neutral - no feedback yet
+    reputationMessage = 'No feedback received yet';
+  } else if (feedbackCount >= 10 && avgScore >= 70) {
+    reputationScore = 100;
+    reputationMessage = 'Strong reputation';
+  } else if (feedbackCount >= 5 && avgScore >= 50) {
+    reputationScore = 80;
+    reputationMessage = 'Good reputation';
+  } else if (feedbackCount >= 1 && avgScore >= 50) {
+    reputationScore = 70;
+    reputationMessage = 'Early reputation building';
+  } else if (avgScore < 50) {
+    reputationScore = 30;
+    reputationMessage = 'Low reputation score';
+  } else {
+    reputationScore = 50;
+    reputationMessage = 'Building reputation';
+  }
+
+  checks.push({
+    category: 'reputation',
+    status: reputationScore >= 70 ? 'pass' : reputationScore >= 40 ? 'warning' : 'fail',
+    score: reputationScore,
+    message: reputationMessage,
+  });
+
+  // Calculate weighted overall score
+  // TypeScript doesn't know we always have exactly 3 checks, so use non-null assertion
+  const overallScore = Math.round(
+    checks[0]!.score * 0.4 + // metadata
+      checks[1]!.score * 0.4 + // endpoints
+      checks[2]!.score * 0.2 // reputation
+  );
+
+  return {
+    overallScore,
+    checks,
+  };
+}
+
+/**
  * Paginated response from getAgents
  */
 export interface GetAgentsResult {
@@ -356,6 +657,50 @@ export function createSDKService(env: Env): SDKService {
     return sdk;
   }
 
+  /**
+   * Transform SDK agent to our AgentSummary format
+   */
+  function transformAgent(agent: {
+    agentId: string;
+    name: string;
+    description: string;
+    image?: string;
+    active: boolean;
+    mcp: boolean;
+    a2a: boolean;
+    x402support: boolean;
+    operators?: string[];
+    ens?: string | null;
+    did?: string | null;
+    walletAddress?: string | null;
+    mcpPrompts?: unknown[];
+    mcpResources?: unknown[];
+  }): AgentSummary {
+    const parts = agent.agentId.split(':');
+    const chainIdStr = parts[0] || '0';
+    const tokenId = parts[1] || '0';
+
+    return {
+      id: agent.agentId,
+      chainId: Number.parseInt(chainIdStr, 10),
+      tokenId,
+      name: agent.name,
+      description: agent.description,
+      image: agent.image,
+      active: agent.active,
+      hasMcp: agent.mcp,
+      hasA2a: agent.a2a,
+      x402Support: agent.x402support,
+      supportedTrust: deriveSupportedTrust(agent.x402support),
+      operators: agent.operators || [],
+      ens: agent.ens || undefined,
+      did: agent.did || undefined,
+      walletAddress: agent.walletAddress || undefined,
+      inputModes: agent.mcpPrompts?.length ? ['mcp-prompt'] : undefined,
+      outputModes: agent.mcpResources?.length ? ['mcp-resource'] : undefined,
+    };
+  }
+
   return {
     // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Multi-chain query and transformation logic requires multiple conditional branches
     async getAgents(params: GetAgentsParams): Promise<GetAgentsResult> {
@@ -380,69 +725,149 @@ export function createSDKService(env: Env): SDKService {
         return { items: [], nextCursor: undefined, total: 0 };
       }
 
-      // Build search params with native multi-chain support
-      const searchParams: SearchParams = {
-        chains: chainsToQuery.map((c) => c.chainId),
-      };
-      // Only filter by active=true. active=false means "no filter" (show all agents)
-      // This matches vector search behavior where active=false doesn't filter
-      if (active === true) searchParams.active = true;
-      if (hasMcp !== undefined) searchParams.mcp = hasMcp;
-      if (hasA2a !== undefined) searchParams.a2a = hasA2a;
-      if (hasX402 !== undefined) searchParams.x402support = hasX402;
-      if (mcpTools && mcpTools.length > 0) searchParams.mcpTools = mcpTools;
-      if (a2aSkills && a2aSkills.length > 0) searchParams.a2aSkills = a2aSkills;
+      // Build base search params (without chains - each SDK queries its own chain)
+      const baseSearchParams: Omit<SearchParams, 'chains'> = {};
+      // Filter by active status when explicitly specified
+      if (active !== undefined) baseSearchParams.active = active;
+      // Only pass true values to SDK - SDK subgraph filter doesn't correctly handle =false
+      // (it looks for mcpEndpoint: null but agents may have empty string)
+      // The =false cases are handled by post-filtering in routes/agents.ts
+      if (hasMcp === true) baseSearchParams.mcp = true;
+      if (hasA2a === true) baseSearchParams.a2a = true;
+      if (hasX402 === true) baseSearchParams.x402support = true;
+      if (mcpTools && mcpTools.length > 0) baseSearchParams.mcpTools = mcpTools;
+      if (a2aSkills && a2aSkills.length > 0) baseSearchParams.a2aSkills = a2aSkills;
 
       try {
-        // Use SDK with native multi-chain support and cursor-based pagination
-        // The SDK handles pagination correctly when cursor is passed as 4th parameter
-        // Use the first requested chain's SDK (all SDKs have subgraphOverrides for multi-chain)
-        const primaryChain = chainsToQuery[0];
-        if (!primaryChain) {
-          return { items: [], nextCursor: undefined, total: 0 };
-        }
-        const sdk = getSDK(primaryChain.chainId);
-        const result = await sdk.searchAgents(
-          searchParams,
-          ['createdAt:desc'],
-          limit,
-          cursor // Pass cursor for native SDK pagination!
-        );
+        // Single chain: use direct SDK query with cursor pagination
+        if (chainsToQuery.length === 1) {
+          const chainConfig = chainsToQuery[0];
+          if (!chainConfig) {
+            return { items: [], nextCursor: undefined, total: 0 };
+          }
+          const sdk = getSDK(chainConfig.chainId);
+          const searchParams: SearchParams = {
+            ...baseSearchParams,
+            chains: [chainConfig.chainId],
+          };
+          const result = await sdk.searchAgents(searchParams, ['createdAt:desc'], limit, cursor);
 
-        // Transform SDK results to our format
-        const items: AgentSummary[] = result.items.map((agent) => {
-          const parts = agent.agentId.split(':');
-          const chainIdStr = parts[0] || '0';
-          const tokenId = parts[1] || '0';
+          const items = result.items.map(transformAgent);
+          const total = result.meta?.totalResults ?? items.length;
 
           return {
-            id: agent.agentId,
-            chainId: Number.parseInt(chainIdStr, 10),
-            tokenId,
-            name: agent.name,
-            description: agent.description,
-            image: agent.image,
-            active: agent.active,
-            hasMcp: agent.mcp,
-            hasA2a: agent.a2a,
-            x402Support: agent.x402support,
-            supportedTrust: deriveSupportedTrust(agent.x402support),
-            operators: agent.operators || [],
-            ens: agent.ens || undefined,
-            did: agent.did || undefined,
-            walletAddress: agent.walletAddress || undefined,
-            inputModes: agent.mcpPrompts?.length ? ['mcp-prompt'] : undefined,
-            outputModes: agent.mcpResources?.length ? ['mcp-resource'] : undefined,
+            items,
+            nextCursor: result.nextCursor,
+            total,
+          };
+        }
+
+        // Multi-chain: query each chain separately and merge results
+        // NOTE: The SDK's multi-chain support via subgraphOverrides doesn't work correctly -
+        // it only queries the chain the SDK was initialized with. So we must query each chain
+        // with its own SDK instance and merge the results manually.
+
+        // For multi-chain queries, we use offset-based pagination via cursor encoding
+        // Cursor format: JSON { chainOffsets: { [chainId]: number }, globalOffset: number }
+        interface MultiChainCursor {
+          chainOffsets: Record<number, number>;
+          globalOffset: number;
+        }
+
+        let chainOffsets: Record<number, number> = {};
+        let globalOffset = 0;
+
+        if (cursor) {
+          try {
+            const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString()) as MultiChainCursor;
+            chainOffsets = decoded.chainOffsets || {};
+            globalOffset = decoded.globalOffset || 0;
+          } catch {
+            // Invalid cursor, start from beginning
+          }
+        }
+
+        // Query each chain in parallel with proportional limits
+        // Request more items than needed to ensure we can fill the page after sorting
+        const perChainLimit = Math.ceil(limit * 1.5);
+
+        const chainPromises = chainsToQuery.map(async (chainConfig) => {
+          const sdk = getSDK(chainConfig.chainId);
+          const searchParams: SearchParams = {
+            ...baseSearchParams,
+            chains: [chainConfig.chainId],
+          };
+
+          // Use chain-specific cursor if available (for SDK's native pagination)
+          const chainCursor = chainOffsets[chainConfig.chainId];
+          const result = await sdk.searchAgents(
+            searchParams,
+            ['createdAt:desc'],
+            perChainLimit,
+            chainCursor ? String(chainCursor) : undefined
+          );
+
+          return {
+            chainId: chainConfig.chainId,
+            items: result.items.map(transformAgent),
+            nextCursor: result.nextCursor,
+            total: result.meta?.totalResults ?? result.items.length,
           };
         });
 
-        // Get total from SDK meta or default to items length
-        const total = result.meta?.totalResults ?? items.length;
+        const chainResults = await Promise.all(chainPromises);
+
+        // Track totals and cursors from each chain
+        let totalAcrossChains = 0;
+        const newChainOffsets: Record<number, number> = {};
+
+        for (const result of chainResults) {
+          totalAcrossChains += result.total;
+          // Track cursor for each chain
+          if (result.nextCursor) {
+            newChainOffsets[result.chainId] = Number.parseInt(result.nextCursor, 10) || 0;
+          }
+        }
+
+        // Interleave results from all chains to ensure fair representation
+        // Each chain's results are already sorted by createdAt (tokenId) desc
+        // We interleave by taking items round-robin from each chain
+        const chainItems = chainResults.map((r) => [...r.items]); // Copy arrays for mutation
+        const interleavedItems: AgentSummary[] = [];
+
+        while (interleavedItems.length < limit * 2) {
+          // Check if all chains are exhausted
+          let hasMore = false;
+          for (const items of chainItems) {
+            if (items.length > 0) {
+              hasMore = true;
+              const item = items.shift();
+              if (item) {
+                interleavedItems.push(item);
+              }
+            }
+          }
+          if (!hasMore) break;
+        }
+
+        // Apply pagination
+        const paginatedItems = interleavedItems.slice(0, limit);
+        const hasMore = interleavedItems.length > limit;
+
+        // Create cursor for next page
+        let nextCursor: string | undefined;
+        if (hasMore) {
+          const cursorData: MultiChainCursor = {
+            chainOffsets: newChainOffsets,
+            globalOffset: globalOffset + limit,
+          };
+          nextCursor = Buffer.from(JSON.stringify(cursorData)).toString('base64url');
+        }
 
         return {
-          items,
-          nextCursor: result.nextCursor,
-          total,
+          items: paginatedItems,
+          nextCursor,
+          total: totalAcrossChains,
         };
       } catch (error) {
         // Throw SDKError to propagate to route handlers for proper 503 response
@@ -458,7 +883,12 @@ export function createSDKService(env: Env): SDKService {
       try {
         const sdk = getSDK(chainId);
         const agentId = `${chainId}:${tokenId}`;
-        const agent = await sdk.getAgent(agentId);
+
+        // Fetch SDK data and subgraph extras in parallel
+        const [agent, extras] = await Promise.all([
+          sdk.getAgent(agentId),
+          fetchAgentExtrasFromSubgraph(chainId, agentId),
+        ]);
 
         if (!agent) return null;
 
@@ -483,14 +913,14 @@ export function createSDKService(env: Env): SDKService {
           endpoints: {
             mcp: agent.mcp
               ? {
-                  url: getExtraString(agent.extras, 'mcpEndpoint') ?? '',
-                  version: '1.0.0',
+                  url: extras.mcpEndpoint ?? getExtraString(agent.extras, 'mcpEndpoint') ?? '',
+                  version: extras.mcpVersion ?? '1.0.0',
                 }
               : undefined,
             a2a: agent.a2a
               ? {
-                  url: getExtraString(agent.extras, 'a2aEndpoint') ?? '',
-                  version: '1.0.0',
+                  url: extras.a2aEndpoint ?? getExtraString(agent.extras, 'a2aEndpoint') ?? '',
+                  version: extras.a2aVersion ?? '1.0.0',
                 }
               : undefined,
             ens: agent.ens || getExtraString(agent.extras, 'ens'),
@@ -501,7 +931,7 @@ export function createSDKService(env: Env): SDKService {
             chainId,
             tokenId,
             contractAddress: getExtraString(agent.extras, 'contractAddress') ?? '',
-            metadataUri: getExtraString(agent.extras, 'metadataUri') ?? '',
+            metadataUri: extras.agentURI ?? getExtraString(agent.extras, 'metadataUri') ?? '',
             owner: agent.owners[0] || '',
             registeredAt: getExtraString(agent.extras, 'registeredAt') ?? new Date().toISOString(),
           },
@@ -513,6 +943,33 @@ export function createSDKService(env: Env): SDKService {
           // I/O mode metadata derived from MCP capabilities
           inputModes: agent.mcpPrompts?.length ? ['mcp-prompt'] : undefined,
           outputModes: agent.mcpResources?.length ? ['mcp-resource'] : undefined,
+          // Last updated timestamp from subgraph (convert Unix timestamp to ISO)
+          lastUpdatedAt: extras.updatedAt
+            ? new Date(Number.parseInt(extras.updatedAt, 10) * 1000).toISOString()
+            : undefined,
+          // Compute quality/health warnings
+          warnings: computeAgentWarnings({
+            name: agent.name,
+            description: agent.description,
+            image: agent.image,
+            mcp: agent.mcp,
+            a2a: agent.a2a,
+            mcpEndpoint: extras.mcpEndpoint,
+            a2aEndpoint: extras.a2aEndpoint,
+            reputationCount: undefined, // Will be populated when reputation is fetched
+          }),
+          // Compute aggregated health score
+          healthScore: computeAgentHealthScore({
+            name: agent.name,
+            description: agent.description,
+            image: agent.image,
+            mcp: agent.mcp,
+            a2a: agent.a2a,
+            mcpEndpoint: extras.mcpEndpoint,
+            a2aEndpoint: extras.a2aEndpoint,
+            reputationCount: undefined, // Will be populated when reputation is fetched
+            reputationScore: undefined,
+          }),
         };
       } catch (error) {
         // Throw SDKError to propagate to route handlers for proper 503 response
@@ -697,9 +1154,8 @@ export function createSDKService(env: Env): SDKService {
         // NOTE: Do NOT pass query to SDK - its substring search is broken for old agents
         // Instead, we fetch all agents and filter locally by name/description
 
-        // Only filter by active=true. active=false means "no filter" (show all agents)
-        // This matches vector search behavior where active=false doesn't filter
-        if (active === true) baseSearchParams.active = true;
+        // Filter by active status when explicitly specified
+        if (active !== undefined) baseSearchParams.active = active;
 
         // Add MCP tools and A2A skills filters if provided
         if (mcpTools && mcpTools.length > 0) baseSearchParams.mcpTools = mcpTools;
@@ -711,16 +1167,53 @@ export function createSDKService(env: Env): SDKService {
         const fetchLimit = Math.min(offset + limit + 50, 200);
 
         if (isOrMode) {
-          // OR mode: run separate searches for each boolean filter and merge
-          const searchPromises = booleanFilters.map(async (filter) => {
-            const filterParams: SearchParams = { ...baseSearchParams };
-            if (filter === 'mcp') filterParams.mcp = true;
-            if (filter === 'a2a') filterParams.a2a = true;
-            if (filter === 'x402') filterParams.x402support = true;
+          // OR mode: run separate searches for each boolean filter AND each chain, then merge
+          // We need to query each chain separately because SDK doesn't support multi-chain queries
+          const searchPromises: Promise<AgentSummary[]>[] = [];
 
-            const result = await sdk.searchAgents(filterParams, ['createdAt:desc'], fetchLimit);
-            return result.items;
-          });
+          for (const chainConfig of chainsToQuery) {
+            const chainSdk = getSDK(chainConfig.chainId);
+
+            for (const filter of booleanFilters) {
+              const filterParams: SearchParams = {
+                ...baseSearchParams,
+                chains: [chainConfig.chainId],
+              };
+              if (filter === 'mcp') filterParams.mcp = true;
+              if (filter === 'a2a') filterParams.a2a = true;
+              if (filter === 'x402') filterParams.x402support = true;
+
+              searchPromises.push(
+                chainSdk.searchAgents(filterParams, ['createdAt:desc'], fetchLimit).then((result) =>
+                  result.items.map((agent) => {
+                    const parts = agent.agentId.split(':');
+                    const chainIdStr = parts[0] || '0';
+                    const tokenId = parts[1] || '0';
+
+                    return {
+                      id: agent.agentId,
+                      chainId: Number.parseInt(chainIdStr, 10),
+                      tokenId,
+                      name: agent.name,
+                      description: agent.description,
+                      image: agent.image,
+                      active: agent.active,
+                      hasMcp: agent.mcp,
+                      hasA2a: agent.a2a,
+                      x402Support: agent.x402support,
+                      supportedTrust: deriveSupportedTrust(agent.x402support),
+                      operators: agent.operators || [],
+                      ens: agent.ens || undefined,
+                      did: agent.did || undefined,
+                      walletAddress: agent.walletAddress || undefined,
+                      inputModes: agent.mcpPrompts?.length ? ['mcp-prompt'] : undefined,
+                      outputModes: agent.mcpResources?.length ? ['mcp-resource'] : undefined,
+                    };
+                  })
+                )
+              );
+            }
+          }
 
           const results = await Promise.all(searchPromises);
 
@@ -728,30 +1221,8 @@ export function createSDKService(env: Env): SDKService {
           const agentMap = new Map<string, AgentSummary>();
           for (const items of results) {
             for (const agent of items) {
-              if (!agentMap.has(agent.agentId)) {
-                const parts = agent.agentId.split(':');
-                const chainIdStr = parts[0] || '0';
-                const tokenId = parts[1] || '0';
-
-                agentMap.set(agent.agentId, {
-                  id: agent.agentId,
-                  chainId: Number.parseInt(chainIdStr, 10),
-                  tokenId,
-                  name: agent.name,
-                  description: agent.description,
-                  image: agent.image,
-                  active: agent.active,
-                  hasMcp: agent.mcp,
-                  hasA2a: agent.a2a,
-                  x402Support: agent.x402support,
-                  supportedTrust: deriveSupportedTrust(agent.x402support),
-                  operators: agent.operators || [],
-                  ens: agent.ens || undefined,
-                  did: agent.did || undefined,
-                  walletAddress: agent.walletAddress || undefined,
-                  inputModes: agent.mcpPrompts?.length ? ['mcp-prompt'] : undefined,
-                  outputModes: agent.mcpResources?.length ? ['mcp-resource'] : undefined,
-                });
+              if (!agentMap.has(agent.id)) {
+                agentMap.set(agent.id, agent);
               }
             }
           }
@@ -834,33 +1305,49 @@ export function createSDKService(env: Env): SDKService {
               allItems.push(...items);
             }
           } else {
-            // No query - single search with all chains, limited pagination
-            const result = await sdk.searchAgents(baseSearchParams, ['createdAt:desc'], fetchLimit);
+            // No query - query each chain separately and merge results
+            // SDK doesn't support multi-chain queries, so we must query each chain
+            const perChainFetchLimit = Math.ceil(fetchLimit / chainsToQuery.length);
 
-            for (const agent of result.items) {
-              const parts = agent.agentId.split(':');
-              const chainIdStr = parts[0] || '0';
-              const tokenId = parts[1] || '0';
+            const chainSearchPromises = chainsToQuery.map(async (chainConfig) => {
+              const chainSdk = getSDK(chainConfig.chainId);
+              const chainParams = { ...baseSearchParams, chains: [chainConfig.chainId] };
+              const result = await chainSdk.searchAgents(
+                chainParams,
+                ['createdAt:desc'],
+                perChainFetchLimit
+              );
+              return result.items;
+            });
 
-              allItems.push({
-                id: agent.agentId,
-                chainId: Number.parseInt(chainIdStr, 10),
-                tokenId,
-                name: agent.name,
-                description: agent.description,
-                image: agent.image,
-                active: agent.active,
-                hasMcp: agent.mcp,
-                hasA2a: agent.a2a,
-                x402Support: agent.x402support,
-                supportedTrust: deriveSupportedTrust(agent.x402support),
-                operators: agent.operators || [],
-                ens: agent.ens || undefined,
-                did: agent.did || undefined,
-                walletAddress: agent.walletAddress || undefined,
-                inputModes: agent.mcpPrompts?.length ? ['mcp-prompt'] : undefined,
-                outputModes: agent.mcpResources?.length ? ['mcp-resource'] : undefined,
-              });
+            const chainResults = await Promise.all(chainSearchPromises);
+
+            for (const items of chainResults) {
+              for (const agent of items) {
+                const parts = agent.agentId.split(':');
+                const chainIdStr = parts[0] || '0';
+                const tokenId = parts[1] || '0';
+
+                allItems.push({
+                  id: agent.agentId,
+                  chainId: Number.parseInt(chainIdStr, 10),
+                  tokenId,
+                  name: agent.name,
+                  description: agent.description,
+                  image: agent.image,
+                  active: agent.active,
+                  hasMcp: agent.mcp,
+                  hasA2a: agent.a2a,
+                  x402Support: agent.x402support,
+                  supportedTrust: deriveSupportedTrust(agent.x402support),
+                  operators: agent.operators || [],
+                  ens: agent.ens || undefined,
+                  did: agent.did || undefined,
+                  walletAddress: agent.walletAddress || undefined,
+                  inputModes: agent.mcpPrompts?.length ? ['mcp-prompt'] : undefined,
+                  outputModes: agent.mcpResources?.length ? ['mcp-resource'] : undefined,
+                });
+              }
             }
           }
         }

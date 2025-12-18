@@ -58,7 +58,11 @@ wrangler queues create classification-jobs
 Set required secrets using Wrangler:
 
 ```bash
-# Claude API key for OASF classification
+# Gemini API key for OASF classification (primary)
+wrangler secret put GOOGLE_AI_API_KEY
+# Enter: AIza...
+
+# Claude API key for OASF classification (fallback)
 wrangler secret put ANTHROPIC_API_KEY
 # Enter: sk-ant-api03-xxxxx
 
@@ -255,7 +259,8 @@ For typical usage:
 | D1 | Included |
 | KV | Included |
 | Queues | ~$0.40/million messages |
-| Claude API | ~$0.003/classification |
+| Gemini API | ~$0.0001/classification (primary) |
+| Claude API | ~$0.003/classification (fallback) |
 
 ## Support
 

@@ -82,6 +82,8 @@ export interface AgentFeedbackRow {
   feedback_uri: string | null;
   submitter: string;
   eas_uid: string | null;
+  /** Transaction hash from EAS attestation */
+  tx_id: string | null;
   submitted_at: string;
   created_at: string;
   updated_at: string;
@@ -129,6 +131,8 @@ export interface NewFeedback {
   feedback_uri?: string;
   submitter: string;
   eas_uid?: string;
+  /** Transaction hash from EAS attestation */
+  tx_id?: string;
   submitted_at: string;
 }
 

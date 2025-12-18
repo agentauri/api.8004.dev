@@ -12,6 +12,7 @@ import {
   assertChainId,
   assertHasDomain,
   assertHasSkill,
+  assertReputationInRange,
   assertSorted,
   assertSuccess,
 } from '../utils/assertions';
@@ -159,6 +160,54 @@ export function registerAgentsAdvancedTests(): void {
         if (withNames.length > 1) {
           assertSorted(withNames, 'name', 'asc');
         }
+      }
+    });
+  });
+
+  // ========== x402 Complex Combinations ==========
+  describe('x402 Complex Combinations', () => {
+    it('x402=true + skills + chainId triple filter', async () => {
+      const { json } = await get('/agents', {
+        x402: true,
+        skills: 'tool_interaction',
+        chainId: 11155111,
+        limit: 10,
+      });
+      assertSuccess(json);
+      if (json.data?.length > 0) {
+        assertBooleanFlag(json.data!, 'x402Support', true);
+        assertHasSkill(json.data!, 'tool_interaction');
+        assertChainId(json.data!, 11155111);
+      }
+    });
+
+    it('x402=true + minRep filter works', async () => {
+      const { json } = await get('/agents', {
+        x402: true,
+        minRep: 2.0,
+        limit: 10,
+      });
+      assertSuccess(json);
+      if (json.data?.length > 0) {
+        assertBooleanFlag(json.data!, 'x402Support', true);
+        assertReputationInRange(json.data!, 2.0, undefined);
+      }
+    });
+
+    it('x402=true + mcp=true + a2a=true + skills quadruple filter', async () => {
+      const { json } = await get('/agents', {
+        x402: true,
+        mcp: true,
+        a2a: true,
+        skills: 'tool_interaction',
+        limit: 10,
+      });
+      assertSuccess(json);
+      if (json.data?.length > 0) {
+        assertBooleanFlag(json.data!, 'x402Support', true);
+        assertBooleanFlag(json.data!, 'hasMcp', true);
+        assertBooleanFlag(json.data!, 'hasA2a', true);
+        assertHasSkill(json.data!, 'tool_interaction');
       }
     });
   });
