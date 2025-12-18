@@ -21,7 +21,7 @@ beforeAll(async () => {
 
   // Reputation tables
   await env.DB.exec(
-    "CREATE TABLE IF NOT EXISTS agent_feedback (id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), agent_id TEXT NOT NULL, chain_id INTEGER NOT NULL, score INTEGER NOT NULL CHECK (score >= 0 AND score <= 100), tags TEXT NOT NULL DEFAULT '[]', context TEXT, feedback_uri TEXT, submitter TEXT NOT NULL, eas_uid TEXT UNIQUE, submitted_at TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))"
+    "CREATE TABLE IF NOT EXISTS agent_feedback (id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), agent_id TEXT NOT NULL, chain_id INTEGER NOT NULL, score INTEGER NOT NULL CHECK (score >= 0 AND score <= 100), tags TEXT NOT NULL DEFAULT '[]', context TEXT, feedback_uri TEXT, submitter TEXT NOT NULL, eas_uid TEXT UNIQUE, tx_id TEXT, submitted_at TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))"
   );
 
   await env.DB.exec(
@@ -163,6 +163,7 @@ export function createMockFeedback(agentId: string, overrides: Record<string, un
     feedback_uri: 'https://eas.example.com/attestation/0x123',
     submitter: '0x1234567890123456789012345678901234567890',
     eas_uid: null as string | null,
+    tx_id: null as string | null,
     submitted_at: new Date().toISOString(),
     ...overrides,
   };
@@ -177,8 +178,8 @@ export async function insertMockFeedback(agentId: string, overrides: Record<stri
 
   await env.DB.prepare(
     `INSERT INTO agent_feedback
-     (id, agent_id, chain_id, score, tags, context, feedback_uri, submitter, eas_uid, submitted_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     (id, agent_id, chain_id, score, tags, context, feedback_uri, submitter, eas_uid, tx_id, submitted_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       id,
@@ -190,6 +191,7 @@ export async function insertMockFeedback(agentId: string, overrides: Record<stri
       feedback.feedback_uri,
       feedback.submitter,
       feedback.eas_uid,
+      feedback.tx_id,
       feedback.submitted_at
     )
     .run();
