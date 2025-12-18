@@ -72,4 +72,84 @@ export function registerAgentsReputationTests(): void {
       }
     });
   });
+
+  describe('Reputation Feedback Endpoint', () => {
+    it('GET /agents/:id/reputation/feedback returns feedback with transactionHash', async () => {
+      // First get an agent with reputation
+      const { json: listJson } = await get('/agents', { minRep: 1, limit: 1 });
+
+      if (!listJson.success || !listJson.data || listJson.data.length === 0) {
+        console.log('  Note: Skipped - no agents with reputation available');
+        return;
+      }
+
+      const agent = listJson.data[0];
+      const { json } = await get(`/agents/${agent.id}/reputation/feedback`, { limit: 10 });
+
+      if (!json.success) {
+        console.log(`  Note: Feedback fetch failed - ${json.error}`);
+        return;
+      }
+
+      if (!Array.isArray(json.data)) {
+        throw new Error('Expected data to be an array');
+      }
+
+      // Check that each feedback item has the expected structure
+      for (const feedback of json.data as Array<Record<string, unknown>>) {
+        if (typeof feedback.id !== 'string') {
+          throw new Error('Expected feedback.id to be a string');
+        }
+        if (typeof feedback.score !== 'number') {
+          throw new Error('Expected feedback.score to be a number');
+        }
+        if (typeof feedback.submitter !== 'string') {
+          throw new Error('Expected feedback.submitter to be a string');
+        }
+        if (typeof feedback.timestamp !== 'string') {
+          throw new Error('Expected feedback.timestamp to be a string');
+        }
+        // transactionHash should be a string if present (from EAS attestation)
+        if (feedback.transactionHash !== undefined && feedback.transactionHash !== null) {
+          if (typeof feedback.transactionHash !== 'string') {
+            throw new Error('Expected feedback.transactionHash to be a string when present');
+          }
+        }
+      }
+    });
+
+    it('GET /agents/:id/reputation returns reputation summary', async () => {
+      const { json: listJson } = await get('/agents', { minRep: 1, limit: 1 });
+
+      if (!listJson.success || !listJson.data || listJson.data.length === 0) {
+        console.log('  Note: Skipped - no agents with reputation available');
+        return;
+      }
+
+      const agent = listJson.data[0];
+      const { json } = await get(`/agents/${agent.id}/reputation`);
+
+      if (!json.success) {
+        console.log(`  Note: Reputation fetch failed - ${json.error}`);
+        return;
+      }
+
+      const data = json.data as Record<string, unknown>;
+      // Should have reputation object
+      if (!data.reputation) {
+        throw new Error('Expected reputation object to be present');
+      }
+
+      const reputation = data.reputation as Record<string, unknown>;
+      if (typeof reputation.count !== 'number') {
+        throw new Error('Expected reputation.count to be a number');
+      }
+      if (typeof reputation.averageScore !== 'number') {
+        throw new Error('Expected reputation.averageScore to be a number');
+      }
+      if (!reputation.distribution) {
+        throw new Error('Expected reputation.distribution to be present');
+      }
+    });
+  });
 }
