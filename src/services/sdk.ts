@@ -472,7 +472,8 @@ function computeAgentHealthScore(agent: {
   let metadataMessage = '';
   const hasName = agent.name && agent.name.trim() !== '';
   const hasDescription = agent.description && agent.description.trim() !== '';
-  const hasGoodDescription = hasDescription && agent.description?.length >= 50;
+  const descriptionLength = agent.description?.length ?? 0;
+  const hasGoodDescription = hasDescription && descriptionLength >= 50;
   const hasImage = agent.image && agent.image.trim() !== '';
 
   if (hasName) metadataScore += 40;
@@ -576,11 +577,12 @@ function computeAgentHealthScore(agent: {
   });
 
   // Calculate weighted overall score
-  // TypeScript doesn't know we always have exactly 3 checks, so use non-null assertion
+  // Extract scores with defaults (checks array always has 3 elements)
+  const metaWeight = checks[0]?.score ?? 0;
+  const endpointsWeight = checks[1]?.score ?? 0;
+  const reputationWeight = checks[2]?.score ?? 0;
   const overallScore = Math.round(
-    checks[0]?.score * 0.4 + // metadata
-      checks[1]?.score * 0.4 + // endpoints
-      checks[2]?.score * 0.2 // reputation
+    metaWeight * 0.4 + endpointsWeight * 0.4 + reputationWeight * 0.2
   );
 
   return {
