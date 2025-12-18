@@ -367,6 +367,7 @@ export function createEASIndexerService(
               feedback_uri: `https://easscan.org/attestation/view/${attestation.id}`,
               submitter: attestation.attester,
               eas_uid: attestation.id,
+              tx_id: attestation.txid || undefined,
               submitted_at: new Date(attestation.time * 1000).toISOString(),
             };
 

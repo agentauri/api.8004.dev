@@ -117,6 +117,20 @@ export function registerSearchFallbackTests(): void {
       }
     });
 
+    it('POST /search with active=false returns ONLY inactive agents', async () => {
+      const { json } = await post('/search', {
+        query: 'agent',
+        filters: { active: false },
+        limit: 10,
+      });
+      assertSuccess(json);
+      assertHasSearchMode(json);
+      // Should return ONLY agents with active=false
+      if (json.data && json.data.length > 0) {
+        assertBooleanFlag(json.data, 'active', false);
+      }
+    });
+
     it('POST /search with skills filter works', async () => {
       const { json } = await post('/search', {
         query: 'agent',
@@ -530,6 +544,34 @@ export function registerSearchFallbackTests(): void {
       });
       assertSuccess(json);
       // Should work via fallback
+    });
+
+    it('POST /search obscure query with minRep filter works in fallback', async () => {
+      // Test that reputation filter works correctly in fallback mode
+      const { json } = await post('/search', {
+        query: 'ciro',
+        filters: { minRep: 1.0 },
+        limit: 10,
+      });
+      assertSuccess(json);
+      assertHasSearchMode(json);
+      if (json.data && json.data.length > 0) {
+        assertReputationInRange(json.data, 1.0, undefined);
+      }
+    });
+
+    it('GET /agents obscure query with minRep + maxRep works in fallback', async () => {
+      const { json } = await get('/agents', {
+        q: 'Neapolitan',
+        minRep: 1.0,
+        maxRep: 5.0,
+        limit: 10,
+      });
+      assertSuccess(json);
+      assertHasSearchMode(json);
+      if (json.data && json.data.length > 0) {
+        assertReputationInRange(json.data, 1.0, 5.0);
+      }
     });
   });
 }

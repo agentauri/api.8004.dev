@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - KV cache for response caching
 - Queues for async classification processing
 - Rate limiting (60 req/min anonymous, 300 req/min with API key)
-- 100% test coverage with Vitest
+- 70% branch coverage minimum with Vitest
 - CI/CD with GitHub Actions
 - Cloudflare Workers deployment
 

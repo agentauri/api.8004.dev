@@ -85,6 +85,7 @@ function rowToFeedback(row: AgentFeedbackRow): AgentFeedback {
     feedbackUri: row.feedback_uri ?? undefined,
     submitter: row.submitter,
     timestamp: row.submitted_at,
+    transactionHash: row.tx_id ?? undefined,
   };
 }
 

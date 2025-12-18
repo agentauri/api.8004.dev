@@ -88,4 +88,72 @@ export function registerAgentsBooleanTests(): void {
       }
     });
   });
+
+  // ========== OR Mode + OASF ==========
+  describe('OR Mode + OASF', () => {
+    it('skills with multiple values uses OR within skills', async () => {
+      // Comma-separated skills uses OR logic
+      const { json } = await get('/agents', {
+        skills: 'tool_interaction,natural_language_processing',
+        limit: 10,
+      });
+      assertSuccess(json);
+      if (json.data?.length > 0) {
+        assertAllMatch(
+          json.data!,
+          (a: Agent) => {
+            if (!a.oasf?.skills) return false;
+            return a.oasf.skills.some(
+              (s) => s.slug === 'tool_interaction' || s.slug === 'natural_language_processing'
+            );
+          },
+          'has tool_interaction OR natural_language_processing skill'
+        );
+      }
+    });
+
+    it('domains with multiple values uses OR within domains', async () => {
+      // Comma-separated domains uses OR logic
+      const { json } = await get('/agents', {
+        domains: 'technology,finance_business',
+        limit: 10,
+      });
+      assertSuccess(json);
+      if (json.data?.length > 0) {
+        assertAllMatch(
+          json.data!,
+          (a: Agent) => {
+            if (!a.oasf?.domains) return false;
+            return a.oasf.domains.some(
+              (d) => d.slug === 'technology' || d.slug === 'finance_business'
+            );
+          },
+          'has technology OR finance_business domain'
+        );
+      }
+    });
+
+    it('skills + domains with filterMode=OR returns agents matching any filter', async () => {
+      // In OR mode, having skill OR domain should match
+      const { json } = await get('/agents', {
+        skills: 'tool_interaction',
+        domains: 'technology',
+        filterMode: 'OR',
+        limit: 10,
+      });
+      assertSuccess(json);
+      if (json.data?.length > 0) {
+        assertAllMatch(
+          json.data!,
+          (a: Agent) => {
+            const hasSkill = a.oasf?.skills?.some((s) => s.slug === 'tool_interaction');
+            const hasDomain = a.oasf?.domains?.some((d) => d.slug === 'technology');
+            // In OR mode, either skill OR domain should match
+            return hasSkill || hasDomain;
+          },
+          'has tool_interaction skill OR technology domain'
+        );
+      }
+    });
+  });
 }

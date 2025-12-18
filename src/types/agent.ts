@@ -138,6 +138,52 @@ export interface AgentIPFSMetadata {
 }
 
 /**
+ * Warning severity levels
+ */
+export type WarningSeverity = 'low' | 'medium' | 'high';
+
+/**
+ * Warning type categories
+ */
+export type WarningType = 'metadata' | 'endpoint' | 'reputation';
+
+/**
+ * Agent warning for quality/health indicators
+ */
+export interface AgentWarning {
+  /** Warning type category */
+  type: WarningType;
+  /** Warning message */
+  message: string;
+  /** Severity level */
+  severity: WarningSeverity;
+}
+
+/**
+ * Agent health check result
+ */
+export interface AgentHealthCheck {
+  /** Check category */
+  category: 'metadata' | 'endpoints' | 'reputation';
+  /** Pass/warning/fail status */
+  status: 'pass' | 'warning' | 'fail';
+  /** Score for this check (0-100) */
+  score: number;
+  /** Description of the check result */
+  message: string;
+}
+
+/**
+ * Aggregated agent health score
+ */
+export interface AgentHealthScore {
+  /** Overall health score (0-100) */
+  overallScore: number;
+  /** Individual check results */
+  checks: AgentHealthCheck[];
+}
+
+/**
  * Full agent details including endpoints and registration
  */
 export interface AgentDetail extends AgentSummary {
@@ -157,6 +203,12 @@ export interface AgentDetail extends AgentSummary {
   reputation?: AgentReputation;
   /** Metadata fetched from IPFS */
   ipfsMetadata?: AgentIPFSMetadata;
+  /** ISO timestamp when agent was last updated on-chain */
+  lastUpdatedAt?: string;
+  /** Quality/health warnings for this agent */
+  warnings?: AgentWarning[];
+  /** Aggregated health score and checks */
+  healthScore?: AgentHealthScore;
 }
 
 /**

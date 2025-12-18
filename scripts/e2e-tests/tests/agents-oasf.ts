@@ -9,6 +9,7 @@ import { get } from '../utils/api-client';
 import type { Agent } from '../utils/api-client';
 import {
   assertAllMatch,
+  assertBooleanFlag,
   assertHasDomain,
   assertHasSkill,
   assertSuccess,
@@ -125,6 +126,76 @@ export function registerAgentsOASFTests(): void {
       if (json.data?.length > 0) {
         assertAllMatch(json.data!, (a: Agent) => a.hasMcp === true, 'hasMcp === true');
         assertHasSkill(json.data!, 'tool_interaction');
+      }
+    });
+  });
+
+  // ========== OASF + Active Filter Combinations ==========
+  describe('OASF + Active Filter', () => {
+    it('skills + active=true returns only active agents with skill', async () => {
+      const { json } = await get('/agents', {
+        skills: 'tool_interaction',
+        active: true,
+        limit: 10,
+      });
+      assertSuccess(json);
+      if (json.data?.length > 0) {
+        assertHasSkill(json.data!, 'tool_interaction');
+        assertBooleanFlag(json.data!, 'active', true);
+      }
+    });
+
+    it('skills + active=false returns only inactive agents with skill', async () => {
+      const { json } = await get('/agents', {
+        skills: 'tool_interaction',
+        active: false,
+        limit: 10,
+      });
+      assertSuccess(json);
+      if (json.data?.length > 0) {
+        assertHasSkill(json.data!, 'tool_interaction');
+        assertBooleanFlag(json.data!, 'active', false);
+      }
+    });
+
+    it('domains + active=true returns only active agents with domain', async () => {
+      const { json } = await get('/agents', {
+        domains: 'technology',
+        active: true,
+        limit: 10,
+      });
+      assertSuccess(json);
+      if (json.data?.length > 0) {
+        assertHasDomain(json.data!, 'technology');
+        assertBooleanFlag(json.data!, 'active', true);
+      }
+    });
+
+    it('domains + active=false returns only inactive agents with domain', async () => {
+      const { json } = await get('/agents', {
+        domains: 'technology',
+        active: false,
+        limit: 10,
+      });
+      assertSuccess(json);
+      if (json.data?.length > 0) {
+        assertHasDomain(json.data!, 'technology');
+        assertBooleanFlag(json.data!, 'active', false);
+      }
+    });
+
+    it('skills + domains + active=true triple filter works', async () => {
+      const { json } = await get('/agents', {
+        skills: 'tool_interaction',
+        domains: 'technology',
+        active: true,
+        limit: 10,
+      });
+      assertSuccess(json);
+      if (json.data?.length > 0) {
+        assertHasSkill(json.data!, 'tool_interaction');
+        assertHasDomain(json.data!, 'technology');
+        assertBooleanFlag(json.data!, 'active', true);
       }
     });
   });

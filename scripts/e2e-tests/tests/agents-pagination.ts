@@ -9,6 +9,7 @@ import type { Agent } from '../utils/api-client';
 import {
   assertBooleanFlag,
   assertChainIds,
+  assertHasSkill,
   assertNoDuplicates,
   assertSorted,
   assertSuccess,
@@ -210,6 +211,89 @@ export function registerAgentsPaginationTests(): void {
       // Filter should still apply
       if (page2.data && page2.data.length > 0) {
         assertBooleanFlag(page2.data, 'hasMcp', true);
+      }
+    });
+
+    it('GET /agents cursor + 3 filters (mcp + chainId + skills)', async () => {
+      // Get page 1 with 3 filters
+      const { json: page1 } = await get('/agents', {
+        mcp: true,
+        chainId: 11155111,
+        skills: 'tool_interaction',
+        limit: 5,
+      });
+      assertSuccess(page1);
+
+      if (page1.data && page1.data.length > 0) {
+        assertBooleanFlag(page1.data, 'hasMcp', true);
+        assertChainIds(page1.data, [11155111]);
+        assertHasSkill(page1.data, 'tool_interaction');
+      }
+
+      if (!page1.meta?.nextCursor) {
+        console.log('  Note: Not enough data matching 3 filters for cursor test');
+        return;
+      }
+
+      // Get page 2 with same 3 filters + cursor
+      const { json: page2 } = await get('/agents', {
+        mcp: true,
+        chainId: 11155111,
+        skills: 'tool_interaction',
+        limit: 5,
+        cursor: page1.meta.nextCursor,
+      });
+      assertSuccess(page2);
+
+      // All 3 filters should still apply
+      if (page2.data && page2.data.length > 0) {
+        assertBooleanFlag(page2.data, 'hasMcp', true);
+        assertChainIds(page2.data, [11155111]);
+        assertHasSkill(page2.data, 'tool_interaction');
+      }
+
+      // Verify no duplicates
+      if (page1.data && page2.data) {
+        const allIds: string[] = [];
+        for (const a of page1.data as Agent[]) allIds.push(a.id);
+        for (const a of page2.data as Agent[]) allIds.push(a.id);
+        assertNoDuplicates(
+          allIds.map((id) => ({ id })),
+          'id'
+        );
+      }
+    });
+
+    it('GET /agents total consistency across cursor pages', async () => {
+      // Get page 1 with filter
+      const { json: page1 } = await get('/agents', {
+        mcp: true,
+        limit: 10,
+      });
+      assertSuccess(page1);
+
+      const totalPage1 = page1.meta?.total;
+
+      if (!page1.meta?.nextCursor || totalPage1 === undefined) {
+        console.log('  Note: Not enough data for total consistency test');
+        return;
+      }
+
+      // Get page 2 with same filter
+      const { json: page2 } = await get('/agents', {
+        mcp: true,
+        limit: 10,
+        cursor: page1.meta.nextCursor,
+      });
+      assertSuccess(page2);
+
+      const totalPage2 = page2.meta?.total;
+
+      // Total should be consistent across pages
+      if (totalPage1 !== totalPage2) {
+        throw new Error(
+          `Total changed between pages: page1=${totalPage1}, page2=${totalPage2}`
+        );
       }
     });
   });
