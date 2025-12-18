@@ -53,7 +53,6 @@ function deriveSupportedTrust(x402Support: boolean): TrustMethod[] {
   return methods;
 }
 
-
 /**
  * Chain configuration
  */
@@ -473,7 +472,7 @@ function computeAgentHealthScore(agent: {
   let metadataMessage = '';
   const hasName = agent.name && agent.name.trim() !== '';
   const hasDescription = agent.description && agent.description.trim() !== '';
-  const hasGoodDescription = hasDescription && agent.description!.length >= 50;
+  const hasGoodDescription = hasDescription && agent.description?.length >= 50;
   const hasImage = agent.image && agent.image.trim() !== '';
 
   if (hasName) metadataScore += 40;
@@ -579,9 +578,9 @@ function computeAgentHealthScore(agent: {
   // Calculate weighted overall score
   // TypeScript doesn't know we always have exactly 3 checks, so use non-null assertion
   const overallScore = Math.round(
-    checks[0]!.score * 0.4 + // metadata
-      checks[1]!.score * 0.4 + // endpoints
-      checks[2]!.score * 0.2 // reputation
+    checks[0]?.score * 0.4 + // metadata
+      checks[1]?.score * 0.4 + // endpoints
+      checks[2]?.score * 0.2 // reputation
   );
 
   return {
@@ -779,7 +778,9 @@ export function createSDKService(env: Env): SDKService {
 
         if (cursor) {
           try {
-            const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString()) as MultiChainCursor;
+            const decoded = JSON.parse(
+              Buffer.from(cursor, 'base64url').toString()
+            ) as MultiChainCursor;
             chainOffsets = decoded.chainOffsets || {};
             globalOffset = decoded.globalOffset || 0;
           } catch {
@@ -1144,7 +1145,7 @@ export function createSDKService(env: Env): SDKService {
         if (!primaryChain) {
           return { items: [], total: 0, hasMore: false, byChain: {} };
         }
-        const sdk = getSDK(primaryChain.chainId);
+        const _sdk = getSDK(primaryChain.chainId);
 
         // Build base search params
         const baseSearchParams: SearchParams = {

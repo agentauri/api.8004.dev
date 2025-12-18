@@ -599,7 +599,9 @@ export async function getClassifiedAgentIds(db: D1Database): Promise<Set<string>
  */
 export async function getQueuedAgentIds(db: D1Database): Promise<Set<string>> {
   const result = await db
-    .prepare("SELECT DISTINCT agent_id FROM classification_queue WHERE status IN ('pending', 'processing')")
+    .prepare(
+      "SELECT DISTINCT agent_id FROM classification_queue WHERE status IN ('pending', 'processing')"
+    )
     .all<{ agent_id: string }>();
 
   return new Set(result.results.map((r) => r.agent_id));
