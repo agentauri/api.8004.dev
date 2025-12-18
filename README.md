@@ -62,7 +62,9 @@ pnpm run lint         # Lint
 | POST | `/api/v1/agents/:agentId/classify` | Request classification |
 | POST | `/api/v1/search` | Semantic search |
 | GET | `/api/v1/chains` | Chain statistics |
+| GET | `/api/v1/stats` | Platform statistics |
 | GET | `/api/v1/taxonomy` | OASF taxonomy tree |
+| GET | `/api/v1/openapi` | OpenAPI specification |
 
 ### Example Requests
 
@@ -88,7 +90,7 @@ curl https://api.8004.dev/api/v1/agents/11155111:1
 | Database | Cloudflare D1 |
 | Cache | Cloudflare KV |
 | Queue | Cloudflare Queues |
-| LLM | Claude API (Anthropic) |
+| LLM | Gemini API (Google) + Claude API (Anthropic) |
 
 ## Deployment
 

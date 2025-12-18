@@ -66,10 +66,11 @@ function applyFilters(
     }
 
     // Boolean filters (mcp, a2a, x402) - apply filterMode logic
+    // Treat undefined as false (if agent had the capability, it would be true)
     const booleanFilters: boolean[] = [];
-    if (mcp !== undefined) booleanFilters.push(agent.hasMcp === mcp);
-    if (a2a !== undefined) booleanFilters.push(agent.hasA2a === a2a);
-    if (x402 !== undefined) booleanFilters.push(agent.x402Support === x402);
+    if (mcp !== undefined) booleanFilters.push((agent.hasMcp ?? false) === mcp);
+    if (a2a !== undefined) booleanFilters.push((agent.hasA2a ?? false) === a2a);
+    if (x402 !== undefined) booleanFilters.push((agent.x402Support ?? false) === x402);
 
     if (booleanFilters.length === 0) return true;
 

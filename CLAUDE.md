@@ -8,7 +8,7 @@ This is the backend service for **8004.dev**, providing a unified REST API that 
 
 1. **Agent Data Aggregation**: Fetches agent data from The Graph subgraph via agent0-sdk
 2. **Semantic Search**: Proxies to agent0lab/search-service for natural language queries
-3. **OASF Classification**: Uses Claude API to classify agents according to OASF taxonomy (skills/domains)
+3. **OASF Classification**: Uses multi-provider AI (Gemini primary, Claude fallback) to classify agents according to OASF taxonomy (skills/domains)
 4. **Caching**: Provides efficient caching layer for all data sources
 
 ## Project Rules
@@ -99,7 +99,7 @@ This project is designed to be open source. All contributions must follow these 
 | Database | Cloudflare D1 (SQLite) |
 | Cache | Cloudflare KV |
 | Queue | Cloudflare Queues |
-| LLM | Claude API (Anthropic) |
+| LLM | Gemini API (Google) + Claude API (Anthropic) |
 
 ## Project Structure
 
@@ -109,37 +109,59 @@ api.8004.dev/
 │   ├── index.ts              # Main entry point, Hono app
 │   ├── routes/
 │   │   ├── agents.ts         # /api/v1/agents endpoints
-│   │   ├── search.ts         # /api/v1/search endpoint
-│   │   ├── classify.ts       # /api/v1/agents/:id/classify
 │   │   ├── chains.ts         # /api/v1/chains endpoint
+│   │   ├── classify.ts       # /api/v1/agents/:id/classify
+│   │   ├── health.ts         # /api/v1/health endpoint
+│   │   ├── openapi.ts        # /api/v1/openapi spec endpoints
+│   │   ├── reputation.ts     # /api/v1/reputation endpoints
+│   │   ├── search.ts         # /api/v1/search endpoint
 │   │   ├── stats.ts          # /api/v1/stats endpoint
-│   │   ├── taxonomy.ts       # /api/v1/taxonomy endpoint
-│   │   └── health.ts         # /api/v1/health endpoint
+│   │   └── taxonomy.ts       # /api/v1/taxonomy endpoint
 │   ├── services/
+│   │   ├── cache.ts          # KV cache utilities
+│   │   ├── classifier.ts     # OASF classification (Gemini + Claude)
+│   │   ├── eas-indexer.ts    # EAS attestation indexer
+│   │   ├── ipfs.ts           # IPFS gateway client
+│   │   ├── oasf-resolver.ts  # OASF taxonomy resolver
+│   │   ├── reputation.ts     # Agent reputation aggregation
 │   │   ├── sdk.ts            # agent0-sdk integration
 │   │   ├── search.ts         # search-service client
-│   │   ├── classifier.ts     # OASF classification with Claude
-│   │   ├── cache.ts          # KV cache utilities
-│   │   ├── reputation.ts     # Agent reputation aggregation
-│   │   └── eas-indexer.ts    # EAS attestation indexer
+│   │   └── mock/             # Mock services for testing
+│   │       ├── mock-sdk.ts
+│   │       └── mock-search.ts
 │   ├── db/
 │   │   ├── schema.ts         # D1 schema types
 │   │   └── queries.ts        # Database queries
 │   ├── lib/
+│   │   ├── middleware/       # Hono middleware
+│   │   │   ├── api-key.ts    # API key authentication
+│   │   │   ├── body-limit.ts # Request body size limits
+│   │   │   ├── cors.ts       # CORS configuration
+│   │   │   ├── request-id.ts # Request ID generation
+│   │   │   └── security-headers.ts
 │   │   ├── oasf/
 │   │   │   ├── taxonomy.ts   # OASF taxonomy data
 │   │   │   └── prompt.ts     # Classification prompt template
 │   │   └── utils/
 │   │       ├── errors.ts     # Error handling
-│   │       ├── validation.ts # Request validation (Zod)
-│   │       └── rate-limit.ts # Rate limiting
+│   │       ├── fetch.ts      # HTTP fetch utilities
+│   │       ├── rate-limit.ts # Rate limiting
+│   │       └── validation.ts # Request validation (Zod)
 │   └── types/
 │       ├── agent.ts          # Agent types
+│       ├── chain.ts          # Chain types
 │       ├── classification.ts # OASF classification types
-│       └── env.ts            # Environment bindings
+│       ├── common.ts         # Common types
+│       ├── env.ts            # Environment bindings
+│       ├── ipfs.ts           # IPFS types
+│       ├── reputation.ts     # Reputation types
+│       ├── search.ts         # Search types
+│       └── taxonomy.ts       # Taxonomy types
 ├── migrations/
-│   ├── 0001_init.sql         # D1 schema migration (classifications)
-│   └── 0002_reputation.sql   # Reputation system tables
+│   ├── 0001_init.sql         # D1 schema (classifications)
+│   ├── 0002_reputation.sql   # Reputation system tables
+│   ├── 0003_performance_indexes.sql  # Performance indexes
+│   └── 0004_oasf_taxonomy_reset.sql  # OASF taxonomy updates
 ├── wrangler.toml             # Cloudflare Workers config
 ├── package.json
 ├── tsconfig.json
@@ -181,7 +203,8 @@ wrangler d1 execute 8004-backend-db --command="SELECT * FROM agent_classificatio
 Required secrets (set via `wrangler secret put`):
 
 ```bash
-ANTHROPIC_API_KEY          # Claude API key for OASF classification
+GOOGLE_AI_API_KEY          # Gemini API key for OASF classification (primary)
+ANTHROPIC_API_KEY          # Claude API key for OASF classification (fallback)
 SEARCH_SERVICE_URL         # URL to agent0lab/search-service
 SEPOLIA_RPC_URL            # Ethereum Sepolia RPC
 BASE_SEPOLIA_RPC_URL       # Base Sepolia RPC
@@ -191,7 +214,8 @@ POLYGON_AMOY_RPC_URL       # Polygon Amoy RPC
 Optional:
 
 ```bash
-CLASSIFICATION_MODEL       # Default: claude-3-haiku-20240307
+CLASSIFICATION_MODEL       # Default: gemini-2.0-flash (primary classifier)
+FALLBACK_MODEL             # Default: claude-3-haiku-20240307 (fallback classifier)
 CACHE_TTL                  # Default: 300 (seconds)
 RATE_LIMIT_RPM             # Default: 100
 ```
@@ -289,17 +313,30 @@ const response = await fetch(`${env.SEARCH_SERVICE_URL}/api/search`, {
 });
 ```
 
-### 3. Claude API (Classification)
+### 3. Multi-Provider Classification (Gemini + Claude)
+
+The classifier uses Gemini as primary provider with Claude as fallback:
 
 ```typescript
-import Anthropic from '@anthropic-ai/sdk';
+import { createClassifierService } from '@/services/classifier';
 
-const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
-const response = await anthropic.messages.create({
-  model: 'claude-3-haiku-20240307',
-  max_tokens: 1024,
-  messages: [{ role: 'user', content: classificationPrompt }]
+// Create multi-provider classifier
+const classifier = createClassifierService(
+  env.GOOGLE_AI_API_KEY,      // Gemini API key (primary)
+  env.CLASSIFICATION_MODEL,    // 'gemini-2.0-flash' (default)
+  env.ANTHROPIC_API_KEY,       // Claude API key (fallback)
+  env.FALLBACK_MODEL           // 'claude-3-haiku-20240307' (default)
+);
+
+// Classify an agent - tries Gemini first, falls back to Claude on error
+const result = await classifier.classify({
+  agentId: '11155111:1',
+  name: 'Agent Name',
+  description: 'Agent description...',
+  mcpTools: [],
+  a2aSkills: []
 });
+// Returns: { skills: [...], domains: [...], confidence: 0.95, modelVersion: '...' }
 ```
 
 ## Database Schema (D1)

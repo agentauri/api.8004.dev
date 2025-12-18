@@ -442,13 +442,20 @@ agents.get('/', async (c) => {
         })),
       };
 
+      // Use post-filtered count when filters are applied, otherwise use search service total
+      const filteredTotal = (hasBooleanFilters || hasOASFFilters)
+        ? postFilteredAgents.length
+        : searchResults.total;
+
       const response: AgentListResponse = {
         success: true,
         data: sortedAgents,
         meta: {
-          total: searchResults.total,
-          hasMore: searchResults.hasMore,
-          nextCursor: searchResults.nextCursor,
+          total: filteredTotal,
+          hasMore: (hasBooleanFilters || hasOASFFilters)
+            ? postFilteredAgents.length > query.limit
+            : searchResults.hasMore,
+          nextCursor: (hasBooleanFilters || hasOASFFilters) ? undefined : searchResults.nextCursor,
           stats,
         },
       };
@@ -629,7 +636,7 @@ agents.get('/', async (c) => {
 
   const isOrMode = query.filterMode === 'OR' && booleanFilters.length > 1;
 
-  let agentsResult: { items: AgentSummary[]; nextCursor?: string } | undefined;
+  let agentsResult: { items: AgentSummary[]; nextCursor?: string; total?: number } | undefined;
 
   // Fetch chain stats for accurate total count (from KV cache)
   // Use withRegistrationFileCount because this endpoint only returns agents with metadata
@@ -735,18 +742,39 @@ agents.get('/', async (c) => {
     }
   } else {
     // AND mode (default): single query with all filters
+    // Check if we have any =false boolean filters that need post-filtering
+    // SDK subgraph doesn't correctly filter for =false (mcpEndpoint: null vs empty string issue)
+    const hasFalseFilters =
+      query.mcp === false || query.a2a === false || query.x402 === false;
+
     agentsResult = await sdk.getAgents({
       chainIds,
-      limit: query.limit,
+      // Over-fetch if we have =false filters that need post-filtering
+      limit: hasFalseFilters ? Math.min(query.limit * 3, 100) : query.limit,
       cursor: query.cursor,
       active: query.active,
-      hasMcp: query.mcp,
-      hasA2a: query.a2a,
-      hasX402: query.x402,
+      // Only pass true values to SDK - =false is handled via post-filtering
+      hasMcp: query.mcp === true ? true : undefined,
+      hasA2a: query.a2a === true ? true : undefined,
+      hasX402: query.x402 === true ? true : undefined,
       mcpTools: query.mcpTools,
       a2aSkills: query.a2aSkills,
       hasRegistrationFile: query.hasRegistrationFile,
     });
+
+    // Post-filter for =false boolean filters (SDK doesn't handle these correctly)
+    if (hasFalseFilters && agentsResult.items.length > 0) {
+      agentsResult.items = agentsResult.items.filter((agent) => {
+        if (query.mcp === false && agent.hasMcp !== false) return false;
+        if (query.a2a === false && agent.hasA2a !== false) return false;
+        if (query.x402 === false && agent.x402Support !== false) return false;
+        return true;
+      });
+      // Update total to reflect filtered count
+      agentsResult.total = agentsResult.items.length;
+      // Trim to requested limit
+      agentsResult.items = agentsResult.items.slice(0, query.limit);
+    }
   }
 
   // agentsResult is guaranteed to be defined after if/else block
@@ -814,11 +842,24 @@ agents.get('/', async (c) => {
     })),
   };
 
+  // Determine the correct total count:
+  // - Use SDK's filtered total when protocol/active/chain filters are applied
+  // - Fall back to global stats total when no filters are applied
+  const hasFilters =
+    query.active !== undefined ||
+    query.mcp !== undefined ||
+    query.a2a !== undefined ||
+    query.x402 !== undefined ||
+    (chainIds !== undefined && chainIds.length > 0);
+  const filteredTotal = hasFilters && finalAgentsResult.total !== undefined
+    ? finalAgentsResult.total
+    : totalAgentsFromStats;
+
   const response: AgentListResponse = {
     success: true,
     data: sortedAgents,
     meta: {
-      total: totalAgentsFromStats,
+      total: filteredTotal,
       hasMore: !!finalAgentsResult.nextCursor,
       nextCursor: finalAgentsResult.nextCursor,
       stats,
@@ -925,6 +966,158 @@ agents.get('/:agentId', async (c) => {
 
   await cache.set(cacheKey, response, CACHE_TTL.AGENT_DETAIL);
   return c.json(response);
+});
+
+/**
+ * GET /api/v1/agents/:agentId/similar
+ * Find agents with similar OASF classification
+ */
+agents.get('/:agentId/similar', async (c) => {
+  const agentIdParam = c.req.param('agentId');
+
+  // Parse and validate agentId
+  const result = agentIdSchema.safeParse(agentIdParam);
+  if (!result.success) {
+    return errors.validationError(c, result.error.issues[0]?.message ?? 'Invalid agent ID');
+  }
+  const agentId = result.data;
+
+  const parsed = parseAgentId(agentId);
+  if (!parsed) {
+    return errors.validationError(c, 'Invalid agent ID format. Expected: chainId:tokenId');
+  }
+
+  const limitParam = c.req.query('limit');
+  const limit = limitParam ? Math.min(Math.max(1, Number.parseInt(limitParam, 10)), 20) : 10;
+
+  const cache = createCacheService(c.env.CACHE, CACHE_TTL.AGENTS);
+  const cacheKey = CACHE_KEYS.agentDetail(agentId) + `:similar:${limit}`;
+
+  // Check cache
+  const cached = await cache.get(cacheKey);
+  if (cached) {
+    return c.json(cached);
+  }
+
+  try {
+    // Get target agent's classification
+    const classification = await getClassification(c.env.DB, agentId);
+    if (!classification) {
+      return c.json({
+        success: true,
+        data: [],
+        message: 'Agent has no classification - cannot find similar agents',
+      });
+    }
+
+    // Parse skills and domains
+    let targetSkills: string[] = [];
+    let targetDomains: string[] = [];
+    try {
+      const skills = JSON.parse(classification.skills);
+      targetSkills = skills.map((s: { slug: string }) => s.slug);
+    } catch {
+      // Invalid skills JSON
+    }
+    try {
+      const domains = JSON.parse(classification.domains);
+      targetDomains = domains.map((d: { slug: string }) => d.slug);
+    } catch {
+      // Invalid domains JSON
+    }
+
+    if (targetSkills.length === 0 && targetDomains.length === 0) {
+      return c.json({
+        success: true,
+        data: [],
+        message: 'Agent has no skills or domains - cannot find similar agents',
+      });
+    }
+
+    // Query SDK for agents (without skills/domains filter - we'll compute similarity from classifications)
+    const sdk = createSDKService(c.env);
+
+    // Get a batch of classified agents to find similar ones
+    const agentsResult = await sdk.getAgents({ limit: 100 });
+    const candidates = agentsResult.items.filter((a) => a.id !== agentId);
+
+    // Get classifications for candidates to compute similarity
+    const candidateIds = candidates.map((a) => a.id);
+    const classifications = await getClassificationsBatch(c.env.DB, candidateIds);
+
+    // Compute similarity scores
+    interface SimilarAgent extends AgentSummary {
+      similarityScore: number;
+      matchedSkills: string[];
+      matchedDomains: string[];
+    }
+
+    const similarAgents: SimilarAgent[] = [];
+    for (const agent of candidates) {
+      const agentClassification = classifications.get(agent.id);
+      if (!agentClassification) continue;
+
+      let agentSkills: string[] = [];
+      let agentDomains: string[] = [];
+      try {
+        const skills = JSON.parse(agentClassification.skills);
+        agentSkills = skills.map((s: { slug: string }) => s.slug);
+      } catch {
+        // Invalid skills JSON
+      }
+      try {
+        const domains = JSON.parse(agentClassification.domains);
+        agentDomains = domains.map((d: { slug: string }) => d.slug);
+      } catch {
+        // Invalid domains JSON
+      }
+
+      // Calculate overlap
+      const matchedSkills = targetSkills.filter((s) => agentSkills.includes(s));
+      const matchedDomains = targetDomains.filter((d) => agentDomains.includes(d));
+
+      if (matchedSkills.length === 0 && matchedDomains.length === 0) continue;
+
+      // Jaccard-like similarity score
+      const skillUnion = new Set([...targetSkills, ...agentSkills]).size;
+      const domainUnion = new Set([...targetDomains, ...agentDomains]).size;
+
+      const skillSimilarity = skillUnion > 0 ? matchedSkills.length / skillUnion : 0;
+      const domainSimilarity = domainUnion > 0 ? matchedDomains.length / domainUnion : 0;
+
+      // Weight skills more heavily (60% skills, 40% domains)
+      const similarityScore = Math.round((skillSimilarity * 0.6 + domainSimilarity * 0.4) * 100);
+
+      if (similarityScore > 0) {
+        similarAgents.push({
+          ...agent,
+          similarityScore,
+          matchedSkills,
+          matchedDomains,
+        });
+      }
+    }
+
+    // Sort by similarity score and take top N
+    similarAgents.sort((a, b) => b.similarityScore - a.similarityScore);
+    const topSimilar = similarAgents.slice(0, limit);
+
+    const response = {
+      success: true as const,
+      data: topSimilar,
+      meta: {
+        total: topSimilar.length,
+        limit,
+        targetAgent: agentId,
+      },
+    };
+
+    await cache.set(cacheKey, response, CACHE_TTL.AGENTS);
+    return c.json(response);
+  } catch (error) {
+    console.error('Similar agents error:', error);
+    return errors.internalError(c, 'Failed to find similar agents');
+  }
 });
 
 // Mount classification routes

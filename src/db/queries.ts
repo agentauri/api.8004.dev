@@ -518,8 +518,8 @@ export async function insertFeedback(db: D1Database, feedback: NewFeedback): Pro
   await db
     .prepare(
       `INSERT INTO agent_feedback
-       (id, agent_id, chain_id, score, tags, context, feedback_uri, submitter, eas_uid, submitted_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (id, agent_id, chain_id, score, tags, context, feedback_uri, submitter, eas_uid, tx_id, submitted_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -531,6 +531,7 @@ export async function insertFeedback(db: D1Database, feedback: NewFeedback): Pro
       feedback.feedback_uri ?? null,
       feedback.submitter,
       feedback.eas_uid ?? null,
+      feedback.tx_id ?? null,
       feedback.submitted_at
     )
     .run();
@@ -579,6 +580,51 @@ export async function getEasSyncState(
     .first<EasSyncStateRow>();
 
   return result;
+}
+
+/**
+ * Get all classified agent IDs
+ * Used to determine which agents still need classification
+ */
+export async function getClassifiedAgentIds(db: D1Database): Promise<Set<string>> {
+  const result = await db
+    .prepare('SELECT agent_id FROM agent_classifications')
+    .all<{ agent_id: string }>();
+
+  return new Set(result.results.map((r) => r.agent_id));
+}
+
+/**
+ * Get agent IDs currently in queue (pending or processing)
+ */
+export async function getQueuedAgentIds(db: D1Database): Promise<Set<string>> {
+  const result = await db
+    .prepare("SELECT DISTINCT agent_id FROM classification_queue WHERE status IN ('pending', 'processing')")
+    .all<{ agent_id: string }>();
+
+  return new Set(result.results.map((r) => r.agent_id));
+}
+
+/**
+ * Reset failed jobs for retry (clear error and set status back to pending)
+ */
+export async function resetFailedJobs(db: D1Database, limit: number): Promise<number> {
+  // First get the IDs to reset (most recent failures for each unique agent)
+  const result = await db
+    .prepare(
+      `UPDATE classification_queue
+       SET status = 'pending', error = NULL, attempts = 0
+       WHERE id IN (
+         SELECT id FROM classification_queue
+         WHERE status = 'failed'
+         ORDER BY created_at DESC
+         LIMIT ?
+       )`
+    )
+    .bind(limit)
+    .run();
+
+  return result.meta.changes;
 }
 
 /**

@@ -45,6 +45,8 @@ export interface AgentFeedback {
   submitter: string;
   /** ISO timestamp when feedback was submitted */
   timestamp: string;
+  /** Transaction hash from EAS attestation */
+  transactionHash?: string;
 }
 
 /**
