@@ -6,8 +6,8 @@
 import {
   enqueueClassificationsBatch,
   getClassifiedAgentIds,
-  getQueuedAgentIds,
   getQueueStatus,
+  getQueuedAgentIds,
   incrementJobAttempts,
   markJobProcessing,
   resetFailedJobs,

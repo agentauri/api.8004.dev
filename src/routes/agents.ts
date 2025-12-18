@@ -443,19 +443,19 @@ agents.get('/', async (c) => {
       };
 
       // Use post-filtered count when filters are applied, otherwise use search service total
-      const filteredTotal = (hasBooleanFilters || hasOASFFilters)
-        ? postFilteredAgents.length
-        : searchResults.total;
+      const filteredTotal =
+        hasBooleanFilters || hasOASFFilters ? postFilteredAgents.length : searchResults.total;
 
       const response: AgentListResponse = {
         success: true,
         data: sortedAgents,
         meta: {
           total: filteredTotal,
-          hasMore: (hasBooleanFilters || hasOASFFilters)
-            ? postFilteredAgents.length > query.limit
-            : searchResults.hasMore,
-          nextCursor: (hasBooleanFilters || hasOASFFilters) ? undefined : searchResults.nextCursor,
+          hasMore:
+            hasBooleanFilters || hasOASFFilters
+              ? postFilteredAgents.length > query.limit
+              : searchResults.hasMore,
+          nextCursor: hasBooleanFilters || hasOASFFilters ? undefined : searchResults.nextCursor,
           stats,
         },
       };
@@ -744,8 +744,7 @@ agents.get('/', async (c) => {
     // AND mode (default): single query with all filters
     // Check if we have any =false boolean filters that need post-filtering
     // SDK subgraph doesn't correctly filter for =false (mcpEndpoint: null vs empty string issue)
-    const hasFalseFilters =
-      query.mcp === false || query.a2a === false || query.x402 === false;
+    const hasFalseFilters = query.mcp === false || query.a2a === false || query.x402 === false;
 
     agentsResult = await sdk.getAgents({
       chainIds,
@@ -851,9 +850,10 @@ agents.get('/', async (c) => {
     query.a2a !== undefined ||
     query.x402 !== undefined ||
     (chainIds !== undefined && chainIds.length > 0);
-  const filteredTotal = hasFilters && finalAgentsResult.total !== undefined
-    ? finalAgentsResult.total
-    : totalAgentsFromStats;
+  const filteredTotal =
+    hasFilters && finalAgentsResult.total !== undefined
+      ? finalAgentsResult.total
+      : totalAgentsFromStats;
 
   const response: AgentListResponse = {
     success: true,
@@ -991,7 +991,7 @@ agents.get('/:agentId/similar', async (c) => {
   const limit = limitParam ? Math.min(Math.max(1, Number.parseInt(limitParam, 10)), 20) : 10;
 
   const cache = createCacheService(c.env.CACHE, CACHE_TTL.AGENTS);
-  const cacheKey = CACHE_KEYS.agentDetail(agentId) + `:similar:${limit}`;
+  const cacheKey = `${CACHE_KEYS.agentDetail(agentId)}:similar:${limit}`;
 
   // Check cache
   const cached = await cache.get(cacheKey);
