@@ -396,11 +396,14 @@ describe('SDK search method', () => {
     expect(result.hasMore).toBe(false);
   });
 
-  it('throws SDKError when SDK fails', async () => {
+  it('returns empty results when SDK fails (graceful degradation with Promise.allSettled)', async () => {
     mockConfig.searchAgentsError = new Error('SDK connection failed');
     const sdk = createSDKService(mockEnv);
 
-    await expect(sdk.search({ query: 'test' })).rejects.toThrow(SDKError);
+    // With Promise.allSettled, failed chain queries return empty results instead of throwing
+    const result = await sdk.search({ query: 'test' });
+    expect(result.items).toEqual([]);
+    expect(result.total).toBe(0);
   });
 
   it('calculates byChain breakdown correctly', async () => {
