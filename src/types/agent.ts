@@ -6,6 +6,7 @@
 import type { OASFClassification } from './classification';
 import type { MetadataAttribute, OASFEndpoint, OASFSource, SocialLinks } from './ipfs';
 import type { AgentReputation } from './reputation';
+import type { SearchMode } from './search';
 
 /**
  * Supported blockchain chain IDs
@@ -248,6 +249,8 @@ export interface AgentListResponse {
     nextCursor?: string;
     /** Platform-wide agent statistics */
     stats?: AgentListStats;
+    /** Search mode used when q= parameter is provided */
+    searchMode?: SearchMode;
   };
 }
 
