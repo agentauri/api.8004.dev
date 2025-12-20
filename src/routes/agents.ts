@@ -457,6 +457,7 @@ agents.get('/', async (c) => {
               : searchResults.hasMore,
           nextCursor: hasBooleanFilters || hasOASFFilters ? undefined : searchResults.nextCursor,
           stats,
+          searchMode: 'vector',
         },
       };
 
@@ -600,6 +601,7 @@ agents.get('/', async (c) => {
             hasMore: postFilteredAgents.length > query.limit,
             nextCursor: sdkSearchResult.nextCursor,
             stats,
+            searchMode: 'fallback',
           },
         };
 
