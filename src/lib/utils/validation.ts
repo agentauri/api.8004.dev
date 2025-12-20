@@ -146,22 +146,13 @@ export const listAgentsQuerySchema = z
       .optional(),
     filterMode: z.enum(['AND', 'OR']).optional(),
     minScore: z.coerce.number().min(0).max(1).optional(),
-    minRep: z.coerce.number().int().min(0).max(100).optional(),
-    maxRep: z.coerce.number().int().min(0).max(100).optional(),
+    minRep: z.coerce.number().min(0).max(100).optional(),
+    maxRep: z.coerce.number().min(0).max(100).optional(),
     sort: sortFieldSchema.optional(),
     order: sortOrderSchema.optional(),
     limit: z.coerce.number().int().min(1).max(100).default(20),
     cursor: z.string().optional(),
-  })
-  .refine(
-    (data) => {
-      if (data.minRep !== undefined && data.maxRep !== undefined) {
-        return data.minRep <= data.maxRep;
-      }
-      return true;
-    },
-    { message: 'minRep must be less than or equal to maxRep' }
-  );
+  });
 
 export type ListAgentsQuery = z.infer<typeof listAgentsQuerySchema>;
 
