@@ -959,7 +959,15 @@ export function createSDKService(env: Env): SDKService {
         // Request more items than needed to ensure we can fill the page after sorting
         const perChainLimit = Math.ceil(limit * 1.5);
 
-        const chainPromises = chainsToQuery.map(async (chainConfig) => {
+        // Filter out exhausted chains (offset === -1) before querying
+        const activeChains = chainsToQuery.filter((chainConfig) => {
+          const offset = chainOffsets[chainConfig.chainId];
+          // Skip chains marked as exhausted (-1)
+          // undefined means first page (not exhausted yet)
+          return offset !== -1;
+        });
+
+        const chainPromises = activeChains.map(async (chainConfig) => {
           const sdk = getSDK(chainConfig.chainId);
           const searchParams: SearchParams = {
             ...baseSearchParams,
@@ -972,7 +980,7 @@ export function createSDKService(env: Env): SDKService {
             searchParams,
             ['createdAt:desc'],
             perChainLimit,
-            chainCursor ? String(chainCursor) : undefined
+            chainCursor && chainCursor > 0 ? String(chainCursor) : undefined
           );
 
           return {
@@ -987,13 +995,18 @@ export function createSDKService(env: Env): SDKService {
 
         // Track totals and cursors from each chain
         let totalAcrossChains = 0;
-        const newChainOffsets: Record<number, number> = {};
+        // Start with previous offsets to preserve exhausted chains (-1)
+        const newChainOffsets: Record<number, number> = { ...chainOffsets };
 
         for (const result of chainResults) {
           totalAcrossChains += result.total;
-          // Track cursor for each chain
+          // Track cursor for each chain - ALWAYS store offset, even if exhausted
+          // -1 indicates chain is exhausted (no more items)
           if (result.nextCursor) {
             newChainOffsets[result.chainId] = Number.parseInt(result.nextCursor, 10) || 0;
+          } else {
+            // Chain is exhausted - mark with -1 so we skip it on next page
+            newChainOffsets[result.chainId] = -1;
           }
         }
 
