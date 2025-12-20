@@ -377,6 +377,171 @@ async function fetchAgentExtrasFromSubgraph(
 }
 
 /**
+ * Feedback record from subgraph
+ */
+export interface SubgraphFeedback {
+  id: string;
+  score: number;
+  clientAddress: string;
+  tag1?: string;
+  tag2?: string;
+  feedbackUri?: string;
+  createdAt: string;
+  isRevoked: boolean;
+}
+
+/**
+ * Validation record from subgraph
+ */
+export interface SubgraphValidation {
+  id: string;
+  validatorAddress: string;
+  status: 'PENDING' | 'COMPLETED' | 'FAILED';
+  tag?: string;
+  requestUri?: string;
+  responseUri?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Fetch feedbacks for an agent directly from subgraph
+ * @param chainId - Chain ID
+ * @param agentId - Agent ID in format "chainId:tokenId"
+ * @param limit - Maximum number of feedbacks to return
+ * @returns Feedback records from subgraph
+ */
+export async function fetchFeedbacksFromSubgraph(
+  chainId: number,
+  agentId: string,
+  limit = 100
+): Promise<SubgraphFeedback[]> {
+  const url = SUBGRAPH_URLS[chainId];
+  if (!url) return [];
+
+  try {
+    const query = `{
+      feedbacks(where: {agent: "${agentId}"}, first: ${limit}, orderBy: createdAt, orderDirection: desc) {
+        id
+        score
+        clientAddress
+        tag1
+        tag2
+        feedbackUri
+        createdAt
+        isRevoked
+      }
+    }`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+    });
+
+    if (!response.ok) return [];
+
+    const data = (await response.json()) as {
+      data?: {
+        feedbacks?: Array<{
+          id: string;
+          score: number;
+          clientAddress: string;
+          tag1?: string;
+          tag2?: string;
+          feedbackUri?: string;
+          createdAt: string;
+          isRevoked: boolean;
+        }>;
+      };
+    };
+
+    return data?.data?.feedbacks || [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetch validations for an agent directly from subgraph
+ * @param chainId - Chain ID
+ * @param agentId - Agent ID in format "chainId:tokenId"
+ * @param limit - Maximum number of validations to return
+ * @returns Validation records from subgraph
+ */
+export async function fetchValidationsFromSubgraph(
+  chainId: number,
+  agentId: string,
+  limit = 100
+): Promise<SubgraphValidation[]> {
+  const url = SUBGRAPH_URLS[chainId];
+  if (!url) return [];
+
+  try {
+    const query = `{
+      validations(where: {agent: "${agentId}"}, first: ${limit}, orderBy: createdAt, orderDirection: desc) {
+        id
+        validatorAddress
+        status
+        tag
+        requestUri
+        responseUri
+        createdAt
+        updatedAt
+      }
+    }`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+    });
+
+    if (!response.ok) return [];
+
+    const data = (await response.json()) as {
+      data?: {
+        validations?: Array<{
+          id: string;
+          validatorAddress: string;
+          status: 'PENDING' | 'COMPLETED' | 'FAILED';
+          tag?: string;
+          requestUri?: string;
+          responseUri?: string;
+          createdAt: string;
+          updatedAt: string;
+        }>;
+      };
+    };
+
+    return data?.data?.validations || [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetch reputation summary from SDK
+ * @param sdk - SDK instance
+ * @param agentId - Agent ID in format "chainId:tokenId"
+ * @returns Reputation summary or null
+ */
+export async function fetchReputationFromSDK(
+  sdk: SDK,
+  agentId: string
+): Promise<{ count: number; averageScore: number } | null> {
+  try {
+    const result = await sdk.getReputationSummary(agentId);
+    if (result && typeof result.count === 'number' && typeof result.averageScore === 'number') {
+      return { count: result.count, averageScore: result.averageScore };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Compute warnings for an agent based on its data quality
  */
 function computeAgentWarnings(agent: {
@@ -1218,15 +1383,19 @@ export function createSDKService(env: Env): SDKService {
             }
           }
 
-          const results = await Promise.all(searchPromises);
+          const results = await Promise.allSettled(searchPromises);
 
-          // Merge and deduplicate by agentId
+          // Merge and deduplicate by agentId (only from successful chain queries)
           const agentMap = new Map<string, AgentSummary>();
-          for (const items of results) {
-            for (const agent of items) {
-              if (!agentMap.has(agent.id)) {
-                agentMap.set(agent.id, agent);
+          for (const result of results) {
+            if (result.status === 'fulfilled') {
+              for (const agent of result.value) {
+                if (!agentMap.has(agent.id)) {
+                  agentMap.set(agent.id, agent);
+                }
               }
+            } else {
+              console.warn('Chain search failed in OR mode:', result.reason);
             }
           }
           allItems = [...agentMap.values()];
@@ -1301,11 +1470,15 @@ export function createSDKService(env: Env): SDKService {
               return chainItems;
             });
 
-            const chainResults = await Promise.all(chainSearchPromises);
+            const chainResults = await Promise.allSettled(chainSearchPromises);
 
-            // Merge results from all chains
-            for (const items of chainResults) {
-              allItems.push(...items);
+            // Merge results from all chains (only from successful queries)
+            for (const result of chainResults) {
+              if (result.status === 'fulfilled') {
+                allItems.push(...result.value);
+              } else {
+                console.warn('Chain search failed with query:', result.reason);
+              }
             }
           } else {
             // No query - query each chain separately and merge results
@@ -1323,33 +1496,37 @@ export function createSDKService(env: Env): SDKService {
               return result.items;
             });
 
-            const chainResults = await Promise.all(chainSearchPromises);
+            const chainResults = await Promise.allSettled(chainSearchPromises);
 
-            for (const items of chainResults) {
-              for (const agent of items) {
-                const parts = agent.agentId.split(':');
-                const chainIdStr = parts[0] || '0';
-                const tokenId = parts[1] || '0';
+            for (const result of chainResults) {
+              if (result.status === 'fulfilled') {
+                for (const agent of result.value) {
+                  const parts = agent.agentId.split(':');
+                  const chainIdStr = parts[0] || '0';
+                  const tokenId = parts[1] || '0';
 
-                allItems.push({
-                  id: agent.agentId,
-                  chainId: Number.parseInt(chainIdStr, 10),
-                  tokenId,
-                  name: agent.name,
-                  description: agent.description,
-                  image: agent.image,
-                  active: agent.active,
-                  hasMcp: agent.mcp,
-                  hasA2a: agent.a2a,
-                  x402Support: agent.x402support,
-                  supportedTrust: deriveSupportedTrust(agent.x402support),
-                  operators: agent.operators || [],
-                  ens: agent.ens || undefined,
-                  did: agent.did || undefined,
-                  walletAddress: agent.walletAddress || undefined,
-                  inputModes: agent.mcpPrompts?.length ? ['mcp-prompt'] : undefined,
-                  outputModes: agent.mcpResources?.length ? ['mcp-resource'] : undefined,
-                });
+                  allItems.push({
+                    id: agent.agentId,
+                    chainId: Number.parseInt(chainIdStr, 10),
+                    tokenId,
+                    name: agent.name,
+                    description: agent.description,
+                    image: agent.image,
+                    active: agent.active,
+                    hasMcp: agent.mcp,
+                    hasA2a: agent.a2a,
+                    x402Support: agent.x402support,
+                    supportedTrust: deriveSupportedTrust(agent.x402support),
+                    operators: agent.operators || [],
+                    ens: agent.ens || undefined,
+                    did: agent.did || undefined,
+                    walletAddress: agent.walletAddress || undefined,
+                    inputModes: agent.mcpPrompts?.length ? ['mcp-prompt'] : undefined,
+                    outputModes: agent.mcpResources?.length ? ['mcp-resource'] : undefined,
+                  });
+                }
+              } else {
+                console.warn('Chain search failed without query:', result.reason);
               }
             }
           }

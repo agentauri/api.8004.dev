@@ -99,10 +99,11 @@ describe('Global error handler', () => {
     mockFetch.mockReset();
   });
 
-  it('handles unexpected errors gracefully', async () => {
+  it('handles unexpected errors gracefully with graceful degradation', async () => {
     const { mockConfig } = await import('../mocks/agent0-sdk');
 
     // Simulate an error by mocking both vector search and SDK fallback to fail
+    // With Promise.allSettled, this returns empty results instead of 500
     mockFetch.mockRejectedValue(new Error('Unexpected error'));
     mockConfig.searchAgentsError = new Error('SDK also failed');
 
@@ -118,11 +119,13 @@ describe('Global error handler', () => {
     const response = await app.fetch(request, createMockEnv() as unknown as typeof env, ctx);
     await waitOnExecutionContext(ctx);
 
-    expect(response.status).toBe(500);
+    // With Promise.allSettled, graceful degradation returns empty results instead of 500
+    expect(response.status).toBe(200);
 
     const body = await response.json();
-    expect(body.success).toBe(false);
-    expect(body.code).toBe('INTERNAL_ERROR');
+    expect(body.success).toBe(true);
+    expect(body.data).toEqual([]);
+    expect(body.meta.searchMode).toBe('fallback');
 
     // Clean up
     mockConfig.searchAgentsError = null;

@@ -360,12 +360,12 @@ describe('Search fallback to SDK', () => {
     }
   });
 
-  it('returns 500 when both vector search and SDK fallback fail', async () => {
+  it('returns empty results when both vector search and SDK fallback fail (graceful degradation)', async () => {
     const { mockConfig } = await import('../../mocks/agent0-sdk');
 
     // Vector search fails
     mockFetch.mockRejectedValueOnce(new Error('Search service error'));
-    // SDK search also fails
+    // SDK search also fails (but with Promise.allSettled, we get empty results instead of error)
     mockConfig.searchAgentsError = new Error('SDK also failed');
 
     const response = await testRoute('/api/v1/search', {
@@ -373,10 +373,12 @@ describe('Search fallback to SDK', () => {
       body: { query: 'test' },
     });
 
-    expect(response.status).toBe(500);
+    // With Promise.allSettled, graceful degradation returns empty results instead of 500
+    expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body.success).toBe(false);
-    expect(body.code).toBe('INTERNAL_ERROR');
+    expect(body.success).toBe(true);
+    expect(body.data).toEqual([]);
+    expect(body.meta.searchMode).toBe('fallback');
 
     // Clean up
     mockConfig.searchAgentsError = null;
