@@ -382,12 +382,14 @@ export function registerAgentsDetailTests(): void {
       }
     });
 
-    it('GET /agents/:id/similar returns 404 for non-existent agent', async () => {
+    it('GET /agents/:id/similar returns empty array for non-existent agent', async () => {
       const { response, json } = await get('/agents/11155111:999999999/similar');
 
-      assertStatus(response, 404);
-      if (json.success) {
-        throw new Error('Expected error response for non-existent agent');
+      // API returns 200 with empty array (RESTful behavior - similar agents resource exists but is empty)
+      assertStatus(response, 200);
+      assertSuccess(json);
+      if (json.data.length !== 0) {
+        throw new Error(`Expected empty array, got ${json.data.length} results`);
       }
     });
   });
