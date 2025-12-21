@@ -64,6 +64,7 @@ export function assertSomeMatch<T>(
 
 /**
  * Assert that items are sorted correctly
+ * Uses case-insensitive comparison for strings to match API's localeCompare behavior
  */
 export function assertSorted<T>(
   items: T[],
@@ -82,7 +83,14 @@ export function assertSorted<T>(
       continue; // Skip undefined/null values
     }
 
-    const isValid = order === 'asc' ? prev <= curr : prev >= curr;
+    // Use localeCompare for strings (case-insensitive), <= for numbers
+    let isValid: boolean;
+    if (typeof prev === 'string' && typeof curr === 'string') {
+      const cmp = prev.localeCompare(curr, undefined, { sensitivity: 'base' });
+      isValid = order === 'asc' ? cmp <= 0 : cmp >= 0;
+    } else {
+      isValid = order === 'asc' ? prev <= curr : prev >= curr;
+    }
 
     if (!isValid) {
       throw new AssertionError(
