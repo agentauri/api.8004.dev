@@ -17,6 +17,7 @@ Backend service for [8004.dev](https://8004.dev) - the ERC-8004 Agent Explorer.
 ## Features
 
 - RESTful API with OpenAPI specification
+- **MCP Server** for AI assistant integration (Claude, ChatGPT, etc.)
 - Semantic search for agents
 - OASF skill and domain classification
 - Multi-chain support (Ethereum Sepolia, Base Sepolia, Polygon Amoy)
@@ -79,6 +80,71 @@ curl -X POST https://api.8004.dev/api/v1/search \
 
 # Get agent details
 curl https://api.8004.dev/api/v1/agents/11155111:1
+```
+
+## MCP Server
+
+The API also exposes an [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server, allowing AI assistants like Claude to interact with agent data directly.
+
+### Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /mcp` | Server info and capabilities |
+| `POST /mcp` | JSON-RPC 2.0 endpoint |
+| `GET /sse` | Server-Sent Events stream |
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `search_agents` | Semantic search for agents by name, description, or capabilities |
+| `get_agent` | Get detailed information about a specific agent |
+| `list_agents` | List agents with optional filters (chain, MCP, A2A, skills, domains) |
+| `get_chain_stats` | Get statistics for all supported blockchain networks |
+
+### Available Resources
+
+| URI | Description |
+|-----|-------------|
+| `8004://taxonomy/skills` | OASF skills taxonomy (136 skills) |
+| `8004://taxonomy/domains` | OASF domains taxonomy (204 domains) |
+| `8004://stats/chains` | Chain statistics |
+
+### Available Prompts
+
+| Prompt | Description |
+|--------|-------------|
+| `find_agent_for_task` | Help find the right agent for a specific task |
+| `explore_domain` | Explore agents in a specific domain |
+
+### Connect with Claude Desktop
+
+Add to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "8004-agents": {
+      "command": "npx",
+      "args": ["mcp-remote", "https://api.8004.dev/sse"]
+    }
+  }
+}
+```
+
+### Example MCP Request
+
+```bash
+# Initialize connection
+curl -X POST https://api.8004.dev/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0.0"}}}'
+
+# Search for agents
+curl -X POST https://api.8004.dev/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"search_agents","arguments":{"query":"trading bot","limit":5}}}'
 ```
 
 ## Tech Stack

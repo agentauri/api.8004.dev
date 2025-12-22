@@ -20,7 +20,13 @@
     "db:migrate": "wrangler d1 execute 8004-backend-db --file=./migrations/0001_init.sql",
     "db:migrate:local": "wrangler d1 execute 8004-backend-db --local --file=./migrations/0001_init.sql"
   },
-  "keywords": ["erc-8004", "agents", "cloudflare-workers", "hono", "oasf"],
+  "keywords": [
+    "erc-8004",
+    "agents",
+    "cloudflare-workers",
+    "hono",
+    "oasf"
+  ],
   "author": "Agent0 Lab",
   "license": "MIT",
   "repository": {
@@ -34,6 +40,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
     "@google/generative-ai": "^0.24.1",
+    "@modelcontextprotocol/sdk": "^1.23.0",
     "agent0-sdk": "^0.31.0",
     "hono": "^4.6.12",
     "viem": "^2.41.2",
