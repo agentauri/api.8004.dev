@@ -163,8 +163,8 @@ describe('listAgentsQuerySchema', () => {
     // Valid: minRep = maxRep
     expect(() => listAgentsQuerySchema.parse({ minRep: '50', maxRep: '50' })).not.toThrow();
 
-    // Invalid: minRep > maxRep
-    expect(() => listAgentsQuerySchema.parse({ minRep: '90', maxRep: '10' })).toThrow();
+    // Valid: minRep > maxRep (impossible range - returns empty results, doesn't throw)
+    expect(() => listAgentsQuerySchema.parse({ minRep: '90', maxRep: '10' })).not.toThrow();
   });
 });
 

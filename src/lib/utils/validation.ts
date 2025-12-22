@@ -114,45 +114,44 @@ export const sortOrderSchema = z.enum(['asc', 'desc']).default('desc');
 /**
  * List agents query parameters schema
  */
-export const listAgentsQuerySchema = z
-  .object({
-    q: z.string().min(1).optional(),
-    chainId: chainIdSchema.optional(),
-    chains: chainsSchema.optional(),
-    // Alias for chains - supports chainIds=X,Y format
-    chainIds: chainsSchema.optional(),
-    // Alias with brackets - supports chainIds[]=X&chainIds[]=Y format (URL standard array notation)
-    'chainIds[]': chainsSchema.optional(),
-    active: stringBooleanSchema.optional(),
-    mcp: stringBooleanSchema.optional(),
-    a2a: stringBooleanSchema.optional(),
-    x402: stringBooleanSchema.optional(),
-    hasRegistrationFile: stringBooleanSchema.optional(),
-    skills: z
-      .string()
-      .transform((val) => val.split(',').map((s) => s.trim()))
-      .optional(),
-    domains: z
-      .string()
-      .transform((val) => val.split(',').map((s) => s.trim()))
-      .optional(),
-    mcpTools: z
-      .string()
-      .transform((val) => val.split(',').map((s) => s.trim()))
-      .optional(),
-    a2aSkills: z
-      .string()
-      .transform((val) => val.split(',').map((s) => s.trim()))
-      .optional(),
-    filterMode: z.enum(['AND', 'OR']).optional(),
-    minScore: z.coerce.number().min(0).max(1).optional(),
-    minRep: z.coerce.number().min(0).max(100).optional(),
-    maxRep: z.coerce.number().min(0).max(100).optional(),
-    sort: sortFieldSchema.optional(),
-    order: sortOrderSchema.optional(),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
-    cursor: z.string().optional(),
-  });
+export const listAgentsQuerySchema = z.object({
+  q: z.string().min(1).optional(),
+  chainId: chainIdSchema.optional(),
+  chains: chainsSchema.optional(),
+  // Alias for chains - supports chainIds=X,Y format
+  chainIds: chainsSchema.optional(),
+  // Alias with brackets - supports chainIds[]=X&chainIds[]=Y format (URL standard array notation)
+  'chainIds[]': chainsSchema.optional(),
+  active: stringBooleanSchema.optional(),
+  mcp: stringBooleanSchema.optional(),
+  a2a: stringBooleanSchema.optional(),
+  x402: stringBooleanSchema.optional(),
+  hasRegistrationFile: stringBooleanSchema.optional(),
+  skills: z
+    .string()
+    .transform((val) => val.split(',').map((s) => s.trim()))
+    .optional(),
+  domains: z
+    .string()
+    .transform((val) => val.split(',').map((s) => s.trim()))
+    .optional(),
+  mcpTools: z
+    .string()
+    .transform((val) => val.split(',').map((s) => s.trim()))
+    .optional(),
+  a2aSkills: z
+    .string()
+    .transform((val) => val.split(',').map((s) => s.trim()))
+    .optional(),
+  filterMode: z.enum(['AND', 'OR']).optional(),
+  minScore: z.coerce.number().min(0).max(1).optional(),
+  minRep: z.coerce.number().min(0).max(100).optional(),
+  maxRep: z.coerce.number().min(0).max(100).optional(),
+  sort: sortFieldSchema.optional(),
+  order: sortOrderSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  cursor: z.string().optional(),
+});
 
 export type ListAgentsQuery = z.infer<typeof listAgentsQuerySchema>;
 
