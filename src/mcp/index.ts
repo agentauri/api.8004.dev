@@ -584,6 +584,218 @@ async function handleMCPRequest(request: MCPRequest, env: Env): Promise<MCPRespo
 }
 
 /**
+ * Generate HTML documentation page for MCP server
+ */
+function generateDocsHtml(): string {
+  const toolsHtml = TOOLS.map(
+    (tool) => `
+    <div class="card">
+      <h3><code>${tool.name}</code></h3>
+      <p>${tool.description}</p>
+      <h4>Parameters</h4>
+      <pre><code>${JSON.stringify(tool.inputSchema, null, 2)}</code></pre>
+    </div>`
+  ).join('\n');
+
+  const resourcesHtml = RESOURCES.map(
+    (resource) => `
+    <div class="card">
+      <h3><code>${resource.uri}</code></h3>
+      <p><strong>${resource.name}</strong></p>
+      <p>${resource.description}</p>
+      <span class="badge">${resource.mimeType}</span>
+    </div>`
+  ).join('\n');
+
+  const promptsHtml = PROMPTS.map(
+    (prompt) => `
+    <div class="card">
+      <h3><code>${prompt.name}</code></h3>
+      <p>${prompt.description}</p>
+      ${
+        prompt.arguments
+          ? `<h4>Arguments</h4>
+        <ul>
+          ${prompt.arguments.map((arg) => `<li><code>${arg.name}</code>${arg.required ? ' (required)' : ''}: ${arg.description}</li>`).join('\n')}
+        </ul>`
+          : ''
+      }
+    </div>`
+  ).join('\n');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>8004 MCP Server Documentation</title>
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --card-bg: #141414;
+      --border: #2a2a2a;
+      --text: #e5e5e5;
+      --text-muted: #888;
+      --accent: #3b82f6;
+      --accent-hover: #60a5fa;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 2rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    header {
+      margin-bottom: 3rem;
+      padding-bottom: 2rem;
+      border-bottom: 1px solid var(--border);
+    }
+    h1 { font-size: 2.5rem; margin-bottom: 0.5rem; }
+    .subtitle { color: var(--text-muted); font-size: 1.1rem; }
+    .meta { margin-top: 1rem; display: flex; gap: 1.5rem; flex-wrap: wrap; }
+    .meta-item { color: var(--text-muted); font-size: 0.9rem; }
+    .meta-item code { background: var(--card-bg); padding: 0.2rem 0.5rem; border-radius: 4px; }
+    h2 { font-size: 1.5rem; margin: 2rem 0 1rem; color: var(--accent); }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 1rem;
+    }
+    .card h3 { font-size: 1.1rem; margin-bottom: 0.5rem; }
+    .card h3 code { color: var(--accent); background: none; }
+    .card h4 { font-size: 0.9rem; margin: 1rem 0 0.5rem; color: var(--text-muted); }
+    .card p { color: var(--text-muted); margin-bottom: 0.5rem; }
+    .card pre {
+      background: var(--bg);
+      padding: 1rem;
+      border-radius: 4px;
+      overflow-x: auto;
+      font-size: 0.85rem;
+    }
+    .card ul { padding-left: 1.5rem; }
+    .card li { color: var(--text-muted); margin: 0.25rem 0; }
+    .card li code { color: var(--text); }
+    .badge {
+      display: inline-block;
+      background: var(--accent);
+      color: white;
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+    }
+    .endpoints {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    .endpoint {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+    }
+    .endpoint code { color: var(--accent); }
+    .connect-box {
+      background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%);
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin: 2rem 0;
+    }
+    .connect-box h3 { margin-bottom: 1rem; }
+    .connect-box pre {
+      background: var(--bg);
+      padding: 1rem;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    footer {
+      margin-top: 3rem;
+      padding-top: 2rem;
+      border-top: 1px solid var(--border);
+      color: var(--text-muted);
+      text-align: center;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { color: var(--accent-hover); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>8004 MCP Server</h1>
+    <p class="subtitle">Model Context Protocol server for exploring ERC-8004 AI agents</p>
+    <div class="meta">
+      <span class="meta-item">Version: <code>${SERVER_INFO.version}</code></span>
+      <span class="meta-item">Protocol: <code>${SERVER_INFO.protocolVersion}</code></span>
+      <span class="meta-item">Schema: <a href="/mcp/schema.json">/mcp/schema.json</a></span>
+    </div>
+  </header>
+
+  <section>
+    <h2>Endpoints</h2>
+    <div class="endpoints">
+      <div class="endpoint">
+        <strong>JSON-RPC</strong>
+        <p><code>POST /mcp</code></p>
+      </div>
+      <div class="endpoint">
+        <strong>SSE Stream</strong>
+        <p><code>GET /sse</code></p>
+      </div>
+      <div class="endpoint">
+        <strong>Server Info</strong>
+        <p><code>GET /mcp</code></p>
+      </div>
+      <div class="endpoint">
+        <strong>JSON Schema</strong>
+        <p><code>GET /mcp/schema.json</code></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="connect-box">
+    <h3>Connect with Claude Desktop</h3>
+    <p style="color: var(--text-muted); margin-bottom: 1rem;">Add to your <code>claude_desktop_config.json</code>:</p>
+    <pre><code>{
+  "mcpServers": {
+    "8004-agents": {
+      "command": "npx",
+      "args": ["mcp-remote", "https://api.8004.dev/sse"]
+    }
+  }
+}</code></pre>
+  </section>
+
+  <section>
+    <h2>Tools (${TOOLS.length})</h2>
+    ${toolsHtml}
+  </section>
+
+  <section>
+    <h2>Resources (${RESOURCES.length})</h2>
+    ${resourcesHtml}
+  </section>
+
+  <section>
+    <h2>Prompts (${PROMPTS.length})</h2>
+    ${promptsHtml}
+  </section>
+
+  <footer>
+    <p>Powered by <a href="https://8004.dev">8004.dev</a> &middot; <a href="https://modelcontextprotocol.io">Model Context Protocol</a></p>
+  </footer>
+</body>
+</html>`;
+}
+
+/**
  * Create the MCP request handler for Cloudflare Workers
  * Supports both SSE streaming and JSON responses
  */
@@ -664,6 +876,54 @@ export function createMcp8004Handler(env: Env) {
       }
     }
 
+    // JSON Schema endpoint
+    if (url.pathname === '/mcp/schema.json' && request.method === 'GET') {
+      const schema = {
+        $schema: 'https://json-schema.org/draft/2020-12/schema',
+        $id: 'https://api.8004.dev/mcp/schema.json',
+        title: '8004 MCP Server Schema',
+        description: 'JSON Schema for 8004.dev MCP server tools, resources, and prompts',
+        version: SERVER_INFO.version,
+        protocolVersion: SERVER_INFO.protocolVersion,
+        tools: TOOLS.map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          inputSchema: tool.inputSchema,
+        })),
+        resources: RESOURCES.map((resource) => ({
+          uri: resource.uri,
+          name: resource.name,
+          description: resource.description,
+          mimeType: resource.mimeType,
+        })),
+        prompts: PROMPTS.map((prompt) => ({
+          name: prompt.name,
+          description: prompt.description,
+          arguments: prompt.arguments,
+        })),
+      };
+
+      return new Response(JSON.stringify(schema, null, 2), {
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'public, max-age=3600',
+        },
+      });
+    }
+
+    // Documentation HTML endpoint
+    if (url.pathname === '/mcp/docs' && request.method === 'GET') {
+      const html = generateDocsHtml();
+      return new Response(html, {
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'public, max-age=300',
+        },
+      });
+    }
+
     // Info endpoint
     if (request.method === 'GET') {
       return new Response(
@@ -675,6 +935,8 @@ export function createMcp8004Handler(env: Env) {
           endpoints: {
             jsonRpc: '/mcp',
             sse: '/sse',
+            docs: '/mcp/docs',
+            schema: '/mcp/schema.json',
           },
           tools: TOOLS.map((t) => t.name),
           resources: RESOURCES.map((r) => r.uri),
