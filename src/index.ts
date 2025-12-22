@@ -24,6 +24,7 @@ import {
 } from '@/lib/middleware';
 import { handleError } from '@/lib/utils/errors';
 import { parseAgentId } from '@/lib/utils/validation';
+import { createMcp8004Handler } from '@/mcp';
 import { agents, chains, health, openapi, search, stats, taxonomy } from '@/routes';
 import { createClassifierService } from '@/services/classifier';
 import { createEASIndexerService } from '@/services/eas-indexer';
@@ -284,9 +285,67 @@ async function batchClassifyAgents(env: Env): Promise<void> {
 
 // Export for Cloudflare Workers
 export default {
-  fetch: (request: Request, env: Env, ctx: ExecutionContext) => {
+  fetch: async (request: Request, env: Env, ctx: ExecutionContext) => {
     // Validate environment on first request
     validateEnv(env);
+
+    // Handle MCP routes (public access with rate limiting)
+    const url = new URL(request.url);
+    if (url.pathname.startsWith('/mcp') || url.pathname.startsWith('/sse')) {
+      // Simple rate limiting for MCP endpoints using KV
+      const clientIp = request.headers.get('CF-Connecting-IP') || 'anonymous';
+      const rateLimitKey = `mcp-ratelimit:${clientIp}`;
+      const now = Math.floor(Date.now() / 1000);
+      const window = 60; // 60 second window
+      const limit = 60; // 60 requests per minute
+
+      try {
+        const entryStr = await env.CACHE.get(rateLimitKey);
+        let count = 0;
+        let resetAt = now + window;
+
+        if (entryStr) {
+          const entry = JSON.parse(entryStr) as { count: number; resetAt: number };
+          if (now < entry.resetAt) {
+            count = entry.count;
+            resetAt = entry.resetAt;
+          }
+        }
+
+        count++;
+
+        if (count > limit) {
+          return new Response(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              error: { code: -32000, message: 'Rate limit exceeded. Try again later.' },
+            }),
+            {
+              status: 429,
+              headers: {
+                'Content-Type': 'application/json',
+                'Retry-After': String(resetAt - now),
+                'X-RateLimit-Limit': String(limit),
+                'X-RateLimit-Remaining': '0',
+                'X-RateLimit-Reset': String(resetAt),
+              },
+            }
+          );
+        }
+
+        // Store updated count
+        await env.CACHE.put(rateLimitKey, JSON.stringify({ count, resetAt }), {
+          expirationTtl: Math.max(resetAt - now, 60),
+        });
+      } catch {
+        // If rate limiting fails, allow request but log
+        console.error('MCP rate limiting error');
+      }
+
+      const mcpHandler = createMcp8004Handler(env);
+      return mcpHandler(request);
+    }
+
     return app.fetch(request, env, ctx);
   },
 
