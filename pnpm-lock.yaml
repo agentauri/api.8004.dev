@@ -21,8 +21,8 @@ importers:
         specifier: ^0.31.0
         version: 0.31.0(encoding@0.1.13)(graphql@16.12.0)
       hono:
-        specifier: ^4.6.12
-        version: 4.10.7
+        specifier: ^4.11.1
+        version: 4.11.1
       viem:
         specifier: ^2.41.2
         version: 2.41.2(typescript@5.9.3)(zod@3.25.76)
@@ -1694,8 +1694,8 @@ packages:
     resolution: {integrity: sha512-0hJU9SCPvmMzIBdZFqNPXWa6dqh7WdH0cII9y+CyS8rG3nL48Bclra9HmKhVVUHyPWNH5Y7xDwAB7bfgSjkUMQ==}
     engines: {node: '>= 0.4'}
 
-  hono@4.10.7:
-    resolution: {integrity: sha512-icXIITfw/07Q88nLSkB9aiUrd8rYzSweK681Kjo/TSggaGbOX4RRyxxm71v+3PC8C/j+4rlxGeoTRxQDkaJkUw==}
+  hono@4.11.1:
+    resolution: {integrity: sha512-KsFcH0xxHes0J4zaQgWbYwmz3UPOOskdqZmItstUG93+Wk1ePBLkLGwbP9zlmh1BFUiL8Qp+Xfu9P7feJWpGNg==}
     engines: {node: '>=16.9.0'}
 
   html-escaper@2.0.2:
@@ -4117,7 +4117,7 @@ snapshots:
     dependencies:
       function-bind: 1.1.2
 
-  hono@4.10.7: {}
+  hono@4.11.1: {}
 
   html-escaper@2.0.2: {}
 
