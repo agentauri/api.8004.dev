@@ -3,10 +3,10 @@
  * @module test/integration/mcp
  */
 
-import { createExecutionContext, env, waitOnExecutionContext } from 'cloudflare:test';
+import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
 import app from '@/index';
 import type { Env } from '@/types';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { createMockEnv, insertMockClassification, setupMockFetch } from '../../setup';
 
 const mockFetch = setupMockFetch();
