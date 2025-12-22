@@ -108,7 +108,10 @@ const TOOLS: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'Search query (e.g., "trading bot", "image generation")' },
+        query: {
+          type: 'string',
+          description: 'Search query (e.g., "trading bot", "image generation")',
+        },
         limit: { type: 'number', description: 'Maximum number of results (1-50)', default: 10 },
         mcp: { type: 'boolean', description: 'Filter by MCP endpoint availability' },
         a2a: { type: 'boolean', description: 'Filter by A2A endpoint availability' },
@@ -386,7 +389,10 @@ async function executeTool(
 /**
  * Read a resource
  */
-async function readResource(uri: string, env: Env): Promise<{ contents: Array<{ uri: string; text: string; mimeType: string }> }> {
+async function readResource(
+  uri: string,
+  env: Env
+): Promise<{ contents: Array<{ uri: string; text: string; mimeType: string }> }> {
   switch (uri) {
     case '8004://taxonomy/skills': {
       const taxonomy = getTaxonomy('skill' as TaxonomyType);
@@ -436,7 +442,10 @@ async function readResource(uri: string, env: Env): Promise<{ contents: Array<{ 
 /**
  * Get a prompt
  */
-function getPrompt(name: string, args: Record<string, unknown>): { messages: Array<{ role: string; content: { type: string; text: string } }> } {
+function getPrompt(
+  name: string,
+  args: Record<string, unknown>
+): { messages: Array<{ role: string; content: { type: string; text: string } }> } {
   switch (name) {
     case 'find_agent_for_task': {
       const task = args.task as string;
@@ -847,7 +856,7 @@ export function createMcp8004Handler(env: Env) {
     // JSON-RPC endpoint
     if (request.method === 'POST') {
       try {
-        const body = await request.json() as MCPRequest;
+        const body = (await request.json()) as MCPRequest;
         const response = await handleMCPRequest(body, env);
 
         return new Response(JSON.stringify(response), {
@@ -856,7 +865,7 @@ export function createMcp8004Handler(env: Env) {
             'Access-Control-Allow-Origin': '*',
           },
         });
-      } catch (error) {
+      } catch {
         return new Response(
           JSON.stringify({
             jsonrpc: '2.0',
