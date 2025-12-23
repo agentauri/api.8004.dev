@@ -83,12 +83,24 @@ interface PromptDefinition {
 }
 
 /**
+ * Supported protocol versions
+ * Per MCP spec, server must echo back client's requested version if supported
+ */
+const SUPPORTED_PROTOCOL_VERSIONS = [
+  '2024-11-05', // Original MCP spec
+  '2025-03-26', // Streamable HTTP spec
+  '2025-06-18', // Latest (Claude Desktop Connectors)
+];
+
+const DEFAULT_PROTOCOL_VERSION = '2025-03-26';
+const LATEST_PROTOCOL_VERSION = '2025-06-18'; // Advertised in HEAD response
+
+/**
  * Server capabilities
  */
 const SERVER_INFO = {
   name: '8004-agents',
   version: '1.0.0',
-  protocolVersion: '2024-11-05',
 };
 
 const CAPABILITIES = {
@@ -487,35 +499,76 @@ Please use the list_agents tool with appropriate filters to find agents in this 
 }
 
 /**
+ * Result from MCP request handler, includes optional negotiated protocol version
+ */
+interface MCPHandlerResult {
+  response: MCPResponse;
+  negotiatedVersion?: string;
+}
+
+/**
  * Handle MCP JSON-RPC request
  */
-async function handleMCPRequest(request: MCPRequest, env: Env): Promise<MCPResponse> {
+async function handleMCPRequest(request: MCPRequest, env: Env): Promise<MCPHandlerResult> {
   const { id, method, params } = request;
 
   try {
     switch (method) {
-      case 'initialize':
-        return {
-          jsonrpc: '2.0',
-          id,
-          result: {
-            protocolVersion: SERVER_INFO.protocolVersion,
-            serverInfo: {
-              name: SERVER_INFO.name,
-              version: SERVER_INFO.version,
-            },
-            capabilities: CAPABILITIES,
-          },
+      case 'initialize': {
+        // Extract client's requested protocol version
+        const initParams = params as {
+          protocolVersion?: string;
+          capabilities?: Record<string, unknown>;
+          clientInfo?: { name: string; version: string };
         };
+        const requestedVersion = initParams?.protocolVersion || DEFAULT_PROTOCOL_VERSION;
+
+        // Per MCP spec: echo back client's version if we support it
+        if (SUPPORTED_PROTOCOL_VERSIONS.includes(requestedVersion)) {
+          return {
+            response: {
+              jsonrpc: '2.0',
+              id,
+              result: {
+                protocolVersion: requestedVersion, // Echo back client's version
+                serverInfo: {
+                  name: SERVER_INFO.name,
+                  version: SERVER_INFO.version,
+                },
+                capabilities: CAPABILITIES,
+              },
+            },
+            negotiatedVersion: requestedVersion, // Return for use in response header
+          };
+        } else {
+          // Return error with supported versions
+          return {
+            response: {
+              jsonrpc: '2.0',
+              id,
+              error: {
+                code: -32602,
+                message: 'Unsupported protocol version',
+                data: {
+                  supported: SUPPORTED_PROTOCOL_VERSIONS,
+                  requested: requestedVersion,
+                },
+              },
+            },
+          };
+        }
+      }
 
       case 'initialized':
-        return { jsonrpc: '2.0', id, result: {} };
+        return { response: { jsonrpc: '2.0', id, result: {} } };
 
       case 'tools/list':
         return {
-          jsonrpc: '2.0',
-          id,
-          result: { tools: TOOLS },
+          response: {
+            jsonrpc: '2.0',
+            id,
+            result: { tools: TOOLS },
+          },
         };
 
       case 'tools/call': {
@@ -523,19 +576,23 @@ async function handleMCPRequest(request: MCPRequest, env: Env): Promise<MCPRespo
         const toolArgs = (params as { arguments?: Record<string, unknown> })?.arguments ?? {};
         const result = await executeTool(toolName, toolArgs, env);
         return {
-          jsonrpc: '2.0',
-          id,
-          result: {
-            content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+          response: {
+            jsonrpc: '2.0',
+            id,
+            result: {
+              content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+            },
           },
         };
       }
 
       case 'resources/list':
         return {
-          jsonrpc: '2.0',
-          id,
-          result: { resources: RESOURCES },
+          response: {
+            jsonrpc: '2.0',
+            id,
+            result: { resources: RESOURCES },
+          },
         };
 
       case 'resources/read': {
@@ -546,17 +603,21 @@ async function handleMCPRequest(request: MCPRequest, env: Env): Promise<MCPRespo
         }
         const result = await readResource(uriResult.data, env);
         return {
-          jsonrpc: '2.0',
-          id,
-          result,
+          response: {
+            jsonrpc: '2.0',
+            id,
+            result,
+          },
         };
       }
 
       case 'prompts/list':
         return {
-          jsonrpc: '2.0',
-          id,
-          result: { prompts: PROMPTS },
+          response: {
+            jsonrpc: '2.0',
+            id,
+            result: { prompts: PROMPTS },
+          },
         };
 
       case 'prompts/get': {
@@ -564,29 +625,35 @@ async function handleMCPRequest(request: MCPRequest, env: Env): Promise<MCPRespo
         const promptArgs = (params as { arguments?: Record<string, unknown> })?.arguments ?? {};
         const result = getPrompt(promptName, promptArgs);
         return {
-          jsonrpc: '2.0',
-          id,
-          result,
+          response: {
+            jsonrpc: '2.0',
+            id,
+            result,
+          },
         };
       }
 
       default:
         return {
-          jsonrpc: '2.0',
-          id,
-          error: {
-            code: -32601,
-            message: `Method not found: ${method}`,
+          response: {
+            jsonrpc: '2.0',
+            id,
+            error: {
+              code: -32601,
+              message: `Method not found: ${method}`,
+            },
           },
         };
     }
   } catch (error) {
     return {
-      jsonrpc: '2.0',
-      id,
-      error: {
-        code: -32603,
-        message: error instanceof Error ? error.message : 'Internal error',
+      response: {
+        jsonrpc: '2.0',
+        id,
+        error: {
+          code: -32603,
+          message: error instanceof Error ? error.message : 'Internal error',
+        },
       },
     };
   }
@@ -742,7 +809,7 @@ function generateDocsHtml(): string {
     <p class="subtitle">Model Context Protocol server for exploring ERC-8004 AI agents</p>
     <div class="meta">
       <span class="meta-item">Version: <code>${SERVER_INFO.version}</code></span>
-      <span class="meta-item">Protocol: <code>${SERVER_INFO.protocolVersion}</code></span>
+      <span class="meta-item">Protocol: <code>${DEFAULT_PROTOCOL_VERSION}</code></span>
       <span class="meta-item">Schema: <a href="/mcp/schema.json">/mcp/schema.json</a></span>
     </div>
   </header>
@@ -817,22 +884,51 @@ export function createMcp8004Handler(env: Env) {
       return new Response(null, {
         headers: {
           'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          'Access-Control-Allow-Methods': 'GET, POST, HEAD, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, Mcp-Session-Id',
+          'Access-Control-Expose-Headers': 'MCP-Protocol-Version, Mcp-Session-Id',
         },
       });
     }
 
-    // SSE endpoint for streaming
+    // Handle .well-known paths under /mcp (for Claude Desktop OAuth discovery)
+    // When Claude Desktop is given https://api.8004.dev/mcp, it may look for
+    // /.well-known/oauth-protected-resource relative to that path
+    // We redirect these to the root level where OAuth metadata is served
+    if (url.pathname.startsWith('/mcp/.well-known/')) {
+      const wellKnownPath = url.pathname.replace('/mcp/.well-known/', '/.well-known/');
+      const redirectUrl = new URL(wellKnownPath, url.origin);
+      return Response.redirect(redirectUrl.toString(), 302);
+    }
+
+    // HEAD method for protocol discovery (required by Claude Desktop Connectors)
+    // Advertise the latest version we support
+    if (request.method === 'HEAD') {
+      return new Response(null, {
+        status: 200,
+        headers: {
+          'MCP-Protocol-Version': LATEST_PROTOCOL_VERSION,
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Expose-Headers': 'MCP-Protocol-Version',
+        },
+      });
+    }
+
+    // SSE endpoint for MCP-over-HTTP/SSE (used by mcp-remote)
     if (url.pathname === '/sse' && request.method === 'GET') {
       const { readable, writable } = new TransformStream();
       const writer = writable.getWriter();
       const encoder = new TextEncoder();
 
-      // Send initial connection event
-      writer.write(encoder.encode('event: open\ndata: connected\n\n'));
+      // Generate unique session ID for this connection
+      const sessionId = crypto.randomUUID();
 
-      // Keep connection alive
+      // Send the endpoint URL - this is what mcp-remote expects
+      // The event: endpoint tells mcp-remote where to POST JSON-RPC requests
+      const mcpEndpoint = `${url.protocol}//${url.host}/mcp?sessionId=${sessionId}`;
+      writer.write(encoder.encode(`event: endpoint\ndata: ${mcpEndpoint}\n\n`));
+
+      // Keep connection alive with SSE comments
       const keepAlive = setInterval(() => {
         writer.write(encoder.encode(': keepalive\n\n'));
       }, 15000);
@@ -853,35 +949,78 @@ export function createMcp8004Handler(env: Env) {
       });
     }
 
-    // JSON-RPC endpoint
+    // JSON-RPC endpoint (Streamable HTTP for Claude Desktop Connectors)
     if (request.method === 'POST') {
+      // Session management - use provided session ID or generate new one
+      const sessionId = request.headers.get('Mcp-Session-Id') || crypto.randomUUID();
+
+      // Check if client prefers SSE (like Cloudflare's implementation)
+      const acceptHeader = request.headers.get('Accept') || '';
+      const preferSSE = acceptHeader.includes('text/event-stream');
+
       try {
         const body = (await request.json()) as MCPRequest;
-        const response = await handleMCPRequest(body, env);
+        const { response, negotiatedVersion } = await handleMCPRequest(body, env);
 
+        if (preferSSE) {
+          // Return SSE format matching official MCP SDK implementation
+          const sseData = `event: message\ndata: ${JSON.stringify(response)}\n\n`;
+          return new Response(sseData, {
+            headers: {
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-cache, no-transform',
+              'Connection': 'keep-alive',
+              'Access-Control-Allow-Origin': '*',
+              'Access-Control-Expose-Headers': 'Mcp-Session-Id, MCP-Protocol-Version',
+              'MCP-Protocol-Version': negotiatedVersion || DEFAULT_PROTOCOL_VERSION,
+              'Mcp-Session-Id': sessionId,
+            },
+          });
+        }
+
+        // Return plain JSON for clients that don't accept SSE
         return new Response(JSON.stringify(response), {
           headers: {
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
+            'MCP-Protocol-Version': negotiatedVersion || DEFAULT_PROTOCOL_VERSION,
+            'Mcp-Session-Id': sessionId,
           },
         });
       } catch {
-        return new Response(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            error: {
-              code: -32700,
-              message: 'Parse error',
-            },
-          }),
-          {
+        const errorResponse = {
+          jsonrpc: '2.0',
+          error: {
+            code: -32700,
+            message: 'Parse error',
+          },
+        };
+
+        if (preferSSE) {
+          const sseData = `event: message\ndata: ${JSON.stringify(errorResponse)}\n\n`;
+          return new Response(sseData, {
             status: 400,
             headers: {
-              'Content-Type': 'application/json',
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-cache, no-transform',
+              'Connection': 'keep-alive',
               'Access-Control-Allow-Origin': '*',
+              'Access-Control-Expose-Headers': 'Mcp-Session-Id, MCP-Protocol-Version',
+              'MCP-Protocol-Version': DEFAULT_PROTOCOL_VERSION,
+              'Mcp-Session-Id': sessionId,
             },
-          }
-        );
+          });
+        }
+
+        return new Response(JSON.stringify(errorResponse), {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+            'MCP-Protocol-Version': DEFAULT_PROTOCOL_VERSION,
+            'Mcp-Session-Id': sessionId,
+          },
+        });
       }
     }
 
@@ -893,7 +1032,7 @@ export function createMcp8004Handler(env: Env) {
         title: '8004 MCP Server Schema',
         description: 'JSON Schema for 8004.dev MCP server tools, resources, and prompts',
         version: SERVER_INFO.version,
-        protocolVersion: SERVER_INFO.protocolVersion,
+        protocolVersion: DEFAULT_PROTOCOL_VERSION,
         tools: TOOLS.map((tool) => ({
           name: tool.name,
           description: tool.description,
@@ -933,13 +1072,29 @@ export function createMcp8004Handler(env: Env) {
       });
     }
 
-    // Info endpoint
+    // Handle GET requests
     if (request.method === 'GET') {
+      const acceptHeader = request.headers.get('Accept') || '';
+
+      // Streamable HTTP: GET with Accept: text/event-stream
+      // Per MCP spec, return 405 if server doesn't support server-initiated SSE
+      // Our server is request-response only, so we return 405
+      if (acceptHeader.includes('text/event-stream')) {
+        return new Response(null, {
+          status: 405,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            Allow: 'POST, HEAD, OPTIONS',
+          },
+        });
+      }
+
+      // Regular GET: Return server info JSON
       return new Response(
         JSON.stringify({
           name: SERVER_INFO.name,
           version: SERVER_INFO.version,
-          protocolVersion: SERVER_INFO.protocolVersion,
+          protocolVersion: DEFAULT_PROTOCOL_VERSION,
           description: 'MCP server for exploring ERC-8004 AI agents',
           endpoints: {
             jsonRpc: '/mcp',
