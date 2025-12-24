@@ -25,6 +25,8 @@ import {
 import { handleError } from '@/lib/utils/errors';
 import { parseAgentId } from '@/lib/utils/validation';
 import { createMcp8004Handler } from '@/mcp';
+import { metadata, oauth } from '@/oauth';
+import { validateAccessToken } from '@/oauth/services/token-service';
 import { agents, chains, health, openapi, search, stats, taxonomy } from '@/routes';
 import { createClassifierService } from '@/services/classifier';
 import { createEASIndexerService } from '@/services/eas-indexer';
@@ -99,6 +101,10 @@ app.route('/api/v1/search', search);
 app.route('/api/v1/chains', chains);
 app.route('/api/v1/stats', stats);
 app.route('/api/v1/taxonomy', taxonomy);
+
+// OAuth 2.0 routes (public access for Claude Desktop MCP support)
+app.route('/.well-known', metadata);
+app.route('/oauth', oauth);
 
 // Root endpoint
 app.get('/', (c) => {
@@ -340,6 +346,34 @@ export default {
       } catch {
         // If rate limiting fails, allow request but log
         console.error('MCP rate limiting error');
+      }
+
+      // Optional Bearer token validation (for Claude Desktop OAuth)
+      // If token present, validate it; if absent, allow anonymous access (backward compat)
+      // For GET /sse with session ID (reconnection), defer token validation to MCP handler
+      // to allow session-based reconnection even with expired tokens
+      const authHeader = request.headers.get('Authorization');
+      const sessionId = request.headers.get('Mcp-Session-Id');
+      const isReconnection = request.method === 'GET' && url.pathname === '/sse' && sessionId;
+
+      if (authHeader?.startsWith('Bearer ') && !isReconnection) {
+        const token = authHeader.substring(7);
+        const result = await validateAccessToken(env.DB, token);
+        if (!result.valid) {
+          return new Response(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              error: { code: -32001, message: 'Invalid or expired access token' },
+            }),
+            {
+              status: 401,
+              headers: {
+                'Content-Type': 'application/json',
+                'WWW-Authenticate': 'Bearer realm="8004-mcp", error="invalid_token"',
+              },
+            }
+          );
+        }
       }
 
       const mcpHandler = createMcp8004Handler(env);
