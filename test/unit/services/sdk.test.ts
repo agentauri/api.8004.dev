@@ -116,6 +116,31 @@ describe('createSDKService', () => {
   });
 
   describe('getChainStats', () => {
+    // Mock fetch for subgraph direct queries
+    const mockFetch = vi.fn();
+
+    beforeEach(() => {
+      vi.stubGlobal('fetch', mockFetch);
+      // Default: return mock agent data from subgraph
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            data: {
+              agents: [
+                { id: '1' },
+                { id: '2' },
+                { id: '3' },
+              ],
+            },
+          }),
+      });
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
     it('returns stats for all supported chains', async () => {
       const sdk = createSDKService(mockEnv);
       const stats = await sdk.getChainStats();
@@ -142,6 +167,7 @@ describe('createSDKService', () => {
 
 describe('SDK error paths', () => {
   vi.spyOn(console, 'error').mockImplementation(() => {});
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
   const mockEnv = createMockEnv();
 
   beforeEach(() => {
@@ -160,13 +186,25 @@ describe('SDK error paths', () => {
     mockConfig.chainErrorMap.clear();
   });
 
-  it('throws SDKError when SDK searchAgents fails', async () => {
+  it('throws SDKError when SDK searchAgents fails for single-chain query', async () => {
     // Use mock config to simulate SDK error
     mockConfig.searchAgentsError = new Error('SDK connection failed');
 
     const sdk = createSDKService(mockEnv);
-    await expect(sdk.getAgents({})).rejects.toThrow(SDKError);
-    await expect(sdk.getAgents({})).rejects.toThrow('searchAgents');
+    // Single-chain query throws SDKError (no Promise.allSettled resilience)
+    await expect(sdk.getAgents({ chainIds: [11155111] })).rejects.toThrow(SDKError);
+    await expect(sdk.getAgents({ chainIds: [11155111] })).rejects.toThrow('searchAgents');
+  });
+
+  it('returns empty results when SDK fails for multi-chain query (graceful degradation)', async () => {
+    // Use mock config to simulate SDK error
+    mockConfig.searchAgentsError = new Error('SDK connection failed');
+
+    const sdk = createSDKService(mockEnv);
+    // Multi-chain query uses Promise.allSettled, so it returns empty instead of throwing
+    const result = await sdk.getAgents({});
+    expect(result.items).toEqual([]);
+    expect(result.total).toBe(0);
   });
 
   it('returns empty result when filtering to non-existent chains', async () => {
@@ -190,6 +228,12 @@ describe('SDK error paths', () => {
   });
 
   it('handles chain stats errors gracefully', async () => {
+    // Mock fetch for subgraph calls - return error
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockRejectedValue(new Error('Network error'))
+    );
+
     mockConfig.searchAgentsError = new Error('RPC timeout');
     const sdk = createSDKService(mockEnv);
     const stats = await sdk.getChainStats();
@@ -201,9 +245,20 @@ describe('SDK error paths', () => {
       expect(stat.withRegistrationFileCount).toBe(0);
       expect(stat.activeCount).toBe(0);
     }
+
+    vi.unstubAllGlobals();
   });
 
   it('continues processing other chains when one fails', async () => {
+    // Mock fetch for subgraph calls
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ data: { agents: [{ id: '1' }] } }),
+      })
+    );
+
     // Only first chain fails
     mockConfig.chainErrorMap.set(11155111, new Error('First chain failed'));
     const sdk = createSDKService(mockEnv);
@@ -216,6 +271,8 @@ describe('SDK error paths', () => {
     for (const chain of otherChains) {
       expect(chain.status).toBe('ok');
     }
+
+    vi.unstubAllGlobals();
   });
 });
 
