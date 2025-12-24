@@ -17,7 +17,22 @@ import type {
 } from '@/types';
 import { SDK } from 'agent0-sdk';
 import type { SearchParams } from 'agent0-sdk';
+import { CACHE_TTL, hashQueryParams } from './cache';
 import { createMockSDKService } from './mock/mock-sdk';
+import {
+  type AgentSortField,
+  type CachedPaginationSet,
+  type SortOrder,
+  deduplicateAgents,
+  decodeOffset,
+  encodeOffset,
+  generatePaginationCacheKey,
+  getCachedPaginationSet,
+  getPaginatedSlice,
+  interleaveChainResults,
+  setCachedPaginationSet,
+  sortAgents,
+} from './pagination-cache';
 
 /**
  * Type guard for string extras fields
@@ -105,6 +120,8 @@ export interface GetAgentsParams {
   chainIds?: number[];
   limit?: number;
   cursor?: string;
+  /** Offset for pagination (alternative to cursor) */
+  offset?: number;
   active?: boolean;
   hasMcp?: boolean;
   hasA2a?: boolean;
@@ -115,6 +132,10 @@ export interface GetAgentsParams {
   a2aSkills?: string[];
   /** Filter by registration file presence. Default: true (only agents with metadata) */
   hasRegistrationFile?: boolean;
+  /** Sort field for results */
+  sort?: AgentSortField;
+  /** Sort order (default: desc) */
+  order?: SortOrder;
 }
 
 /**
@@ -800,8 +821,10 @@ export interface SDKService {
 /**
  * Create SDK service using agent0-sdk
  * When MOCK_EXTERNAL_SERVICES=true, returns a mock implementation for E2E testing
+ * @param env - Environment bindings
+ * @param cache - Optional KV namespace for pagination caching (enables consistent multi-chain pagination)
  */
-export function createSDKService(env: Env): SDKService {
+export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
   // Use mock service for deterministic E2E testing
   if (env.MOCK_EXTERNAL_SERVICES === 'true') {
     return createMockSDKService();
@@ -874,12 +897,15 @@ export function createSDKService(env: Env): SDKService {
         chainIds,
         limit = 20,
         cursor,
+        offset,
         active,
         hasMcp,
         hasA2a,
         hasX402,
         mcpTools,
         a2aSkills,
+        sort,
+        order,
       } = params;
 
       // Determine which chains to query
@@ -905,7 +931,7 @@ export function createSDKService(env: Env): SDKService {
       if (a2aSkills && a2aSkills.length > 0) baseSearchParams.a2aSkills = a2aSkills;
 
       try {
-        // Single chain: use direct SDK query with cursor pagination
+        // Single chain: use direct SDK query with cursor/offset pagination
         if (chainsToQuery.length === 1) {
           const chainConfig = chainsToQuery[0];
           if (!chainConfig) {
@@ -916,139 +942,155 @@ export function createSDKService(env: Env): SDKService {
             ...baseSearchParams,
             chains: [chainConfig.chainId],
           };
-          const result = await sdk.searchAgents(searchParams, ['createdAt:desc'], limit, cursor);
+
+          // Use offset as cursor if provided (SDK accepts offset as cursor string)
+          const effectiveCursor = cursor ?? (offset !== undefined ? String(offset) : undefined);
+          const result = await sdk.searchAgents(
+            searchParams,
+            ['createdAt:desc'],
+            limit,
+            effectiveCursor
+          );
 
           const items = result.items.map(transformAgent);
           const total = result.meta?.totalResults ?? items.length;
 
+          // Calculate if there are more results
+          const currentOffset = offset ?? ((cursor ? Number.parseInt(cursor, 10) : 0) || 0);
+          const hasMore = currentOffset + items.length < total;
+
           return {
             items,
-            nextCursor: result.nextCursor,
+            nextCursor: hasMore ? String(currentOffset + limit) : undefined,
             total,
           };
         }
 
-        // Multi-chain: query each chain separately and merge results
+        // Multi-chain: use cached pagination for consistent results across pages
         // NOTE: The SDK's multi-chain support via subgraphOverrides doesn't work correctly -
         // it only queries the chain the SDK was initialized with. So we must query each chain
         // with its own SDK instance and merge the results manually.
 
-        // For multi-chain queries, we use offset-based pagination via cursor encoding
-        // Cursor format: JSON { chainOffsets: { [chainId]: number }, globalOffset: number }
-        interface MultiChainCursor {
-          chainOffsets: Record<number, number>;
-          globalOffset: number;
+        // Calculate global offset from cursor or offset parameter
+        let globalOffset = 0;
+        if (offset !== undefined) {
+          globalOffset = offset;
+        } else if (cursor) {
+          globalOffset = decodeOffset(cursor);
         }
 
-        let chainOffsets: Record<number, number> = {};
-        let globalOffset = 0;
+        // Generate cache key from filter parameters (excludes pagination params)
+        const cacheParams = {
+          chainIds: chainsToQuery.map((c) => c.chainId),
+          active,
+          hasMcp,
+          hasA2a,
+          hasX402,
+          mcpTools,
+          a2aSkills,
+          sort,
+          order,
+        };
+        const cacheKey = generatePaginationCacheKey(cacheParams);
+        const filterHash = hashQueryParams(cacheParams);
 
-        if (cursor) {
-          try {
-            const decoded = JSON.parse(
-              Buffer.from(cursor, 'base64url').toString()
-            ) as MultiChainCursor;
-            chainOffsets = decoded.chainOffsets || {};
-            globalOffset = decoded.globalOffset || 0;
-          } catch {
-            // Invalid cursor, start from beginning
+        // Check cache for existing pagination set
+        if (cache) {
+          const cachedSet = await getCachedPaginationSet(cache, cacheKey);
+          if (cachedSet) {
+            // Cache hit: return slice from cached set
+            const sliceResult = getPaginatedSlice(cachedSet, globalOffset, limit, sort, order);
+            return {
+              items: sliceResult.items,
+              nextCursor: sliceResult.nextCursor,
+              total: sliceResult.total,
+            };
           }
         }
 
-        // Query each chain in parallel with proportional limits
-        // Request more items than needed to ensure we can fill the page after sorting
-        const perChainLimit = Math.ceil(limit * 1.5);
+        // Cache miss: fetch all results from all chains and cache them
+        // Query each chain in parallel, fetching larger batches for caching
+        const maxItemsPerChain = 200; // Fetch up to 200 items per chain for caching
 
-        // Filter out exhausted chains (offset === -1) before querying
-        const activeChains = chainsToQuery.filter((chainConfig) => {
-          const offset = chainOffsets[chainConfig.chainId];
-          // Skip chains marked as exhausted (-1)
-          // undefined means first page (not exhausted yet)
-          return offset !== -1;
-        });
-
-        const chainPromises = activeChains.map(async (chainConfig) => {
+        const chainPromises = chainsToQuery.map(async (chainConfig) => {
           const sdk = getSDK(chainConfig.chainId);
           const searchParams: SearchParams = {
             ...baseSearchParams,
             chains: [chainConfig.chainId],
           };
 
-          // Use chain-specific cursor if available (for SDK's native pagination)
-          const chainCursor = chainOffsets[chainConfig.chainId];
-          const result = await sdk.searchAgents(
-            searchParams,
-            ['createdAt:desc'],
-            perChainLimit,
-            chainCursor && chainCursor > 0 ? String(chainCursor) : undefined
-          );
+          // Fetch multiple pages to get comprehensive results
+          const allChainItems: AgentSummary[] = [];
+          let chainCursor: string | undefined;
+          let itemsFetched = 0;
+          const pageSize = 100;
+
+          while (itemsFetched < maxItemsPerChain) {
+            const result = await sdk.searchAgents(
+              searchParams,
+              ['createdAt:desc'],
+              pageSize,
+              chainCursor
+            );
+
+            const items = result.items.map(transformAgent);
+            allChainItems.push(...items);
+            itemsFetched += items.length;
+
+            chainCursor = result.nextCursor;
+            if (!chainCursor || items.length < pageSize) break;
+          }
 
           return {
             chainId: chainConfig.chainId,
-            items: result.items.map(transformAgent),
-            nextCursor: result.nextCursor,
-            total: result.meta?.totalResults ?? result.items.length,
+            items: allChainItems,
           };
         });
 
-        const chainResults = await Promise.all(chainPromises);
+        const chainResults = await Promise.allSettled(chainPromises);
 
-        // Track totals and cursors from each chain
-        let totalAcrossChains = 0;
-        // Start with previous offsets to preserve exhausted chains (-1)
-        const newChainOffsets: Record<number, number> = { ...chainOffsets };
-
+        // Collect successful chain results
+        const successfulChains: Array<{ chainId: number; items: AgentSummary[] }> = [];
         for (const result of chainResults) {
-          totalAcrossChains += result.total;
-          // Track cursor for each chain - ALWAYS store offset, even if exhausted
-          // -1 indicates chain is exhausted (no more items)
-          if (result.nextCursor) {
-            newChainOffsets[result.chainId] = Number.parseInt(result.nextCursor, 10) || 0;
+          if (result.status === 'fulfilled') {
+            successfulChains.push(result.value);
           } else {
-            // Chain is exhausted - mark with -1 so we skip it on next page
-            newChainOffsets[result.chainId] = -1;
+            console.warn('Multi-chain pagination: chain query failed:', result.reason);
           }
         }
 
-        // Interleave results from all chains to ensure fair representation
-        // Each chain's results are already sorted by createdAt (tokenId) desc
-        // We interleave by taking items round-robin from each chain
-        const chainItems = chainResults.map((r) => [...r.items]); // Copy arrays for mutation
-        const interleavedItems: AgentSummary[] = [];
+        // Interleave results from different chains in round-robin fashion
+        // This ensures fair representation from all chains in paginated results
+        // Each chain's results are sorted by tokenId before interleaving
+        const interleavedItems = interleaveChainResults(successfulChains);
 
-        while (interleavedItems.length < limit * 2) {
-          // Check if all chains are exhausted
-          let hasMore = false;
-          for (const items of chainItems) {
-            if (items.length > 0) {
-              hasMore = true;
-              const item = items.shift();
-              if (item) {
-                interleavedItems.push(item);
-              }
-            }
-          }
-          if (!hasMore) break;
+        // Deduplicate by agent ID (in case same agent appears somehow)
+        const sortedItems = deduplicateAgents(interleavedItems);
+
+        // Cache the full sorted set for subsequent page requests
+        if (cache) {
+          await setCachedPaginationSet(
+            cache,
+            cacheKey,
+            sortedItems,
+            filterHash,
+            CACHE_TTL.PAGINATION_SET
+          );
         }
 
-        // Apply pagination
-        const paginatedItems = interleavedItems.slice(0, limit);
-        const hasMore = interleavedItems.length > limit;
-
-        // Create cursor for next page
-        let nextCursor: string | undefined;
-        if (hasMore) {
-          const cursorData: MultiChainCursor = {
-            chainOffsets: newChainOffsets,
-            globalOffset: globalOffset + limit,
-          };
-          nextCursor = Buffer.from(JSON.stringify(cursorData)).toString('base64url');
-        }
+        // Return slice for current page with optional custom sort
+        const cachedSet: CachedPaginationSet = {
+          items: sortedItems,
+          total: sortedItems.length,
+          filterHash,
+          cachedAt: Date.now(),
+        };
+        const sliceResult = getPaginatedSlice(cachedSet, globalOffset, limit, sort, order);
 
         return {
-          items: paginatedItems,
-          nextCursor,
-          total: totalAcrossChains,
+          items: sliceResult.items,
+          nextCursor: sliceResult.nextCursor,
+          total: sliceResult.total,
         };
       } catch (error) {
         // Throw SDKError to propagate to route handlers for proper 503 response

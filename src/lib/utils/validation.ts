@@ -151,6 +151,8 @@ export const listAgentsQuerySchema = z.object({
   order: sortOrderSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.string().optional(),
+  /** Offset-based pagination: page number (1-indexed) */
+  page: z.coerce.number().int().min(1).optional(),
 });
 
 export type ListAgentsQuery = z.infer<typeof listAgentsQuerySchema>;

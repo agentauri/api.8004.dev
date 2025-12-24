@@ -10,10 +10,12 @@
  *   pnpm run test:e2e -- --json          # Output JSON format
  *   pnpm run test:e2e -- --verbose       # Verbose output
  *   pnpm run test:e2e -- --local         # Run against local worker
+ *   pnpm run test:e2e -- --delay=500     # Set delay between tests (default: 200ms)
+ *   pnpm run test:e2e -- --no-delay      # Disable delay between tests
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
-import { runAllSuites, setVerbose } from './test-runner';
+import { runAllSuites, setTestDelay, setVerbose } from './test-runner';
 
 import { registerAgentsAdvancedTests } from './tests/agents-advanced';
 import { registerAgentsBasicTests } from './tests/agents-basic';
@@ -28,9 +30,12 @@ import { registerConsistencyTests } from './tests/consistency';
 import { registerErrorHandlingTests } from './tests/error-handling';
 // Import test registration functions
 import { registerHealthTests } from './tests/health';
+import { registerMcpTests } from './tests/mcp';
+import { registerMcpConsistencyTests } from './tests/mcp-consistency';
 import { registerSearchTests } from './tests/search';
 import { registerSearchFallbackTests } from './tests/search-fallback';
 import { registerSecurityTests } from './tests/security';
+import { registerSourceVerificationTests } from './tests/source-verification';
 import { registerTaxonomyTests } from './tests/taxonomy';
 
 // Local worker configuration
@@ -40,12 +45,13 @@ const LOCAL_API_KEY = 'e2e-test-api-key';
 const WORKER_STARTUP_TIMEOUT = 30000; // 30 seconds
 
 // Parse CLI arguments
-function parseArgs(): { filter?: string; json: boolean; verbose: boolean; local: boolean } {
+function parseArgs(): { filter?: string; json: boolean; verbose: boolean; local: boolean; delay: number } {
   const args = process.argv.slice(2);
   let filter: string | undefined;
   let json = false;
   let verbose = false;
   let local = false;
+  let delay = 200; // Default 200ms delay between tests to avoid rate limiting
 
   for (const arg of args) {
     if (arg.startsWith('--filter=')) {
@@ -56,10 +62,14 @@ function parseArgs(): { filter?: string; json: boolean; verbose: boolean; local:
       verbose = true;
     } else if (arg === '--local') {
       local = true;
+    } else if (arg.startsWith('--delay=')) {
+      delay = Number.parseInt(arg.slice('--delay='.length), 10) || 200;
+    } else if (arg === '--no-delay') {
+      delay = 0;
     }
   }
 
-  return { filter, json, verbose, local };
+  return { filter, json, verbose, local, delay };
 }
 
 // Map filter strings to test registration functions
@@ -80,6 +90,9 @@ const testSuites: Record<string, () => void> = {
   detail: registerAgentsDetailTests,
   taxonomy: registerTaxonomyTests,
   security: registerSecurityTests,
+  mcp: registerMcpTests,
+  'mcp-consistency': registerMcpConsistencyTests,
+  source: registerSourceVerificationTests,
 };
 
 /**
@@ -165,7 +178,7 @@ function stopLocalWorker(worker: ChildProcess): void {
 }
 
 async function main(): Promise<void> {
-  const { filter, json, verbose, local } = parseArgs();
+  const { filter, json, verbose, local, delay } = parseArgs();
   let workerProcess: ChildProcess | null = null;
 
   // Set verbose mode
@@ -173,6 +186,9 @@ async function main(): Promise<void> {
   if (verbose) {
     process.env.VERBOSE = 'true';
   }
+
+  // Set test delay to avoid rate limiting
+  setTestDelay(delay);
 
   try {
     // Setup for local mode
@@ -212,6 +228,7 @@ async function main(): Promise<void> {
       console.log('🧪 8004.dev E2E Test Suite');
       console.log('==========================');
       console.log(`🌐 Mode: ${local ? 'Local (mock data)' : 'Production'}`);
+      console.log(`⏱️  Delay: ${delay}ms between tests`);
       if (filter) {
         console.log(`📋 Filter: ${filter}`);
       }
