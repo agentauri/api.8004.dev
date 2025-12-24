@@ -5,7 +5,7 @@
 
 import { env } from 'cloudflare:test';
 import { CACHE_KEYS, CACHE_TTL, createCacheService } from '@/services/cache';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 describe('createCacheService', () => {
   it('creates cache service instance', () => {
@@ -46,6 +46,24 @@ describe('createCacheService', () => {
       const result = await cache.get<typeof data>('complex-key');
 
       expect(result).toEqual(data);
+    });
+
+    it('returns null and logs error for invalid JSON', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      // Directly put invalid JSON in the cache
+      await env.CACHE.put('invalid-json-key', 'not valid json {{{');
+
+      const cache = createCacheService(env.CACHE, 300);
+      const result = await cache.get('invalid-json-key');
+
+      expect(result).toBeNull();
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Cache parse error'),
+        expect.anything()
+      );
+
+      consoleSpy.mockRestore();
     });
   });
 
@@ -118,6 +136,26 @@ describe('CACHE_KEYS', () => {
 
   it('generates IPFS metadata key', () => {
     expect(CACHE_KEYS.ipfsMetadata('11155111:1')).toBe('ipfs:metadata:11155111:1');
+  });
+
+  it('generates search results key', () => {
+    expect(CACHE_KEYS.searchResults('abc123')).toBe('search:results:abc123');
+  });
+
+  it('generates OR mode agents key', () => {
+    expect(CACHE_KEYS.orModeAgents('xyz789')).toBe('agents:or:xyz789');
+  });
+
+  it('generates pagination set key', () => {
+    expect(CACHE_KEYS.paginationSet('filter123')).toBe('pagination:set:filter123');
+  });
+
+  it('generates MCP session key', () => {
+    expect(CACHE_KEYS.mcpSession('session-abc')).toBe('mcp-session:session-abc');
+  });
+
+  it('generates chain stats fallback key', () => {
+    expect(CACHE_KEYS.chainStatsFallback(11155111)).toBe('chains:stats:fallback:11155111');
   });
 });
 
