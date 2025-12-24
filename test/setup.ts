@@ -168,7 +168,6 @@ export function createMockEnv() {
     RATE_LIMIT_RPM: '100',
     CLASSIFICATION_MODEL: 'claude-3-haiku-20240307',
     API_KEY: TEST_API_KEY,
-    MOCK_EXTERNAL_SERVICES: 'true',
   };
 }
 
