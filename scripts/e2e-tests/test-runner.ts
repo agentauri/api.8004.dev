@@ -26,12 +26,20 @@ export interface TestSuite {
 let currentSuite: TestSuite | null = null;
 const suites: TestSuite[] = [];
 let verboseMode = false;
+let testDelayMs = 0; // Delay between tests to avoid rate limiting
 
 /**
  * Set verbose mode for output
  */
 export function setVerbose(verbose: boolean): void {
   verboseMode = verbose;
+}
+
+/**
+ * Set delay between tests (in milliseconds) to avoid rate limiting
+ */
+export function setTestDelay(delayMs: number): void {
+  testDelayMs = delayMs;
 }
 
 /**
@@ -336,6 +344,13 @@ export function printResults(
 }
 
 /**
+ * Sleep helper
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
  * Run all registered test suites and return results
  */
 export async function runAllSuites(): Promise<Array<{ name: string; results: TestResult[] }>> {
@@ -356,6 +371,11 @@ export async function runAllSuites(): Promise<Array<{ name: string; results: Tes
         if (verboseMode && result.error) {
           // Error details available in result
         }
+      }
+
+      // Add delay between tests if configured (to avoid rate limiting)
+      if (testDelayMs > 0) {
+        await sleep(testDelayMs);
       }
     }
 

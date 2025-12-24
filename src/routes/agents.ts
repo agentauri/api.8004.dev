@@ -241,7 +241,7 @@ agents.get('/', async (c) => {
     return c.json(cached);
   }
 
-  const sdk = createSDKService(c.env);
+  const sdk = createSDKService(c.env, c.env.CACHE);
 
   // Resolve chain IDs: prefer 'chainIds[]' (URL array), then 'chainIds', then 'chains' (CSV), then 'chainId' (single)
   const chainIds =
@@ -249,6 +249,9 @@ agents.get('/', async (c) => {
     query.chainIds ??
     query.chains ??
     (query.chainId ? [query.chainId] : undefined);
+
+  // Convert page to offset for pagination (page is 1-indexed)
+  const offset = query.page ? (query.page - 1) * query.limit : undefined;
 
   // If search query provided, use semantic search
   if (query.q) {
@@ -649,7 +652,7 @@ agents.get('/', async (c) => {
     // OR mode: run separate queries for each boolean filter and merge results
     // Check if cursor is a cached OR mode cursor for pagination
     const orModeCache = createCacheService(c.env.CACHE, CACHE_TTL.OR_MODE_AGENTS);
-    let startOffset = 0;
+    let startOffset = offset ?? 0; // Use page-based offset if provided
 
     if (query.cursor) {
       const cachedCursor = decodeOrModeCursor(query.cursor);
@@ -753,6 +756,7 @@ agents.get('/', async (c) => {
       // Over-fetch if we have =false filters that need post-filtering
       limit: hasFalseFilters ? Math.min(query.limit * 3, 100) : query.limit,
       cursor: query.cursor,
+      offset, // Pass offset for page-based pagination
       active: query.active,
       // Only pass true values to SDK - =false is handled via post-filtering
       hasMcp: query.mcp === true ? true : undefined,
@@ -761,6 +765,9 @@ agents.get('/', async (c) => {
       mcpTools: query.mcpTools,
       a2aSkills: query.a2aSkills,
       hasRegistrationFile: query.hasRegistrationFile,
+      // Pass sort and order for consistent multi-chain pagination with caching
+      sort: query.sort,
+      order: query.order,
     });
 
     // Post-filter for =false boolean filters (SDK doesn't handle these correctly)
@@ -911,7 +918,7 @@ agents.get('/:agentId', async (c) => {
   }
 
   const { chainId, tokenId } = parseAgentId(agentId);
-  const sdk = createSDKService(c.env);
+  const sdk = createSDKService(c.env, c.env.CACHE);
   const agent = await sdk.getAgent(chainId, tokenId);
 
   if (!agent) {
@@ -1037,7 +1044,7 @@ agents.get('/:agentId/similar', async (c) => {
     }
 
     // Query SDK for agents (without skills/domains filter - we'll compute similarity from classifications)
-    const sdk = createSDKService(c.env);
+    const sdk = createSDKService(c.env, c.env.CACHE);
 
     // Get a batch of classified agents to find similar ones
     const agentsResult = await sdk.getAgents({ limit: 100 });
@@ -1088,7 +1095,8 @@ agents.get('/:agentId/similar', async (c) => {
       const domainSimilarity = domainUnion > 0 ? matchedDomains.length / domainUnion : 0;
 
       // Weight skills more heavily (60% skills, 40% domains)
-      const similarityScore = Math.round((skillSimilarity * 0.6 + domainSimilarity * 0.4) * 100);
+      // Return score as 0-1 range (not 0-100)
+      const similarityScore = Math.round((skillSimilarity * 0.6 + domainSimilarity * 0.4) * 100) / 100;
 
       if (similarityScore > 0) {
         similarAgents.push({

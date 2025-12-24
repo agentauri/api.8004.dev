@@ -42,10 +42,16 @@ function applyFilters(
 ): AgentSummary[] {
   if (!filters) return agents;
 
-  const { mcp, a2a, x402, chainIds, skills, domains, filterMode } = filters;
+  const { active, mcp, a2a, x402, chainIds, skills, domains, filterMode } = filters;
   const isOrMode = filterMode === 'OR';
 
   return agents.filter((agent) => {
+    // Active filter (always AND with other filters)
+    // Must match exactly: active=true means only active agents, active=false means only inactive
+    if (active !== undefined && agent.active !== active) {
+      return false;
+    }
+
     // Chain filter (always AND with other filters)
     if (chainIds?.length && !chainIds.includes(agent.chainId)) {
       return false;

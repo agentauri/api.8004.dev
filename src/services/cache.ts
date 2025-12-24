@@ -55,6 +55,10 @@ export const CACHE_TTL = {
   IPFS_METADATA: 3600,
   /** OR mode agents results for pagination: 3 minutes (aligned with AGENTS) */
   OR_MODE_AGENTS: 180,
+  /** Multi-chain pagination set: 5 minutes for consistent pagination */
+  PAGINATION_SET: 300,
+  /** MCP session: 1 hour for reconnection support */
+  MCP_SESSION: 3600,
 } as const;
 
 /**
@@ -75,6 +79,10 @@ export const CACHE_KEYS = {
   ipfsMetadata: (agentId: string) => `ipfs:metadata:${agentId}`,
   /** OR mode agents results for pagination (stores merged result set) */
   orModeAgents: (hash: string) => `agents:or:${hash}`,
+  /** Multi-chain pagination set (stores full merged result set for consistent pagination) */
+  paginationSet: (filterHash: string) => `pagination:set:${filterHash}`,
+  /** MCP session (stores session state for reconnection) */
+  mcpSession: (sessionId: string) => `mcp-session:${sessionId}`,
 } as const;
 
 /**
