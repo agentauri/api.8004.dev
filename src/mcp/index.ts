@@ -8,7 +8,7 @@
 import { getClassification, getClassificationsBatch } from '@/db/queries';
 import { getTaxonomy } from '@/lib/oasf/taxonomy';
 import { agentIdSchema, parseAgentId, parseClassificationRow } from '@/lib/utils/validation';
-import { extractBearerToken, validateAccessToken } from '@/oauth/services/token-service';
+import { extractBearerToken } from '@/oauth/services/token-service';
 import { CACHE_TTL, createCacheService } from '@/services/cache';
 import { type MCPSessionService, createMCPSessionService } from '@/services/mcp-session';
 import { createReputationService } from '@/services/reputation';
@@ -1108,28 +1108,8 @@ function createJsonRpcErrorResponse(
 }
 
 /**
- * Create 401 Unauthorized response for OAuth
- */
-function createUnauthorizedResponse(errorType?: string): Response {
-  const wwwAuth = errorType
-    ? `Bearer resource_metadata="https://api.8004.dev/.well-known/oauth-protected-resource",error="${errorType}"`
-    : `Bearer resource_metadata="https://api.8004.dev/.well-known/oauth-protected-resource",scope="mcp:read mcp:write"`;
-
-  return new Response('Unauthorized', {
-    status: 401,
-    headers: {
-      'Content-Type': 'text/plain',
-      'WWW-Authenticate': wwwAuth,
-      ...CORS_HEADERS,
-      'Access-Control-Expose-Headers': 'WWW-Authenticate',
-    },
-  });
-}
-
-/**
  * Handle POST requests (JSON-RPC endpoint)
  */
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: OAuth validation and session management require multiple checks
 async function handlePostRequest(
   request: Request,
   env: Env,
@@ -1145,7 +1125,7 @@ async function handlePostRequest(
     return createJsonRpcErrorResponse(-32700, 'Parse error', sessionId);
   }
 
-  const isInitMethod = body.method === 'initialize' || body.method === 'notifications/initialized';
+  const _isInitMethod = body.method === 'initialize' || body.method === 'notifications/initialized';
   const isProbeOrEmpty = !body.method;
 
   if (isProbeOrEmpty && !token) {
