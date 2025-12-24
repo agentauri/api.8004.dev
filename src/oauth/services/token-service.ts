@@ -221,7 +221,7 @@ export async function validateAuthorizationCode(
  * @param id - Authorization code ID
  */
 export async function markAuthorizationCodeUsed(db: D1Database, id: string): Promise<void> {
-  await db.prepare(`UPDATE oauth_authorization_codes SET used = 1 WHERE id = ?`).bind(id).run();
+  await db.prepare('UPDATE oauth_authorization_codes SET used = 1 WHERE id = ?').bind(id).run();
 }
 
 /**
@@ -301,7 +301,7 @@ export async function validateRefreshToken(
  * @param id - Refresh token ID
  */
 export async function revokeRefreshToken(db: D1Database, id: string): Promise<void> {
-  await db.prepare(`UPDATE oauth_refresh_tokens SET revoked = 1 WHERE id = ?`).bind(id).run();
+  await db.prepare('UPDATE oauth_refresh_tokens SET revoked = 1 WHERE id = ?').bind(id).run();
 }
 
 /**
@@ -312,12 +312,12 @@ export async function revokeRefreshToken(db: D1Database, id: string): Promise<vo
  */
 export async function revokeAllClientTokens(db: D1Database, clientId: string): Promise<void> {
   await db
-    .prepare(`UPDATE oauth_access_tokens SET revoked = 1 WHERE client_id = ?`)
+    .prepare('UPDATE oauth_access_tokens SET revoked = 1 WHERE client_id = ?')
     .bind(clientId)
     .run();
 
   await db
-    .prepare(`UPDATE oauth_refresh_tokens SET revoked = 1 WHERE client_id = ?`)
+    .prepare('UPDATE oauth_refresh_tokens SET revoked = 1 WHERE client_id = ?')
     .bind(clientId)
     .run();
 }
@@ -332,17 +332,17 @@ export async function cleanupExpiredTokens(db: D1Database): Promise<number> {
   const now = new Date().toISOString();
 
   const codeResult = await db
-    .prepare(`DELETE FROM oauth_authorization_codes WHERE expires_at < ?`)
+    .prepare('DELETE FROM oauth_authorization_codes WHERE expires_at < ?')
     .bind(now)
     .run();
 
   const accessResult = await db
-    .prepare(`DELETE FROM oauth_access_tokens WHERE expires_at < ?`)
+    .prepare('DELETE FROM oauth_access_tokens WHERE expires_at < ?')
     .bind(now)
     .run();
 
   const refreshResult = await db
-    .prepare(`DELETE FROM oauth_refresh_tokens WHERE expires_at < ?`)
+    .prepare('DELETE FROM oauth_refresh_tokens WHERE expires_at < ?')
     .bind(now)
     .run();
 

@@ -7,21 +7,33 @@ import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import app from '@/index';
 import type { Env } from '@/types';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createMockEnv, insertMockClassification, setupMockFetch } from '../../setup';
+import {
+  TEST_OAUTH_TOKEN,
+  createMockEnv,
+  createMockOAuthToken,
+  insertMockClassification,
+  setupMockFetch,
+} from '../../setup';
 
 const mockFetch = setupMockFetch();
 
 /**
- * Helper to make MCP requests
+ * Helper to make MCP requests with OAuth authentication
  */
 async function mcpRequest(
   method: string,
   params: Record<string, unknown> = {},
-  id: string | number = 1
+  id: string | number = 1,
+  options: { skipAuth?: boolean } = {}
 ): Promise<Response> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (!options.skipAuth) {
+    headers.Authorization = `Bearer ${TEST_OAUTH_TOKEN}`;
+  }
+
   const request = new Request('http://localhost/mcp', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({
       jsonrpc: '2.0',
       id,
@@ -37,8 +49,10 @@ async function mcpRequest(
 }
 
 describe('MCP Server', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     mockFetch.mockReset();
+    // Create OAuth token for authenticated requests
+    await createMockOAuthToken();
     // Mock SDK responses
     mockFetch.mockResolvedValue({
       ok: true,
@@ -72,7 +86,7 @@ describe('MCP Server', () => {
       expect(body).toMatchObject({
         name: '8004-agents',
         version: '1.0.0',
-        protocolVersion: '2024-11-05',
+        protocolVersion: '2025-03-26',
       });
     });
 
@@ -118,11 +132,16 @@ describe('MCP Server', () => {
 
   describe('initialize', () => {
     it('returns server info and capabilities', async () => {
-      const response = await mcpRequest('initialize', {
-        protocolVersion: '2024-11-05',
-        capabilities: {},
-        clientInfo: { name: 'test', version: '1.0.0' },
-      });
+      const response = await mcpRequest(
+        'initialize',
+        {
+          protocolVersion: '2025-03-26',
+          capabilities: {},
+          clientInfo: { name: 'test', version: '1.0.0' },
+        },
+        1,
+        { skipAuth: true }
+      );
 
       expect(response.status).toBe(200);
       const body = (await response.json()) as {
@@ -132,7 +151,7 @@ describe('MCP Server', () => {
           capabilities: object;
         };
       };
-      expect(body.result.protocolVersion).toBe('2024-11-05');
+      expect(body.result.protocolVersion).toBe('2025-03-26');
       expect(body.result.serverInfo.name).toBe('8004-agents');
       expect(body.result.capabilities).toBeDefined();
     });
@@ -140,11 +159,10 @@ describe('MCP Server', () => {
 
   describe('initialized', () => {
     it('acknowledges initialization', async () => {
-      const response = await mcpRequest('initialized');
+      const response = await mcpRequest('notifications/initialized');
 
-      expect(response.status).toBe(200);
-      const body = (await response.json()) as { result: object };
-      expect(body.result).toEqual({});
+      // MCP spec: notifications return 202 Accepted (no response body required)
+      expect(response.status).toBe(202);
     });
   });
 
@@ -477,7 +495,7 @@ describe('MCP Server', () => {
       const response = await app.fetch(request, createMockEnv() as unknown as Env, ctx);
       // Note: We can't fully test SSE in unit tests, just check headers
       expect(response.headers.get('Content-Type')).toBe('text/event-stream');
-      expect(response.headers.get('Cache-Control')).toBe('no-cache');
+      expect(response.headers.get('Cache-Control')).toBe('no-cache, no-store, must-revalidate');
     });
   });
 

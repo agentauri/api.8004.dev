@@ -386,6 +386,7 @@ agents.get('/', async (c) => {
       if (hasBooleanFilters || hasOASFFilters) {
         const isOrMode = query.filterMode === 'OR';
 
+        // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Filter logic requires checking multiple OASF and boolean conditions
         postFilteredAgents = enrichedAgents.filter((agent) => {
           // Skills filter (always AND) - check OASF classification
           // OASF uses flat structure, exact slug match only
@@ -539,6 +540,7 @@ agents.get('/', async (c) => {
         if (hasBooleanFilters || hasOASFFilters) {
           const isOrMode = query.filterMode === 'OR';
 
+          // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Filter logic requires checking multiple OASF and boolean conditions
           postFilteredAgents = enrichedAgents.filter((agent) => {
             // Skills filter (always AND)
             if (query.skills?.length) {
@@ -981,6 +983,7 @@ agents.get('/:agentId', async (c) => {
  * GET /api/v1/agents/:agentId/similar
  * Find agents with similar OASF classification
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Similar agents requires OASF matching across skills and domains
 agents.get('/:agentId/similar', async (c) => {
   const agentIdParam = c.req.param('agentId');
 

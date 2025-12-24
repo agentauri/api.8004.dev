@@ -10,7 +10,7 @@ import { getTaxonomy } from '@/lib/oasf/taxonomy';
 import { agentIdSchema, parseAgentId, parseClassificationRow } from '@/lib/utils/validation';
 import { extractBearerToken, validateAccessToken } from '@/oauth/services/token-service';
 import { CACHE_TTL, createCacheService } from '@/services/cache';
-import { createMCPSessionService } from '@/services/mcp-session';
+import { type MCPSessionService, createMCPSessionService } from '@/services/mcp-session';
 import { createReputationService } from '@/services/reputation';
 import { createSDKService } from '@/services/sdk';
 import { createSearchService } from '@/services/search';
@@ -225,7 +225,180 @@ const PROMPTS: PromptDefinition[] = [
 ];
 
 /**
- * Execute a tool
+ * Tool handler: search_agents
+ */
+async function toolSearchAgents(args: Record<string, unknown>, env: Env): Promise<unknown> {
+  const queryResult = querySchema.safeParse(args.query);
+  if (!queryResult.success) {
+    throw new Error(`Invalid query: ${queryResult.error.errors[0]?.message}`);
+  }
+  const query = queryResult.data;
+  const limit = limitSchema.parse(args.limit ?? 10);
+
+  const sdk = createSDKService(env);
+  const searchResultsCache = createCacheService(env.CACHE, CACHE_TTL.SEARCH_RESULTS);
+  const searchService = createSearchService(env.SEARCH_SERVICE_URL, searchResultsCache, env);
+
+  try {
+    const searchResults = await searchService.search({
+      query,
+      limit: limit * 2,
+      minScore: 0.3,
+    });
+
+    const agentIds = searchResults.results.map((r) => r.agentId);
+    const classificationsMap = await getClassificationsBatch(env.DB, agentIds);
+
+    let agents = searchResults.results.slice(0, limit).map((result) => {
+      const meta = result.metadata || {};
+      const classificationRow = classificationsMap.get(result.agentId);
+      const oasf = parseClassificationRow(classificationRow);
+
+      const mcpTools = Array.isArray(meta.mcpTools) ? meta.mcpTools : [];
+      const mcpPrompts = Array.isArray(meta.mcpPrompts) ? meta.mcpPrompts : [];
+      const mcpResources = Array.isArray(meta.mcpResources) ? meta.mcpResources : [];
+      const a2aSkills = Array.isArray(meta.a2aSkills) ? meta.a2aSkills : [];
+
+      return {
+        id: result.agentId,
+        name: result.name,
+        description: result.description,
+        chainId: result.chainId,
+        hasMcp: mcpTools.length > 0 || mcpPrompts.length > 0 || mcpResources.length > 0,
+        hasA2a: a2aSkills.length > 0,
+        skills: oasf?.skills?.map((s) => s.slug) ?? [],
+        domains: oasf?.domains?.map((d) => d.slug) ?? [],
+        searchScore: result.score,
+      };
+    });
+
+    if (args.mcp !== undefined) {
+      agents = agents.filter((a) => a.hasMcp === args.mcp);
+    }
+    if (args.a2a !== undefined) {
+      agents = agents.filter((a) => a.hasA2a === args.a2a);
+    }
+
+    return { query, total: agents.length, agents };
+  } catch {
+    const sdkResult = await sdk.search({ query, limit });
+    return {
+      query,
+      total: sdkResult.items.length,
+      agents: sdkResult.items.map((i) => ({
+        id: i.agent.id,
+        name: i.agent.name,
+        description: i.agent.description,
+        chainId: i.agent.chainId,
+        hasMcp: i.agent.hasMcp,
+        hasA2a: i.agent.hasA2a,
+        score: i.score,
+      })),
+    };
+  }
+}
+
+/**
+ * Tool handler: get_agent
+ */
+async function toolGetAgent(args: Record<string, unknown>, env: Env): Promise<unknown> {
+  const agentIdResult = agentIdSchema.safeParse(args.agentId);
+  if (!agentIdResult.success) {
+    throw new Error('Invalid agent ID format. Expected chainId:tokenId (e.g., "11155111:123")');
+  }
+  const agentId = agentIdResult.data;
+  const { chainId, tokenId } = parseAgentId(agentId);
+
+  const sdk = createSDKService(env);
+  const agent = await sdk.getAgent(chainId, tokenId);
+
+  if (!agent) {
+    throw new Error(`Agent ${agentId} not found`);
+  }
+
+  const classificationRow = await getClassification(env.DB, agentId);
+  const oasf = parseClassificationRow(classificationRow);
+
+  const reputationService = createReputationService(env.DB);
+  const reputation = await reputationService.getAgentReputation(agentId);
+
+  return {
+    id: agent.id,
+    name: agent.name,
+    description: agent.description,
+    chainId: agent.chainId,
+    tokenId: agent.tokenId,
+    active: agent.active,
+    capabilities: {
+      hasMcp: agent.hasMcp,
+      hasA2a: agent.hasA2a,
+      x402Support: agent.x402Support,
+    },
+    endpoints: {
+      mcp: agent.endpoints?.mcp?.url,
+      a2a: agent.endpoints?.a2a?.url,
+    },
+    classification: oasf
+      ? {
+          skills: oasf.skills?.map((s) => s.slug),
+          domains: oasf.domains?.map((d) => d.slug),
+        }
+      : null,
+    reputation: reputation
+      ? {
+          count: reputation.count,
+          averageScore: reputation.averageScore,
+        }
+      : null,
+  };
+}
+
+/**
+ * Tool handler: list_agents
+ */
+async function toolListAgents(args: Record<string, unknown>, env: Env): Promise<unknown> {
+  const limit = limitSchema.parse(args.limit ?? 20);
+  const sdk = createSDKService(env);
+
+  const result = await sdk.getAgents({
+    chainIds: args.chainIds as number[] | undefined,
+    hasMcp: args.mcp as boolean | undefined,
+    hasA2a: args.a2a as boolean | undefined,
+    limit,
+  });
+
+  return {
+    total: result.items.length,
+    agents: result.items.map((a) => ({
+      id: a.id,
+      name: a.name,
+      description: a.description,
+      chainId: a.chainId,
+      hasMcp: a.hasMcp,
+      hasA2a: a.hasA2a,
+    })),
+  };
+}
+
+/**
+ * Tool handler: get_chain_stats
+ */
+async function toolGetChainStats(env: Env): Promise<unknown> {
+  const sdk = createSDKService(env);
+  const stats = await sdk.getChainStats();
+
+  return {
+    chains: stats.map((s) => ({
+      chainId: s.chainId,
+      name: s.name,
+      totalAgents: s.totalCount,
+      activeAgents: s.activeCount,
+    })),
+  };
+}
+
+/**
+ * Execute a tool by name
  */
 async function executeTool(
   name: string,
@@ -233,169 +406,14 @@ async function executeTool(
   env: Env
 ): Promise<unknown> {
   switch (name) {
-    case 'search_agents': {
-      const queryResult = querySchema.safeParse(args.query);
-      if (!queryResult.success) {
-        throw new Error(`Invalid query: ${queryResult.error.errors[0]?.message}`);
-      }
-      const query = queryResult.data;
-      const limit = limitSchema.parse(args.limit ?? 10);
-
-      const sdk = createSDKService(env);
-      const searchResultsCache = createCacheService(env.CACHE, CACHE_TTL.SEARCH_RESULTS);
-      const searchService = createSearchService(env.SEARCH_SERVICE_URL, searchResultsCache, env);
-
-      try {
-        const searchResults = await searchService.search({
-          query,
-          limit: limit * 2,
-          minScore: 0.3,
-        });
-
-        const agentIds = searchResults.results.map((r) => r.agentId);
-        const classificationsMap = await getClassificationsBatch(env.DB, agentIds);
-
-        let agents = searchResults.results.slice(0, limit).map((result) => {
-          const meta = result.metadata || {};
-          const classificationRow = classificationsMap.get(result.agentId);
-          const oasf = parseClassificationRow(classificationRow);
-
-          const mcpTools = Array.isArray(meta.mcpTools) ? meta.mcpTools : [];
-          const mcpPrompts = Array.isArray(meta.mcpPrompts) ? meta.mcpPrompts : [];
-          const mcpResources = Array.isArray(meta.mcpResources) ? meta.mcpResources : [];
-          const a2aSkills = Array.isArray(meta.a2aSkills) ? meta.a2aSkills : [];
-
-          return {
-            id: result.agentId,
-            name: result.name,
-            description: result.description,
-            chainId: result.chainId,
-            hasMcp: mcpTools.length > 0 || mcpPrompts.length > 0 || mcpResources.length > 0,
-            hasA2a: a2aSkills.length > 0,
-            skills: oasf?.skills?.map((s) => s.slug) ?? [],
-            domains: oasf?.domains?.map((d) => d.slug) ?? [],
-            searchScore: result.score,
-          };
-        });
-
-        // Apply filters
-        if (args.mcp !== undefined) {
-          agents = agents.filter((a) => a.hasMcp === args.mcp);
-        }
-        if (args.a2a !== undefined) {
-          agents = agents.filter((a) => a.hasA2a === args.a2a);
-        }
-
-        return { query, total: agents.length, agents };
-      } catch {
-        // Fallback to SDK
-        const sdkResult = await sdk.search({ query, limit });
-        return {
-          query,
-          total: sdkResult.items.length,
-          agents: sdkResult.items.map((i) => ({
-            id: i.agent.id,
-            name: i.agent.name,
-            description: i.agent.description,
-            chainId: i.agent.chainId,
-            hasMcp: i.agent.hasMcp,
-            hasA2a: i.agent.hasA2a,
-            score: i.score,
-          })),
-        };
-      }
-    }
-
-    case 'get_agent': {
-      const agentIdResult = agentIdSchema.safeParse(args.agentId);
-      if (!agentIdResult.success) {
-        throw new Error('Invalid agent ID format. Expected chainId:tokenId (e.g., "11155111:123")');
-      }
-      const agentId = agentIdResult.data;
-      const { chainId, tokenId } = parseAgentId(agentId);
-
-      const sdk = createSDKService(env);
-      const agent = await sdk.getAgent(chainId, tokenId);
-
-      if (!agent) {
-        throw new Error(`Agent ${agentId} not found`);
-      }
-
-      const classificationRow = await getClassification(env.DB, agentId);
-      const oasf = parseClassificationRow(classificationRow);
-
-      const reputationService = createReputationService(env.DB);
-      const reputation = await reputationService.getAgentReputation(agentId);
-
-      return {
-        id: agent.id,
-        name: agent.name,
-        description: agent.description,
-        chainId: agent.chainId,
-        tokenId: agent.tokenId,
-        active: agent.active,
-        capabilities: {
-          hasMcp: agent.hasMcp,
-          hasA2a: agent.hasA2a,
-          x402Support: agent.x402Support,
-        },
-        endpoints: {
-          mcp: agent.endpoints?.mcp?.url,
-          a2a: agent.endpoints?.a2a?.url,
-        },
-        classification: oasf
-          ? {
-              skills: oasf.skills?.map((s) => s.slug),
-              domains: oasf.domains?.map((d) => d.slug),
-            }
-          : null,
-        reputation: reputation
-          ? {
-              count: reputation.count,
-              averageScore: reputation.averageScore,
-            }
-          : null,
-      };
-    }
-
-    case 'list_agents': {
-      const limit = limitSchema.parse(args.limit ?? 20);
-      const sdk = createSDKService(env);
-
-      const result = await sdk.getAgents({
-        chainIds: args.chainIds as number[] | undefined,
-        hasMcp: args.mcp as boolean | undefined,
-        hasA2a: args.a2a as boolean | undefined,
-        limit,
-      });
-
-      return {
-        total: result.items.length,
-        agents: result.items.map((a) => ({
-          id: a.id,
-          name: a.name,
-          description: a.description,
-          chainId: a.chainId,
-          hasMcp: a.hasMcp,
-          hasA2a: a.hasA2a,
-        })),
-      };
-    }
-
-    case 'get_chain_stats': {
-      const sdk = createSDKService(env);
-      const stats = await sdk.getChainStats();
-
-      return {
-        chains: stats.map((s) => ({
-          chainId: s.chainId,
-          name: s.name,
-          totalAgents: s.totalCount,
-          activeAgents: s.activeCount,
-        })),
-      };
-    }
-
+    case 'search_agents':
+      return toolSearchAgents(args, env);
+    case 'get_agent':
+      return toolGetAgent(args, env);
+    case 'list_agents':
+      return toolListAgents(args, env);
+    case 'get_chain_stats':
+      return toolGetChainStats(env);
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
@@ -513,6 +531,7 @@ interface MCPHandlerResult {
  * Handle MCP JSON-RPC request
  * Returns null for notifications (requests without id) per JSON-RPC spec
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: JSON-RPC dispatch requires handling multiple methods
 async function handleMCPRequest(request: MCPRequest, env: Env): Promise<MCPHandlerResult | null> {
   const { id, method, params } = request;
 
@@ -547,23 +566,22 @@ async function handleMCPRequest(request: MCPRequest, env: Env): Promise<MCPHandl
             },
             negotiatedVersion: requestedVersion, // Return for use in response header
           };
-        } else {
-          // Return error with supported versions
-          return {
-            response: {
-              jsonrpc: '2.0',
-              id,
-              error: {
-                code: -32602,
-                message: 'Unsupported protocol version',
-                data: {
-                  supported: SUPPORTED_PROTOCOL_VERSIONS,
-                  requested: requestedVersion,
-                },
+        }
+        // Return error with supported versions
+        return {
+          response: {
+            jsonrpc: '2.0',
+            id,
+            error: {
+              code: -32602,
+              message: 'Unsupported protocol version',
+              data: {
+                supported: SUPPORTED_PROTOCOL_VERSIONS,
+                requested: requestedVersion,
               },
             },
-          };
-        }
+          },
+        };
       }
 
       case 'initialized':
@@ -889,345 +907,361 @@ function generateDocsHtml(): string {
 }
 
 /**
+ * Common CORS headers for MCP responses
+ */
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+};
+
+/**
+ * Handle CORS preflight requests
+ */
+function handleCorsPreflightRequest(): Response {
+  return new Response(null, {
+    headers: {
+      ...CORS_HEADERS,
+      'Access-Control-Allow-Methods': 'GET, POST, DELETE, HEAD, OPTIONS',
+      'Access-Control-Allow-Headers':
+        'Content-Type, Authorization, Accept, Mcp-Session-Id, X-Request-Id',
+      'Access-Control-Expose-Headers': 'MCP-Protocol-Version, Mcp-Session-Id',
+    },
+  });
+}
+
+/**
+ * Handle DELETE requests for session termination
+ */
+function handleDeleteRequest(request: Request): Response {
+  const sessionId = request.headers.get('Mcp-Session-Id');
+  return new Response(null, {
+    status: sessionId ? 200 : 400,
+    headers: CORS_HEADERS,
+  });
+}
+
+/**
+ * Handle HEAD requests for protocol discovery
+ */
+function handleHeadRequest(): Response {
+  return new Response(null, {
+    status: 200,
+    headers: {
+      'MCP-Protocol-Version': LATEST_PROTOCOL_VERSION,
+      ...CORS_HEADERS,
+      'Access-Control-Expose-Headers': 'MCP-Protocol-Version',
+    },
+  });
+}
+
+/**
+ * Handle SSE endpoint requests
+ */
+function handleSseRequest(request: Request, url: URL): Response {
+  const sessionId = request.headers.get('Mcp-Session-Id') || crypto.randomUUID();
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+  const encoder = new TextEncoder();
+
+  const mcpEndpoint = `${url.protocol}//${url.host}/mcp?sessionId=${sessionId}`;
+  writer.write(encoder.encode(`event: endpoint\ndata: ${mcpEndpoint}\n\n`));
+
+  const keepAlive = setInterval(() => {
+    writer.write(encoder.encode(': keepalive\n\n')).catch(() => {
+      clearInterval(keepAlive);
+    });
+  }, 15000);
+
+  request.signal.addEventListener('abort', () => {
+    clearInterval(keepAlive);
+    writer.close();
+  });
+
+  return new Response(readable, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      Connection: 'keep-alive',
+      ...CORS_HEADERS,
+      'Access-Control-Expose-Headers': 'Mcp-Session-Id, MCP-Protocol-Version',
+      'Mcp-Session-Id': sessionId,
+    },
+  });
+}
+
+/**
+ * Handle JSON Schema endpoint requests
+ */
+function handleSchemaRequest(): Response {
+  const schema = {
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://api.8004.dev/mcp/schema.json',
+    title: '8004 MCP Server Schema',
+    description: 'JSON Schema for 8004.dev MCP server tools, resources, and prompts',
+    version: SERVER_INFO.version,
+    protocolVersion: DEFAULT_PROTOCOL_VERSION,
+    tools: TOOLS.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+    })),
+    resources: RESOURCES.map((resource) => ({
+      uri: resource.uri,
+      name: resource.name,
+      description: resource.description,
+      mimeType: resource.mimeType,
+    })),
+    prompts: PROMPTS.map((prompt) => ({
+      name: prompt.name,
+      description: prompt.description,
+      arguments: prompt.arguments,
+    })),
+  };
+
+  return new Response(JSON.stringify(schema, null, 2), {
+    headers: {
+      'Content-Type': 'application/json',
+      ...CORS_HEADERS,
+      'Cache-Control': 'public, max-age=3600',
+    },
+  });
+}
+
+/**
+ * Handle documentation HTML endpoint requests
+ */
+function handleDocsRequest(): Response {
+  const html = generateDocsHtml();
+  return new Response(html, {
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      ...CORS_HEADERS,
+      'Cache-Control': 'public, max-age=300',
+    },
+  });
+}
+
+/**
+ * Handle server info GET requests
+ */
+function handleServerInfoRequest(acceptHeader: string): Response {
+  if (acceptHeader.includes('text/event-stream')) {
+    return new Response(null, {
+      status: 405,
+      headers: {
+        ...CORS_HEADERS,
+        Allow: 'POST, HEAD, OPTIONS',
+      },
+    });
+  }
+
+  return new Response(
+    JSON.stringify({
+      name: SERVER_INFO.name,
+      version: SERVER_INFO.version,
+      protocolVersion: DEFAULT_PROTOCOL_VERSION,
+      description: 'MCP server for exploring ERC-8004 AI agents',
+      endpoints: {
+        jsonRpc: '/mcp',
+        sse: '/sse',
+        docs: '/mcp/docs',
+        schema: '/mcp/schema.json',
+      },
+      tools: TOOLS.map((t) => t.name),
+      resources: RESOURCES.map((r) => r.uri),
+      prompts: PROMPTS.map((p) => p.name),
+    }),
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        ...CORS_HEADERS,
+      },
+    }
+  );
+}
+
+/**
+ * Create JSON-RPC error response
+ */
+function createJsonRpcErrorResponse(
+  code: number,
+  message: string,
+  sessionId: string,
+  status = 400
+): Response {
+  return new Response(
+    JSON.stringify({
+      jsonrpc: '2.0',
+      error: { code, message },
+      id: null,
+    }),
+    {
+      status,
+      headers: {
+        'Content-Type': 'application/json',
+        ...CORS_HEADERS,
+        'Access-Control-Expose-Headers': 'Mcp-Session-Id, MCP-Protocol-Version',
+        'MCP-Protocol-Version': DEFAULT_PROTOCOL_VERSION,
+        'Mcp-Session-Id': sessionId,
+      },
+    }
+  );
+}
+
+/**
+ * Create 401 Unauthorized response for OAuth
+ */
+function createUnauthorizedResponse(errorType?: string): Response {
+  const wwwAuth = errorType
+    ? `Bearer resource_metadata="https://api.8004.dev/.well-known/oauth-protected-resource",error="${errorType}"`
+    : `Bearer resource_metadata="https://api.8004.dev/.well-known/oauth-protected-resource",scope="mcp:read mcp:write"`;
+
+  return new Response('Unauthorized', {
+    status: 401,
+    headers: {
+      'Content-Type': 'text/plain',
+      'WWW-Authenticate': wwwAuth,
+      ...CORS_HEADERS,
+      'Access-Control-Expose-Headers': 'WWW-Authenticate',
+    },
+  });
+}
+
+/**
+ * Handle POST requests (JSON-RPC endpoint)
+ */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: OAuth validation and session management require multiple checks
+async function handlePostRequest(
+  request: Request,
+  env: Env,
+  sessionService: MCPSessionService
+): Promise<Response> {
+  const token = extractBearerToken(request);
+  const sessionId = request.headers.get('Mcp-Session-Id') || crypto.randomUUID();
+
+  let body: MCPRequest;
+  try {
+    body = (await request.json()) as MCPRequest;
+  } catch {
+    return createJsonRpcErrorResponse(-32700, 'Parse error', sessionId);
+  }
+
+  const isInitMethod = body.method === 'initialize' || body.method === 'notifications/initialized';
+  const isProbeOrEmpty = !body.method;
+
+  if (isProbeOrEmpty && !token) {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        ...CORS_HEADERS,
+        'MCP-Protocol-Version': '2025-11-25',
+      },
+    });
+  }
+
+  if (!token && !isInitMethod) {
+    return createUnauthorizedResponse();
+  }
+
+  if (token && !isInitMethod) {
+    const tokenResult = await validateAccessToken(env.DB, token);
+    if (!tokenResult.valid) {
+      return createUnauthorizedResponse('invalid_token');
+    }
+  }
+
+  try {
+    const result = await handleMCPRequest(body, env);
+
+    if (result === null) {
+      return new Response(null, {
+        status: 202,
+        headers: {
+          ...CORS_HEADERS,
+          'Access-Control-Expose-Headers': 'Mcp-Session-Id, MCP-Protocol-Version',
+          'MCP-Protocol-Version': DEFAULT_PROTOCOL_VERSION,
+          'Mcp-Session-Id': sessionId,
+        },
+      });
+    }
+
+    const { response, negotiatedVersion } = result;
+
+    if (body.method === 'initialize' && !response.error) {
+      const initParams = body.params as
+        | { clientInfo?: { name: string; version: string } }
+        | undefined;
+      await sessionService.create({
+        sessionId,
+        protocolVersion: negotiatedVersion || DEFAULT_PROTOCOL_VERSION,
+        clientInfo: initParams?.clientInfo,
+        serverInfo: SERVER_INFO,
+        initialized: true,
+      });
+    } else if (request.headers.get('Mcp-Session-Id')) {
+      await sessionService.touch(sessionId);
+    }
+
+    return new Response(JSON.stringify(response), {
+      headers: {
+        'Content-Type': 'application/json',
+        ...CORS_HEADERS,
+        'Access-Control-Expose-Headers': 'Mcp-Session-Id, MCP-Protocol-Version',
+        'MCP-Protocol-Version': negotiatedVersion || DEFAULT_PROTOCOL_VERSION,
+        'Mcp-Session-Id': sessionId,
+      },
+    });
+  } catch {
+    return createJsonRpcErrorResponse(-32700, 'Parse error', sessionId);
+  }
+}
+
+/**
  * Create the MCP request handler for Cloudflare Workers
  * Supports both SSE streaming and JSON responses
  */
 export function createMcp8004Handler(env: Env) {
+  const sessionService = createMCPSessionService(env.CACHE);
+
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: MCP routing requires handling multiple HTTP methods and paths
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
 
-    // Handle CORS preflight
     if (request.method === 'OPTIONS') {
-      return new Response(null, {
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, DELETE, HEAD, OPTIONS',
-          'Access-Control-Allow-Headers':
-            'Content-Type, Authorization, Accept, Mcp-Session-Id, X-Request-Id',
-          'Access-Control-Expose-Headers': 'MCP-Protocol-Version, Mcp-Session-Id',
-        },
-      });
+      return handleCorsPreflightRequest();
     }
 
-    // Handle DELETE for session termination (Streamable HTTP spec)
     if (request.method === 'DELETE') {
-      const sessionId = request.headers.get('Mcp-Session-Id');
-      // Session termination - just acknowledge, we don't persist sessions
-      return new Response(null, {
-        status: sessionId ? 200 : 400,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-        },
-      });
+      return handleDeleteRequest(request);
     }
 
-    // Handle .well-known paths under /mcp (for Claude Desktop OAuth discovery)
-    // When Claude Desktop is given https://api.8004.dev/mcp, it may look for
-    // /.well-known/oauth-protected-resource relative to that path
-    // We redirect these to the root level where OAuth metadata is served
     if (url.pathname.startsWith('/mcp/.well-known/')) {
       const wellKnownPath = url.pathname.replace('/mcp/.well-known/', '/.well-known/');
       const redirectUrl = new URL(wellKnownPath, url.origin);
       return Response.redirect(redirectUrl.toString(), 302);
     }
 
-    // HEAD method for protocol discovery (required by Claude Desktop Connectors)
-    // Advertise the latest version we support
     if (request.method === 'HEAD') {
-      return new Response(null, {
-        status: 200,
-        headers: {
-          'MCP-Protocol-Version': LATEST_PROTOCOL_VERSION,
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Expose-Headers': 'MCP-Protocol-Version',
-        },
-      });
+      return handleHeadRequest();
     }
 
-    // Create session service for this request
-    const sessionService = createMCPSessionService(env.CACHE);
-
-    // SSE endpoint for MCP-over-HTTP/SSE
-    // Used by mcp-remote and Claude.ai web connectors
-    // Per Gemini's analysis: DON'T send proactive initResponse!
-    // Just send the endpoint event and wait for client to POST initialize
     if (url.pathname === '/sse' && request.method === 'GET') {
-      // Generate or use existing session ID
-      const sessionId = request.headers.get('Mcp-Session-Id') || crypto.randomUUID();
-
-      // Setup SSE stream
-      const { readable, writable } = new TransformStream();
-      const writer = writable.getWriter();
-      const encoder = new TextEncoder();
-
-      // URL for POST messages (JSON-RPC)
-      // This tells the client where to send initialize and other requests
-      const mcpEndpoint = `${url.protocol}//${url.host}/mcp?sessionId=${sessionId}`;
-
-      // Send the endpoint event IMMEDIATELY
-      // This is what the client needs to know where to POST commands
-      // DO NOT send initResponse proactively - that's a protocol violation!
-      writer.write(encoder.encode(`event: endpoint\ndata: ${mcpEndpoint}\n\n`));
-
-      // Keep connection alive with SSE comments
-      const keepAlive = setInterval(() => {
-        writer.write(encoder.encode(': keepalive\n\n')).catch(() => {
-          clearInterval(keepAlive);
-        });
-      }, 15000);
-
-      // Clean up on close
-      request.signal.addEventListener('abort', () => {
-        clearInterval(keepAlive);
-        writer.close();
-      });
-
-      return new Response(readable, {
-        headers: {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          Connection: 'keep-alive',
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Expose-Headers': 'Mcp-Session-Id, MCP-Protocol-Version',
-          'Mcp-Session-Id': sessionId,
-        },
-      });
+      return handleSseRequest(request, url);
     }
 
-    // JSON-RPC endpoint (Streamable HTTP for Claude Desktop Connectors)
     if (request.method === 'POST') {
-      const token = extractBearerToken(request);
-
-      // Session management - use provided session ID or generate new one
-      const sessionId = request.headers.get('Mcp-Session-Id') || crypto.randomUUID();
-
-      // Parse body first to check if it's initialize (allowed without auth)
-      let body: MCPRequest;
-      try {
-        body = (await request.json()) as MCPRequest;
-      } catch {
-        return new Response(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            error: { code: -32700, message: 'Parse error' },
-            id: null,
-          }),
-          {
-            status: 400,
-            headers: {
-              'Content-Type': 'application/json',
-              'Access-Control-Allow-Origin': '*',
-            },
-          }
-        );
-      }
-
-      // Allow initialize, notifications/initialized, and empty/probe requests without auth
-      // These are needed for connection establishment before OAuth
-      const isInitMethod =
-        body.method === 'initialize' || body.method === 'notifications/initialized';
-      const isProbeOrEmpty = !body.method;
-
-      // For empty/probe requests, return 204 to acknowledge without triggering OAuth
-      if (isProbeOrEmpty && !token) {
-        return new Response(null, {
-          status: 204,
-          headers: {
-            'Access-Control-Allow-Origin': '*',
-            'MCP-Protocol-Version': '2025-11-25',
-          },
-        });
-      }
-
-      if (!token && !isInitMethod) {
-        // No token and not an init method - return 401 with OAuth discovery header
-        return new Response('Unauthorized', {
-          status: 401,
-          headers: {
-            'Content-Type': 'text/plain',
-            'WWW-Authenticate': `Bearer resource_metadata="https://api.8004.dev/.well-known/oauth-protected-resource",scope="mcp:read mcp:write"`,
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Expose-Headers': 'WWW-Authenticate',
-          },
-        });
-      }
-
-      // Validate token if provided (for non-init methods)
-      if (token && !isInitMethod) {
-        const tokenResult = await validateAccessToken(env.DB, token);
-        if (!tokenResult.valid) {
-          return new Response('Unauthorized', {
-            status: 401,
-            headers: {
-              'Content-Type': 'text/plain',
-              'WWW-Authenticate': `Bearer resource_metadata="https://api.8004.dev/.well-known/oauth-protected-resource",error="invalid_token"`,
-              'Access-Control-Allow-Origin': '*',
-              'Access-Control-Expose-Headers': 'WWW-Authenticate',
-            },
-          });
-        }
-      }
-
-      // Streamable HTTP: Always return JSON for POST requests
-      try {
-        const result = await handleMCPRequest(body, env);
-
-        // Notifications return null - send 202 Accepted with no body
-        if (result === null) {
-          return new Response(null, {
-            status: 202,
-            headers: {
-              'Access-Control-Allow-Origin': '*',
-              'Access-Control-Expose-Headers': 'Mcp-Session-Id, MCP-Protocol-Version',
-              'MCP-Protocol-Version': DEFAULT_PROTOCOL_VERSION,
-              'Mcp-Session-Id': sessionId,
-            },
-          });
-        }
-
-        const { response, negotiatedVersion } = result;
-
-        // On successful initialize, create session in KV
-        if (body.method === 'initialize' && !response.error) {
-          const initParams = body.params as
-            | {
-                clientInfo?: { name: string; version: string };
-              }
-            | undefined;
-
-          await sessionService.create({
-            sessionId,
-            protocolVersion: negotiatedVersion || DEFAULT_PROTOCOL_VERSION,
-            clientInfo: initParams?.clientInfo,
-            serverInfo: SERVER_INFO,
-            initialized: true,
-          });
-        } else if (request.headers.get('Mcp-Session-Id')) {
-          // Touch existing session to extend TTL
-          await sessionService.touch(sessionId);
-        }
-
-        // Always return plain JSON for Streamable HTTP transport
-        return new Response(JSON.stringify(response), {
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Expose-Headers': 'Mcp-Session-Id, MCP-Protocol-Version',
-            'MCP-Protocol-Version': negotiatedVersion || DEFAULT_PROTOCOL_VERSION,
-            'Mcp-Session-Id': sessionId,
-          },
-        });
-      } catch {
-        const errorResponse = {
-          jsonrpc: '2.0',
-          error: {
-            code: -32700,
-            message: 'Parse error',
-          },
-        };
-
-        return new Response(JSON.stringify(errorResponse), {
-          status: 400,
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Expose-Headers': 'Mcp-Session-Id, MCP-Protocol-Version',
-            'MCP-Protocol-Version': DEFAULT_PROTOCOL_VERSION,
-            'Mcp-Session-Id': sessionId,
-          },
-        });
-      }
+      return handlePostRequest(request, env, sessionService);
     }
 
-    // JSON Schema endpoint
     if (url.pathname === '/mcp/schema.json' && request.method === 'GET') {
-      const schema = {
-        $schema: 'https://json-schema.org/draft/2020-12/schema',
-        $id: 'https://api.8004.dev/mcp/schema.json',
-        title: '8004 MCP Server Schema',
-        description: 'JSON Schema for 8004.dev MCP server tools, resources, and prompts',
-        version: SERVER_INFO.version,
-        protocolVersion: DEFAULT_PROTOCOL_VERSION,
-        tools: TOOLS.map((tool) => ({
-          name: tool.name,
-          description: tool.description,
-          inputSchema: tool.inputSchema,
-        })),
-        resources: RESOURCES.map((resource) => ({
-          uri: resource.uri,
-          name: resource.name,
-          description: resource.description,
-          mimeType: resource.mimeType,
-        })),
-        prompts: PROMPTS.map((prompt) => ({
-          name: prompt.name,
-          description: prompt.description,
-          arguments: prompt.arguments,
-        })),
-      };
-
-      return new Response(JSON.stringify(schema, null, 2), {
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-          'Cache-Control': 'public, max-age=3600',
-        },
-      });
+      return handleSchemaRequest();
     }
 
-    // Documentation HTML endpoint
     if (url.pathname === '/mcp/docs' && request.method === 'GET') {
-      const html = generateDocsHtml();
-      return new Response(html, {
-        headers: {
-          'Content-Type': 'text/html; charset=utf-8',
-          'Access-Control-Allow-Origin': '*',
-          'Cache-Control': 'public, max-age=300',
-        },
-      });
+      return handleDocsRequest();
     }
 
-    // Handle GET requests
     if (request.method === 'GET') {
-      const acceptHeader = request.headers.get('Accept') || '';
-
-      // Streamable HTTP: GET with Accept: text/event-stream
-      // Per MCP spec, return 405 if server doesn't support server-initiated SSE
-      // Our server is request-response only, so we return 405
-      if (acceptHeader.includes('text/event-stream')) {
-        return new Response(null, {
-          status: 405,
-          headers: {
-            'Access-Control-Allow-Origin': '*',
-            Allow: 'POST, HEAD, OPTIONS',
-          },
-        });
-      }
-
-      // Regular GET: Return server info JSON
-      return new Response(
-        JSON.stringify({
-          name: SERVER_INFO.name,
-          version: SERVER_INFO.version,
-          protocolVersion: DEFAULT_PROTOCOL_VERSION,
-          description: 'MCP server for exploring ERC-8004 AI agents',
-          endpoints: {
-            jsonRpc: '/mcp',
-            sse: '/sse',
-            docs: '/mcp/docs',
-            schema: '/mcp/schema.json',
-          },
-          tools: TOOLS.map((t) => t.name),
-          resources: RESOURCES.map((r) => r.uri),
-          prompts: PROMPTS.map((p) => p.name),
-        }),
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-          },
-        }
-      );
+      return handleServerInfoRequest(request.headers.get('Accept') || '');
     }
 
     return new Response('Method not allowed', { status: 405 });

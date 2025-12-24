@@ -31,6 +31,7 @@ const authorize = new Hono<{ Bindings: Env; Variables: Variables }>();
  * - code_challenge_method: Must be "S256"
  * - resource: MCP server URL (optional, defaults to issuer)
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: OAuth authorization requires validating multiple parameters
 authorize.get('/', async (c) => {
   const query = c.req.query();
 

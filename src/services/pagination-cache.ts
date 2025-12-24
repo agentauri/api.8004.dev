@@ -186,7 +186,6 @@ export function sortAgents(
         const scoreB = b.searchScore ?? 0;
         return multiplier * (scoreA - scoreB);
       }
-      case 'createdAt':
       default: {
         // Use tokenId as proxy for createdAt (higher tokenId = newer)
         const tokenA = Number.parseInt(a.tokenId, 10) || 0;

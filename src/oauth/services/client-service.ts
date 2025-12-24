@@ -50,6 +50,7 @@ export function isValidRedirectUri(uri: string): boolean {
  * @param request - Registration request
  * @returns Error message or null if valid
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: OAuth client validation requires checking multiple fields
 export function validateRegistrationRequest(request: ClientRegistrationRequest): string | null {
   if (!request.client_name || typeof request.client_name !== 'string') {
     return 'client_name is required';
@@ -148,7 +149,7 @@ export async function registerClient(
  */
 export async function getClientById(db: D1Database, clientId: string): Promise<OAuthClient | null> {
   const row = await db
-    .prepare(`SELECT * FROM oauth_clients WHERE client_id = ?`)
+    .prepare('SELECT * FROM oauth_clients WHERE client_id = ?')
     .bind(clientId)
     .first<OAuthClientRow>();
 
@@ -200,7 +201,7 @@ export async function validateClientCredentials(
  */
 export async function clientExists(db: D1Database, clientId: string): Promise<boolean> {
   const result = await db
-    .prepare(`SELECT 1 FROM oauth_clients WHERE client_id = ?`)
+    .prepare('SELECT 1 FROM oauth_clients WHERE client_id = ?')
     .bind(clientId)
     .first();
 
@@ -237,7 +238,7 @@ export function isGrantTypeAllowed(client: OAuthClient, grantType: string): bool
  */
 export async function deleteClient(db: D1Database, clientId: string): Promise<void> {
   // Tokens are deleted via CASCADE
-  await db.prepare(`DELETE FROM oauth_clients WHERE client_id = ?`).bind(clientId).run();
+  await db.prepare('DELETE FROM oauth_clients WHERE client_id = ?').bind(clientId).run();
 }
 
 /**
