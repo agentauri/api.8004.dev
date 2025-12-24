@@ -23,15 +23,13 @@ import {
   type AgentSortField,
   type CachedPaginationSet,
   type SortOrder,
-  deduplicateAgents,
   decodeOffset,
-  encodeOffset,
+  deduplicateAgents,
   generatePaginationCacheKey,
   getCachedPaginationSet,
   getPaginatedSlice,
   interleaveChainResults,
   setCachedPaginationSet,
-  sortAgents,
 } from './pagination-cache';
 
 /**

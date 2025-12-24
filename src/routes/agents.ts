@@ -1096,7 +1096,8 @@ agents.get('/:agentId/similar', async (c) => {
 
       // Weight skills more heavily (60% skills, 40% domains)
       // Return score as 0-1 range (not 0-100)
-      const similarityScore = Math.round((skillSimilarity * 0.6 + domainSimilarity * 0.4) * 100) / 100;
+      const similarityScore =
+        Math.round((skillSimilarity * 0.6 + domainSimilarity * 0.4) * 100) / 100;
 
       if (similarityScore > 0) {
         similarAgents.push({

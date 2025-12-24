@@ -7,7 +7,6 @@
 import type {
   OAuthAccessToken,
   OAuthAuthorizationCode,
-  OAuthConfig,
   OAuthRefreshToken,
   TokenValidationResult,
 } from '../types';

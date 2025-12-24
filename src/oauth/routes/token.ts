@@ -6,12 +6,15 @@
 
 import type { Env, Variables } from '@/types';
 import { Hono } from 'hono';
-import { getClientById, isGrantTypeAllowed, validateClientCredentials } from '../services/client-service';
+import {
+  getClientById,
+  isGrantTypeAllowed,
+  validateClientCredentials,
+} from '../services/client-service';
 import { validatePKCE } from '../services/pkce-service';
 import {
   createAccessToken,
   createRefreshToken,
-  getTokenExpiresIn,
   markAuthorizationCodeUsed,
   revokeRefreshToken,
   validateAuthorizationCode,
@@ -108,7 +111,11 @@ token.post('/', async (c) => {
 
   // Validate client credentials if confidential client
   if (client.client_secret && params.client_secret) {
-    const validClient = await validateClientCredentials(c.env.DB, params.client_id, params.client_secret);
+    const validClient = await validateClientCredentials(
+      c.env.DB,
+      params.client_id,
+      params.client_secret
+    );
     if (!validClient) {
       const error: OAuthErrorResponse = {
         error: 'invalid_client',
@@ -128,8 +135,10 @@ token.post('/', async (c) => {
   }
 
   // Get TTL configuration
-  const accessTokenTtl = Number(c.env.OAUTH_ACCESS_TOKEN_TTL) || DEFAULT_OAUTH_CONFIG.accessTokenTtl;
-  const refreshTokenTtl = Number(c.env.OAUTH_REFRESH_TOKEN_TTL) || DEFAULT_OAUTH_CONFIG.refreshTokenTtl;
+  const accessTokenTtl =
+    Number(c.env.OAUTH_ACCESS_TOKEN_TTL) || DEFAULT_OAUTH_CONFIG.accessTokenTtl;
+  const refreshTokenTtl =
+    Number(c.env.OAUTH_REFRESH_TOKEN_TTL) || DEFAULT_OAUTH_CONFIG.refreshTokenTtl;
 
   // Handle grant types
   switch (params.grant_type) {
@@ -153,7 +162,10 @@ token.post('/', async (c) => {
  * Handle authorization_code grant type
  */
 async function handleAuthorizationCodeGrant(
-  c: { env: Env; json: <T>(data: T, status?: number, headers?: Record<string, string>) => Response },
+  c: {
+    env: Env;
+    json: <T>(data: T, status?: number, headers?: Record<string, string>) => Response;
+  },
   params: TokenRequest,
   accessTokenTtl: number,
   refreshTokenTtl: number
@@ -249,7 +261,10 @@ async function handleAuthorizationCodeGrant(
  * Handle refresh_token grant type
  */
 async function handleRefreshTokenGrant(
-  c: { env: Env; json: <T>(data: T, status?: number, headers?: Record<string, string>) => Response },
+  c: {
+    env: Env;
+    json: <T>(data: T, status?: number, headers?: Record<string, string>) => Response;
+  },
   params: TokenRequest,
   accessTokenTtl: number,
   refreshTokenTtl: number
@@ -264,7 +279,11 @@ async function handleRefreshTokenGrant(
   }
 
   // Validate refresh token
-  const refreshTokenRecord = await validateRefreshToken(c.env.DB, params.refresh_token, params.client_id);
+  const refreshTokenRecord = await validateRefreshToken(
+    c.env.DB,
+    params.refresh_token,
+    params.client_id
+  );
 
   if (!refreshTokenRecord) {
     const error: OAuthErrorResponse = {
