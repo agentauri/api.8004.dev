@@ -8,7 +8,6 @@
 import { getClassification, getClassificationsBatch } from '@/db/queries';
 import { getTaxonomy } from '@/lib/oasf/taxonomy';
 import { agentIdSchema, parseAgentId, parseClassificationRow } from '@/lib/utils/validation';
-import { extractBearerToken } from '@/oauth/services/token-service';
 import { CACHE_TTL, createCacheService } from '@/services/cache';
 import { type MCPSessionService, createMCPSessionService } from '@/services/mcp-session';
 import { createReputationService } from '@/services/reputation';
@@ -1115,7 +1114,6 @@ async function handlePostRequest(
   env: Env,
   sessionService: MCPSessionService
 ): Promise<Response> {
-  const token = extractBearerToken(request);
   const sessionId = request.headers.get('Mcp-Session-Id') || crypto.randomUUID();
 
   let body: MCPRequest;
@@ -1124,22 +1122,6 @@ async function handlePostRequest(
   } catch {
     return createJsonRpcErrorResponse(-32700, 'Parse error', sessionId);
   }
-
-  const _isInitMethod = body.method === 'initialize' || body.method === 'notifications/initialized';
-  const isProbeOrEmpty = !body.method;
-
-  if (isProbeOrEmpty && !token) {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        ...CORS_HEADERS,
-        'MCP-Protocol-Version': DEFAULT_PROTOCOL_VERSION,
-      },
-    });
-  }
-
-  // MCP is fully public - no token validation required
-  // Tokens are accepted but not validated (OAuth flow optional)
 
   try {
     const result = await handleMCPRequest(body, env);
@@ -1204,12 +1186,6 @@ export function createMcp8004Handler(env: Env) {
 
     if (request.method === 'DELETE') {
       return handleDeleteRequest(request);
-    }
-
-    if (url.pathname.startsWith('/mcp/.well-known/')) {
-      const wellKnownPath = url.pathname.replace('/mcp/.well-known/', '/.well-known/');
-      const redirectUrl = new URL(wellKnownPath, url.origin);
-      return Response.redirect(redirectUrl.toString(), 302);
     }
 
     if (request.method === 'HEAD') {

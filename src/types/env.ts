@@ -41,16 +41,6 @@ export interface Env {
   // E2E testing configuration
   /** Enable mock services for deterministic E2E testing (default: false) */
   MOCK_EXTERNAL_SERVICES?: string;
-
-  // OAuth 2.0 configuration
-  /** OAuth issuer URL (default: https://api.8004.dev) */
-  OAUTH_ISSUER?: string;
-  /** Access token TTL in seconds (default: 3600 / 1 hour) */
-  OAUTH_ACCESS_TOKEN_TTL?: string;
-  /** Refresh token TTL in seconds (default: 2592000 / 30 days) */
-  OAUTH_REFRESH_TOKEN_TTL?: string;
-  /** Authorization code TTL in seconds (default: 600 / 10 minutes) */
-  OAUTH_AUTH_CODE_TTL?: string;
 }
 
 /**
