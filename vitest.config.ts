@@ -43,10 +43,11 @@ export default defineWorkersConfig({
         // - Search fallback paths - complex conditional logic
         // - Similar agents endpoint, health score, warnings - new features pending tests
         // - MCP OAuth validation paths - optional auth flow
-        lines: 71,
-        functions: 72,
-        branches: 57,
-        statements: 70,
+        // - OAuth authorize/token routes - complex integration tests pending
+        lines: 80,
+        functions: 80,
+        branches: 64,
+        statements: 79,
       },
     },
   },
