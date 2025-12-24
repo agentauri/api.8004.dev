@@ -8,7 +8,12 @@
 import { getClassification, getClassificationsBatch } from '@/db/queries';
 import { getTaxonomy } from '@/lib/oasf/taxonomy';
 import { agentIdSchema, parseAgentId, parseClassificationRow } from '@/lib/utils/validation';
+import {
+  extractBearerToken,
+  validateAccessToken,
+} from '@/oauth/services/token-service';
 import { CACHE_TTL, createCacheService } from '@/services/cache';
+import { createMCPSessionService, type MCPSessionService } from '@/services/mcp-session';
 import { createReputationService } from '@/services/reputation';
 import { createSDKService } from '@/services/sdk';
 import { createSearchService } from '@/services/search';
@@ -89,7 +94,8 @@ interface PromptDefinition {
 const SUPPORTED_PROTOCOL_VERSIONS = [
   '2024-11-05', // Original MCP spec
   '2025-03-26', // Streamable HTTP spec
-  '2025-06-18', // Latest (Claude Desktop Connectors)
+  '2025-06-18', // Claude Desktop Connectors
+  '2025-11-25', // Claude.ai Web Connectors (latest)
 ];
 
 const DEFAULT_PROTOCOL_VERSION = '2025-03-26';
@@ -508,9 +514,13 @@ interface MCPHandlerResult {
 
 /**
  * Handle MCP JSON-RPC request
+ * Returns null for notifications (requests without id) per JSON-RPC spec
  */
-async function handleMCPRequest(request: MCPRequest, env: Env): Promise<MCPHandlerResult> {
+async function handleMCPRequest(request: MCPRequest, env: Env): Promise<MCPHandlerResult | null> {
   const { id, method, params } = request;
+
+  // Notifications (no id) should not receive a response per JSON-RPC spec
+  const isNotification = id === undefined || id === null;
 
   try {
     switch (method) {
@@ -560,7 +570,9 @@ async function handleMCPRequest(request: MCPRequest, env: Env): Promise<MCPHandl
       }
 
       case 'initialized':
-        return { response: { jsonrpc: '2.0', id, result: {} } };
+      case 'notifications/initialized':
+        // This is a notification - no response required per JSON-RPC spec
+        return null;
 
       case 'tools/list':
         return {
@@ -634,6 +646,10 @@ async function handleMCPRequest(request: MCPRequest, env: Env): Promise<MCPHandl
       }
 
       default:
+        // Handle any other notification methods - don't respond to notifications
+        if (isNotification || method.startsWith('notifications/')) {
+          return null;
+        }
         return {
           response: {
             jsonrpc: '2.0',
@@ -646,6 +662,10 @@ async function handleMCPRequest(request: MCPRequest, env: Env): Promise<MCPHandl
         };
     }
   } catch (error) {
+    // Don't respond to notifications even on error
+    if (isNotification) {
+      return null;
+    }
     return {
       response: {
         jsonrpc: '2.0',
@@ -884,9 +904,21 @@ export function createMcp8004Handler(env: Env) {
       return new Response(null, {
         headers: {
           'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, HEAD, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, Mcp-Session-Id',
+          'Access-Control-Allow-Methods': 'GET, POST, DELETE, HEAD, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, Mcp-Session-Id, X-Request-Id',
           'Access-Control-Expose-Headers': 'MCP-Protocol-Version, Mcp-Session-Id',
+        },
+      });
+    }
+
+    // Handle DELETE for session termination (Streamable HTTP spec)
+    if (request.method === 'DELETE') {
+      const sessionId = request.headers.get('Mcp-Session-Id');
+      // Session termination - just acknowledge, we don't persist sessions
+      return new Response(null, {
+        status: sessionId ? 200 : 400,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
         },
       });
     }
@@ -914,23 +946,36 @@ export function createMcp8004Handler(env: Env) {
       });
     }
 
-    // SSE endpoint for MCP-over-HTTP/SSE (used by mcp-remote)
+    // Create session service for this request
+    const sessionService = createMCPSessionService(env.CACHE);
+
+    // SSE endpoint for MCP-over-HTTP/SSE
+    // Used by mcp-remote and Claude.ai web connectors
+    // Per Gemini's analysis: DON'T send proactive initResponse!
+    // Just send the endpoint event and wait for client to POST initialize
     if (url.pathname === '/sse' && request.method === 'GET') {
+      // Generate or use existing session ID
+      const sessionId = request.headers.get('Mcp-Session-Id') || crypto.randomUUID();
+
+      // Setup SSE stream
       const { readable, writable } = new TransformStream();
       const writer = writable.getWriter();
       const encoder = new TextEncoder();
 
-      // Generate unique session ID for this connection
-      const sessionId = crypto.randomUUID();
-
-      // Send the endpoint URL - this is what mcp-remote expects
-      // The event: endpoint tells mcp-remote where to POST JSON-RPC requests
+      // URL for POST messages (JSON-RPC)
+      // This tells the client where to send initialize and other requests
       const mcpEndpoint = `${url.protocol}//${url.host}/mcp?sessionId=${sessionId}`;
+
+      // Send the endpoint event IMMEDIATELY
+      // This is what the client needs to know where to POST commands
+      // DO NOT send initResponse proactively - that's a protocol violation!
       writer.write(encoder.encode(`event: endpoint\ndata: ${mcpEndpoint}\n\n`));
 
       // Keep connection alive with SSE comments
       const keepAlive = setInterval(() => {
-        writer.write(encoder.encode(': keepalive\n\n'));
+        writer.write(encoder.encode(': keepalive\n\n')).catch(() => {
+          clearInterval(keepAlive);
+        });
       }, 15000);
 
       // Clean up on close
@@ -942,47 +987,131 @@ export function createMcp8004Handler(env: Env) {
       return new Response(readable, {
         headers: {
           'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          Connection: 'keep-alive',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Connection': 'keep-alive',
           'Access-Control-Allow-Origin': '*',
+          'Access-Control-Expose-Headers': 'Mcp-Session-Id, MCP-Protocol-Version',
+          'Mcp-Session-Id': sessionId,
         },
       });
     }
 
     // JSON-RPC endpoint (Streamable HTTP for Claude Desktop Connectors)
     if (request.method === 'POST') {
+      const token = extractBearerToken(request);
+
       // Session management - use provided session ID or generate new one
       const sessionId = request.headers.get('Mcp-Session-Id') || crypto.randomUUID();
 
-      // Check if client prefers SSE (like Cloudflare's implementation)
-      const acceptHeader = request.headers.get('Accept') || '';
-      const preferSSE = acceptHeader.includes('text/event-stream');
-
+      // Parse body first to check if it's initialize (allowed without auth)
+      let body: MCPRequest;
       try {
-        const body = (await request.json()) as MCPRequest;
-        const { response, negotiatedVersion } = await handleMCPRequest(body, env);
-
-        if (preferSSE) {
-          // Return SSE format matching official MCP SDK implementation
-          const sseData = `event: message\ndata: ${JSON.stringify(response)}\n\n`;
-          return new Response(sseData, {
+        body = (await request.json()) as MCPRequest;
+      } catch {
+        return new Response(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            error: { code: -32700, message: 'Parse error' },
+            id: null,
+          }),
+          {
+            status: 400,
             headers: {
-              'Content-Type': 'text/event-stream',
-              'Cache-Control': 'no-cache, no-transform',
-              'Connection': 'keep-alive',
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+            },
+          }
+        );
+      }
+
+      // Allow initialize, notifications/initialized, and empty/probe requests without auth
+      // These are needed for connection establishment before OAuth
+      const isInitMethod = body.method === 'initialize' || body.method === 'notifications/initialized';
+      const isProbeOrEmpty = !body.method;
+
+      // For empty/probe requests, return 204 to acknowledge without triggering OAuth
+      if (isProbeOrEmpty && !token) {
+        return new Response(null, {
+          status: 204,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'MCP-Protocol-Version': '2025-11-25',
+          },
+        });
+      }
+
+      if (!token && !isInitMethod) {
+        // No token and not an init method - return 401 with OAuth discovery header
+        return new Response('Unauthorized', {
+          status: 401,
+          headers: {
+            'Content-Type': 'text/plain',
+            'WWW-Authenticate': `Bearer resource_metadata="https://api.8004.dev/.well-known/oauth-protected-resource",scope="mcp:read mcp:write"`,
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Expose-Headers': 'WWW-Authenticate',
+          },
+        });
+      }
+
+      // Validate token if provided (for non-init methods)
+      if (token && !isInitMethod) {
+        const tokenResult = await validateAccessToken(env.DB, token);
+        if (!tokenResult.valid) {
+          return new Response('Unauthorized', {
+            status: 401,
+            headers: {
+              'Content-Type': 'text/plain',
+              'WWW-Authenticate': `Bearer resource_metadata="https://api.8004.dev/.well-known/oauth-protected-resource",error="invalid_token"`,
+              'Access-Control-Allow-Origin': '*',
+              'Access-Control-Expose-Headers': 'WWW-Authenticate',
+            },
+          });
+        }
+      }
+
+      // Streamable HTTP: Always return JSON for POST requests
+      try {
+        const result = await handleMCPRequest(body, env);
+
+        // Notifications return null - send 202 Accepted with no body
+        if (result === null) {
+          return new Response(null, {
+            status: 202,
+            headers: {
               'Access-Control-Allow-Origin': '*',
               'Access-Control-Expose-Headers': 'Mcp-Session-Id, MCP-Protocol-Version',
-              'MCP-Protocol-Version': negotiatedVersion || DEFAULT_PROTOCOL_VERSION,
+              'MCP-Protocol-Version': DEFAULT_PROTOCOL_VERSION,
               'Mcp-Session-Id': sessionId,
             },
           });
         }
 
-        // Return plain JSON for clients that don't accept SSE
+        const { response, negotiatedVersion } = result;
+
+        // On successful initialize, create session in KV
+        if (body.method === 'initialize' && !response.error) {
+          const initParams = body.params as {
+            clientInfo?: { name: string; version: string };
+          } | undefined;
+
+          await sessionService.create({
+            sessionId,
+            protocolVersion: negotiatedVersion || DEFAULT_PROTOCOL_VERSION,
+            clientInfo: initParams?.clientInfo,
+            serverInfo: SERVER_INFO,
+            initialized: true,
+          });
+        } else if (request.headers.get('Mcp-Session-Id')) {
+          // Touch existing session to extend TTL
+          await sessionService.touch(sessionId);
+        }
+
+        // Always return plain JSON for Streamable HTTP transport
         return new Response(JSON.stringify(response), {
           headers: {
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
+            'Access-Control-Expose-Headers': 'Mcp-Session-Id, MCP-Protocol-Version',
             'MCP-Protocol-Version': negotiatedVersion || DEFAULT_PROTOCOL_VERSION,
             'Mcp-Session-Id': sessionId,
           },
@@ -996,27 +1125,12 @@ export function createMcp8004Handler(env: Env) {
           },
         };
 
-        if (preferSSE) {
-          const sseData = `event: message\ndata: ${JSON.stringify(errorResponse)}\n\n`;
-          return new Response(sseData, {
-            status: 400,
-            headers: {
-              'Content-Type': 'text/event-stream',
-              'Cache-Control': 'no-cache, no-transform',
-              'Connection': 'keep-alive',
-              'Access-Control-Allow-Origin': '*',
-              'Access-Control-Expose-Headers': 'Mcp-Session-Id, MCP-Protocol-Version',
-              'MCP-Protocol-Version': DEFAULT_PROTOCOL_VERSION,
-              'Mcp-Session-Id': sessionId,
-            },
-          });
-        }
-
         return new Response(JSON.stringify(errorResponse), {
           status: 400,
           headers: {
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
+            'Access-Control-Expose-Headers': 'Mcp-Session-Id, MCP-Protocol-Version',
             'MCP-Protocol-Version': DEFAULT_PROTOCOL_VERSION,
             'Mcp-Session-Id': sessionId,
           },
