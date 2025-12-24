@@ -25,7 +25,6 @@ import {
 import { handleError } from '@/lib/utils/errors';
 import { parseAgentId } from '@/lib/utils/validation';
 import { createMcp8004Handler } from '@/mcp';
-import { metadata, oauth } from '@/oauth';
 import { agents, chains, health, openapi, search, stats, taxonomy } from '@/routes';
 import { createClassifierService } from '@/services/classifier';
 import { createEASIndexerService } from '@/services/eas-indexer';
@@ -100,10 +99,6 @@ app.route('/api/v1/search', search);
 app.route('/api/v1/chains', chains);
 app.route('/api/v1/stats', stats);
 app.route('/api/v1/taxonomy', taxonomy);
-
-// OAuth 2.0 routes (public access for Claude Desktop MCP support)
-app.route('/.well-known', metadata);
-app.route('/oauth', oauth);
 
 // Root endpoint
 app.get('/', (c) => {
@@ -346,9 +341,6 @@ export default {
         // If rate limiting fails, allow request but log
         console.error('MCP rate limiting error');
       }
-
-      // MCP is fully public - no token validation required
-      // Tokens are accepted but not validated (OAuth flow is optional)
 
       const mcpHandler = createMcp8004Handler(env);
       return mcpHandler(request);
