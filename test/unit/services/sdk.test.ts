@@ -127,11 +127,7 @@ describe('createSDKService', () => {
         json: () =>
           Promise.resolve({
             data: {
-              agents: [
-                { id: '1' },
-                { id: '2' },
-                { id: '3' },
-              ],
+              agents: [{ id: '1' }, { id: '2' }, { id: '3' }],
             },
           }),
       });
@@ -229,10 +225,7 @@ describe('SDK error paths', () => {
 
   it('handles chain stats errors gracefully', async () => {
     // Mock fetch for subgraph calls - return error
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockRejectedValue(new Error('Network error'))
-    );
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network error')));
 
     mockConfig.searchAgentsError = new Error('RPC timeout');
     const sdk = createSDKService(mockEnv);
