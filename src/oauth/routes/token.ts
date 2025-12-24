@@ -5,6 +5,7 @@
  */
 
 import type { Env, Variables } from '@/types';
+import type { Context } from 'hono';
 import { Hono } from 'hono';
 import {
   getClientById,
@@ -20,96 +21,73 @@ import {
   validateAuthorizationCode,
   validateRefreshToken,
 } from '../services/token-service';
-import type { OAuthErrorResponse, TokenRequest, TokenResponse } from '../types';
+import type {
+  OAuthClient,
+  OAuthErrorCode,
+  OAuthErrorResponse,
+  TokenRequest,
+  TokenResponse,
+} from '../types';
 import { DEFAULT_OAUTH_CONFIG } from '../types';
 
 const token = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 /**
- * POST /oauth/token
- * Token endpoint
- *
- * Exchanges authorization code for access token
- * Supports grant_type: authorization_code, refresh_token
- *
- * Body parameters (application/x-www-form-urlencoded or JSON):
- * - grant_type: "authorization_code" or "refresh_token"
- * - code: The authorization code (for authorization_code grant)
- * - redirect_uri: Must match the one used in authorization request
- * - client_id: The client ID
- * - client_secret: The client secret (if confidential client)
- * - code_verifier: PKCE code verifier (for authorization_code grant)
- * - refresh_token: The refresh token (for refresh_token grant)
+ * Create OAuth error response
  */
-token.post('/', async (c) => {
-  let params: TokenRequest;
+function oauthError(
+  c: Context<{ Bindings: Env; Variables: Variables }>,
+  error: OAuthErrorCode,
+  description: string,
+  status: 400 | 401 = 400
+): Response {
+  const errorResponse: OAuthErrorResponse = { error, error_description: description };
+  return c.json(errorResponse, status, { 'Cache-Control': 'no-store' });
+}
 
-  // Parse body (supports both form-urlencoded and JSON)
-  const contentType = c.req.header('Content-Type') || '';
-  if (contentType.includes('application/x-www-form-urlencoded')) {
-    const formData = await c.req.parseBody();
-    params = {
-      grant_type: String(formData.grant_type || ''),
-      code: formData.code ? String(formData.code) : undefined,
-      redirect_uri: formData.redirect_uri ? String(formData.redirect_uri) : undefined,
-      client_id: String(formData.client_id || ''),
-      client_secret: formData.client_secret ? String(formData.client_secret) : undefined,
-      code_verifier: formData.code_verifier ? String(formData.code_verifier) : undefined,
-      refresh_token: formData.refresh_token ? String(formData.refresh_token) : undefined,
-    };
-  } else {
-    try {
-      params = await c.req.json();
-    } catch {
-      const error: OAuthErrorResponse = {
-        error: 'invalid_request',
-        error_description: 'Invalid request body',
-      };
-      return c.json(error, 400, { 'Cache-Control': 'no-store' });
-    }
+/**
+ * Parse token request from form-urlencoded body
+ */
+function parseFormBody(formData: Record<string, unknown>): TokenRequest {
+  return {
+    grant_type: String(formData.grant_type || ''),
+    code: formData.code ? String(formData.code) : undefined,
+    redirect_uri: formData.redirect_uri ? String(formData.redirect_uri) : undefined,
+    client_id: String(formData.client_id || ''),
+    client_secret: formData.client_secret ? String(formData.client_secret) : undefined,
+    code_verifier: formData.code_verifier ? String(formData.code_verifier) : undefined,
+    refresh_token: formData.refresh_token ? String(formData.refresh_token) : undefined,
+  };
+}
+
+/**
+ * Extract and apply HTTP Basic auth credentials
+ */
+function applyBasicAuth(params: TokenRequest, authHeader: string | undefined): void {
+  if (!authHeader?.startsWith('Basic ')) return;
+
+  const decoded = atob(authHeader.substring(6));
+  const [basicClientId, basicClientSecret] = decoded.split(':');
+  if (basicClientId && !params.client_id) {
+    params.client_id = basicClientId;
   }
-
-  // Check for HTTP Basic auth
-  const authHeader = c.req.header('Authorization');
-  if (authHeader?.startsWith('Basic ')) {
-    const decoded = atob(authHeader.substring(6));
-    const [basicClientId, basicClientSecret] = decoded.split(':');
-    if (basicClientId && !params.client_id) {
-      params.client_id = basicClientId;
-    }
-    if (basicClientSecret && !params.client_secret) {
-      params.client_secret = basicClientSecret;
-    }
+  if (basicClientSecret && !params.client_secret) {
+    params.client_secret = basicClientSecret;
   }
+}
 
-  // Validate required parameters
-  if (!params.grant_type) {
-    const error: OAuthErrorResponse = {
-      error: 'invalid_request',
-      error_description: 'grant_type is required',
-    };
-    return c.json(error, 400, { 'Cache-Control': 'no-store' });
-  }
-
-  if (!params.client_id) {
-    const error: OAuthErrorResponse = {
-      error: 'invalid_request',
-      error_description: 'client_id is required',
-    };
-    return c.json(error, 400, { 'Cache-Control': 'no-store' });
-  }
-
-  // Get client
+/**
+ * Validate client and credentials
+ */
+async function validateClient(
+  c: Context<{ Bindings: Env; Variables: Variables }>,
+  params: TokenRequest
+): Promise<{ client: OAuthClient } | { error: Response }> {
   const client = await getClientById(c.env.DB, params.client_id);
   if (!client) {
-    const error: OAuthErrorResponse = {
-      error: 'invalid_client',
-      error_description: 'Unknown client_id',
-    };
-    return c.json(error, 401, { 'Cache-Control': 'no-store' });
+    return { error: oauthError(c, 'invalid_client', 'Unknown client_id', 401) };
   }
 
-  // Validate client credentials if confidential client
   if (client.client_secret && params.client_secret) {
     const validClient = await validateClientCredentials(
       c.env.DB,
@@ -117,30 +95,62 @@ token.post('/', async (c) => {
       params.client_secret
     );
     if (!validClient) {
-      const error: OAuthErrorResponse = {
-        error: 'invalid_client',
-        error_description: 'Invalid client credentials',
-      };
-      return c.json(error, 401, { 'Cache-Control': 'no-store' });
+      return { error: oauthError(c, 'invalid_client', 'Invalid client credentials', 401) };
     }
   }
 
-  // Check grant type is allowed for this client
   if (!isGrantTypeAllowed(client, params.grant_type)) {
-    const error: OAuthErrorResponse = {
-      error: 'unauthorized_client',
-      error_description: `Client is not authorized for grant_type: ${params.grant_type}`,
+    return {
+      error: oauthError(
+        c,
+        'unauthorized_client',
+        `Client is not authorized for grant_type: ${params.grant_type}`
+      ),
     };
-    return c.json(error, 400, { 'Cache-Control': 'no-store' });
   }
 
-  // Get TTL configuration
+  return { client };
+}
+
+/**
+ * POST /oauth/token
+ * Token endpoint - exchanges authorization code for access token
+ */
+token.post('/', async (c) => {
+  let params: TokenRequest;
+
+  const contentType = c.req.header('Content-Type') || '';
+  if (contentType.includes('application/x-www-form-urlencoded')) {
+    const formData = await c.req.parseBody();
+    params = parseFormBody(formData as Record<string, unknown>);
+  } else {
+    try {
+      params = await c.req.json();
+    } catch {
+      return oauthError(c, 'invalid_request', 'Invalid request body');
+    }
+  }
+
+  applyBasicAuth(params, c.req.header('Authorization'));
+
+  if (!params.grant_type) {
+    return oauthError(c, 'invalid_request', 'grant_type is required');
+  }
+
+  if (!params.client_id) {
+    return oauthError(c, 'invalid_request', 'client_id is required');
+  }
+
+  const clientResult = await validateClient(c, params);
+  if ('error' in clientResult) {
+    return clientResult.error;
+  }
+
   const accessTokenTtl =
     Number(c.env.OAUTH_ACCESS_TOKEN_TTL) || DEFAULT_OAUTH_CONFIG.accessTokenTtl;
   const refreshTokenTtl =
     Number(c.env.OAUTH_REFRESH_TOKEN_TTL) || DEFAULT_OAUTH_CONFIG.refreshTokenTtl;
 
-  // Handle grant types
   switch (params.grant_type) {
     case 'authorization_code':
       return handleAuthorizationCodeGrant(c, params, accessTokenTtl, refreshTokenTtl);
@@ -148,13 +158,12 @@ token.post('/', async (c) => {
     case 'refresh_token':
       return handleRefreshTokenGrant(c, params, accessTokenTtl, refreshTokenTtl);
 
-    default: {
-      const error: OAuthErrorResponse = {
-        error: 'unsupported_grant_type',
-        error_description: `grant_type "${params.grant_type}" is not supported`,
-      };
-      return c.json(error, 400, { 'Cache-Control': 'no-store' });
-    }
+    default:
+      return oauthError(
+        c,
+        'unsupported_grant_type',
+        `grant_type "${params.grant_type}" is not supported`
+      );
   }
 });
 
@@ -162,40 +171,23 @@ token.post('/', async (c) => {
  * Handle authorization_code grant type
  */
 async function handleAuthorizationCodeGrant(
-  c: {
-    env: Env;
-    json: <T>(data: T, status?: number, headers?: Record<string, string>) => Response;
-  },
+  c: Context<{ Bindings: Env; Variables: Variables }>,
   params: TokenRequest,
   accessTokenTtl: number,
   refreshTokenTtl: number
 ): Promise<Response> {
-  // Validate required parameters
   if (!params.code) {
-    const error: OAuthErrorResponse = {
-      error: 'invalid_request',
-      error_description: 'code is required',
-    };
-    return c.json(error, 400, { 'Cache-Control': 'no-store' });
+    return oauthError(c, 'invalid_request', 'code is required');
   }
 
   if (!params.redirect_uri) {
-    const error: OAuthErrorResponse = {
-      error: 'invalid_request',
-      error_description: 'redirect_uri is required',
-    };
-    return c.json(error, 400, { 'Cache-Control': 'no-store' });
+    return oauthError(c, 'invalid_request', 'redirect_uri is required');
   }
 
   if (!params.code_verifier) {
-    const error: OAuthErrorResponse = {
-      error: 'invalid_request',
-      error_description: 'code_verifier is required',
-    };
-    return c.json(error, 400, { 'Cache-Control': 'no-store' });
+    return oauthError(c, 'invalid_request', 'code_verifier is required');
   }
 
-  // Validate authorization code
   const authCode = await validateAuthorizationCode(
     c.env.DB,
     params.code,
@@ -204,14 +196,9 @@ async function handleAuthorizationCodeGrant(
   );
 
   if (!authCode) {
-    const error: OAuthErrorResponse = {
-      error: 'invalid_grant',
-      error_description: 'Invalid, expired, or already used authorization code',
-    };
-    return c.json(error, 400, { 'Cache-Control': 'no-store' });
+    return oauthError(c, 'invalid_grant', 'Invalid, expired, or already used authorization code');
   }
 
-  // Validate PKCE
   const pkceValid = await validatePKCE(
     params.code_verifier,
     authCode.code_challenge,
@@ -219,17 +206,11 @@ async function handleAuthorizationCodeGrant(
   );
 
   if (!pkceValid) {
-    const error: OAuthErrorResponse = {
-      error: 'invalid_grant',
-      error_description: 'PKCE verification failed',
-    };
-    return c.json(error, 400, { 'Cache-Control': 'no-store' });
+    return oauthError(c, 'invalid_grant', 'PKCE verification failed');
   }
 
-  // Mark code as used (single-use)
   await markAuthorizationCodeUsed(c.env.DB, authCode.id);
 
-  // Create tokens
   const accessToken = await createAccessToken(
     c.env.DB,
     params.client_id,
@@ -261,24 +242,15 @@ async function handleAuthorizationCodeGrant(
  * Handle refresh_token grant type
  */
 async function handleRefreshTokenGrant(
-  c: {
-    env: Env;
-    json: <T>(data: T, status?: number, headers?: Record<string, string>) => Response;
-  },
+  c: Context<{ Bindings: Env; Variables: Variables }>,
   params: TokenRequest,
   accessTokenTtl: number,
   refreshTokenTtl: number
 ): Promise<Response> {
-  // Validate required parameters
   if (!params.refresh_token) {
-    const error: OAuthErrorResponse = {
-      error: 'invalid_request',
-      error_description: 'refresh_token is required',
-    };
-    return c.json(error, 400, { 'Cache-Control': 'no-store' });
+    return oauthError(c, 'invalid_request', 'refresh_token is required');
   }
 
-  // Validate refresh token
   const refreshTokenRecord = await validateRefreshToken(
     c.env.DB,
     params.refresh_token,
@@ -286,17 +258,11 @@ async function handleRefreshTokenGrant(
   );
 
   if (!refreshTokenRecord) {
-    const error: OAuthErrorResponse = {
-      error: 'invalid_grant',
-      error_description: 'Invalid or expired refresh token',
-    };
-    return c.json(error, 400, { 'Cache-Control': 'no-store' });
+    return oauthError(c, 'invalid_grant', 'Invalid or expired refresh token');
   }
 
-  // Revoke old refresh token (rotation)
   await revokeRefreshToken(c.env.DB, refreshTokenRecord.id);
 
-  // Create new tokens
   const accessToken = await createAccessToken(
     c.env.DB,
     params.client_id,

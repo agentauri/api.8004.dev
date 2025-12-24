@@ -33,8 +33,69 @@ const search = new Hono<{ Bindings: Env; Variables: Variables }>();
 search.use('*', rateLimit(rateLimitConfigs.standard));
 
 /**
- * Apply OASF and boolean filters to agents
- * Shared between vector search and SDK fallback paths
+ * Check if agent matches basic AND filters (active, chainIds)
+ */
+function matchesBasicFilters(agent: AgentSummary, filters: SearchRequestBody['filters']): boolean {
+  if (!filters) return true;
+
+  if (filters.active !== undefined && agent.active !== filters.active) {
+    return false;
+  }
+
+  if (filters.chainIds?.length && !filters.chainIds.includes(agent.chainId)) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Check if agent matches OASF filters (skills, domains)
+ */
+function matchesOASFFilters(agent: AgentSummary, filters: SearchRequestBody['filters']): boolean {
+  if (!filters) return true;
+
+  if (filters.skills?.length) {
+    const agentSkillSlugs = agent.oasf?.skills?.map((s) => s.slug) ?? [];
+    const hasMatchingSkill = filters.skills.some((reqSkill) => agentSkillSlugs.includes(reqSkill));
+    if (!hasMatchingSkill) return false;
+  }
+
+  if (filters.domains?.length) {
+    const agentDomainSlugs = agent.oasf?.domains?.map((d) => d.slug) ?? [];
+    const hasMatchingDomain = filters.domains.some((reqDomain) =>
+      agentDomainSlugs.includes(reqDomain)
+    );
+    if (!hasMatchingDomain) return false;
+  }
+
+  return true;
+}
+
+/**
+ * Check if agent matches boolean filters (mcp, a2a, x402)
+ */
+function matchesBooleanFilters(
+  agent: AgentSummary,
+  filters: SearchRequestBody['filters']
+): boolean {
+  if (!filters) return true;
+
+  const { mcp, a2a, x402, filterMode } = filters;
+  const isOrMode = filterMode === 'OR';
+
+  const booleanFilters: boolean[] = [];
+  if (mcp !== undefined) booleanFilters.push((agent.hasMcp ?? false) === mcp);
+  if (a2a !== undefined) booleanFilters.push((agent.hasA2a ?? false) === a2a);
+  if (x402 !== undefined) booleanFilters.push((agent.x402Support ?? false) === x402);
+
+  if (booleanFilters.length === 0) return true;
+
+  return isOrMode ? booleanFilters.some((b) => b) : booleanFilters.every((b) => b);
+}
+
+/**
+ * Apply all filters to agents list
  */
 function applyFilters(
   agents: AgentSummary[],
@@ -42,52 +103,19 @@ function applyFilters(
 ): AgentSummary[] {
   if (!filters) return agents;
 
-  const { active, mcp, a2a, x402, chainIds, skills, domains, filterMode } = filters;
-  const isOrMode = filterMode === 'OR';
-
-  return agents.filter((agent) => {
-    // Active filter (always AND with other filters)
-    // Must match exactly: active=true means only active agents, active=false means only inactive
-    if (active !== undefined && agent.active !== active) {
-      return false;
-    }
-
-    // Chain filter (always AND with other filters)
-    if (chainIds?.length && !chainIds.includes(agent.chainId)) {
-      return false;
-    }
-
-    // Skills filter (always AND) - check OASF classification
-    if (skills?.length) {
-      const agentSkillSlugs = agent.oasf?.skills?.map((s) => s.slug) ?? [];
-      const hasMatchingSkill = skills.some((reqSkill) => agentSkillSlugs.includes(reqSkill));
-      if (!hasMatchingSkill) return false;
-    }
-
-    // Domains filter (always AND) - check OASF classification
-    if (domains?.length) {
-      const agentDomainSlugs = agent.oasf?.domains?.map((d) => d.slug) ?? [];
-      const hasMatchingDomain = domains.some((reqDomain) => agentDomainSlugs.includes(reqDomain));
-      if (!hasMatchingDomain) return false;
-    }
-
-    // Boolean filters (mcp, a2a, x402) - apply filterMode logic
-    // Treat undefined as false (if agent had the capability, it would be true)
-    const booleanFilters: boolean[] = [];
-    if (mcp !== undefined) booleanFilters.push((agent.hasMcp ?? false) === mcp);
-    if (a2a !== undefined) booleanFilters.push((agent.hasA2a ?? false) === a2a);
-    if (x402 !== undefined) booleanFilters.push((agent.x402Support ?? false) === x402);
-
-    if (booleanFilters.length === 0) return true;
-
-    return isOrMode ? booleanFilters.some((b) => b) : booleanFilters.every((b) => b);
-  });
+  return agents.filter(
+    (agent) =>
+      matchesBasicFilters(agent, filters) &&
+      matchesOASFFilters(agent, filters) &&
+      matchesBooleanFilters(agent, filters)
+  );
 }
 
 /**
  * POST /api/v1/search
  * Perform semantic search for agents with SDK fallback
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Search endpoint requires vector search with SDK fallback and agent enrichment
 search.post('/', async (c) => {
   // Parse and validate request body
   let body: SearchRequestBody;

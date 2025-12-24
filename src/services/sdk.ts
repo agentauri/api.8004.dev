@@ -638,6 +638,7 @@ function computeAgentWarnings(agent: {
 /**
  * Compute health score for an agent based on its data quality
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Health scoring requires evaluating multiple agent attributes
 function computeAgentHealthScore(agent: {
   name?: string;
   description?: string;
@@ -1406,6 +1407,7 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
 
               searchPromises.push(
                 chainSdk.searchAgents(filterParams, ['createdAt:desc'], fetchLimit).then((result) =>
+                  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Agent transformation requires parsing multiple fields
                   result.items.map((agent) => {
                     const parts = agent.agentId.split(':');
                     const chainIdStr = parts[0] || '0';
@@ -1468,6 +1470,7 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
             const pageSize = 100;
 
             // Parallel search each chain
+            // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Multi-chain search requires pagination and result aggregation
             const chainSearchPromises = chainsToQuery.map(async (chainConfig) => {
               const chainItems: AgentSummary[] = [];
               const chainSdk = getSDK(chainConfig.chainId);

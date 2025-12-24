@@ -31,6 +31,23 @@ beforeAll(async () => {
   await env.DB.exec(
     "CREATE TABLE IF NOT EXISTS eas_sync_state (chain_id INTEGER PRIMARY KEY, last_block INTEGER NOT NULL DEFAULT 0, last_timestamp TEXT, attestations_synced INTEGER NOT NULL DEFAULT 0, last_error TEXT, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))"
   );
+
+  // OAuth tables (matching migrations/0006_oauth.sql)
+  await env.DB.exec(
+    "CREATE TABLE IF NOT EXISTS oauth_clients (id TEXT PRIMARY KEY, client_id TEXT NOT NULL UNIQUE, client_secret TEXT, client_name TEXT NOT NULL, redirect_uris TEXT NOT NULL, grant_types TEXT DEFAULT '[\"authorization_code\"]', token_endpoint_auth_method TEXT DEFAULT 'client_secret_post', registered_at TEXT DEFAULT (datetime('now')))"
+  );
+
+  await env.DB.exec(
+    "CREATE TABLE IF NOT EXISTS oauth_authorization_codes (id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, client_id TEXT NOT NULL, redirect_uri TEXT NOT NULL, code_challenge TEXT NOT NULL, code_challenge_method TEXT DEFAULT 'S256', resource TEXT NOT NULL, scope TEXT, state TEXT, expires_at TEXT NOT NULL, used INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')), FOREIGN KEY (client_id) REFERENCES oauth_clients(client_id) ON DELETE CASCADE)"
+  );
+
+  await env.DB.exec(
+    "CREATE TABLE IF NOT EXISTS oauth_access_tokens (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, client_id TEXT NOT NULL, scope TEXT, resource TEXT NOT NULL, expires_at TEXT NOT NULL, revoked INTEGER DEFAULT 0, issued_at TEXT DEFAULT (datetime('now')), FOREIGN KEY (client_id) REFERENCES oauth_clients(client_id) ON DELETE CASCADE)"
+  );
+
+  await env.DB.exec(
+    "CREATE TABLE IF NOT EXISTS oauth_refresh_tokens (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, client_id TEXT NOT NULL, scope TEXT, resource TEXT NOT NULL, expires_at TEXT NOT NULL, revoked INTEGER DEFAULT 0, issued_at TEXT DEFAULT (datetime('now')), FOREIGN KEY (client_id) REFERENCES oauth_clients(client_id) ON DELETE CASCADE)"
+  );
 });
 
 // Clean up between tests
@@ -40,6 +57,10 @@ afterEach(async () => {
   await env.DB.exec('DELETE FROM agent_feedback');
   await env.DB.exec('DELETE FROM agent_reputation');
   await env.DB.exec('DELETE FROM eas_sync_state');
+  await env.DB.exec('DELETE FROM oauth_access_tokens');
+  await env.DB.exec('DELETE FROM oauth_refresh_tokens');
+  await env.DB.exec('DELETE FROM oauth_authorization_codes');
+  await env.DB.exec('DELETE FROM oauth_clients');
 });
 
 /**
@@ -343,4 +364,76 @@ export function setupMockFetch() {
   vi.stubGlobal('fetch', mockFetch);
   mockFetch.mockResolvedValue(mockHealthyResponse());
   return mockFetch;
+}
+
+// ============================================
+// OAuth Test Helpers
+// ============================================
+
+/**
+ * Test OAuth token - use this for MCP tests that require authentication
+ */
+export const TEST_OAUTH_TOKEN = 'test-mcp-oauth-token-12345';
+
+/**
+ * Base64url encode bytes (same as production OAuth implementation)
+ */
+function base64UrlEncode(bytes: Uint8Array): string {
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+/**
+ * Hash a token using SHA-256 with base64url encoding (same as production)
+ */
+async function hashToken(token: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(token);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return base64UrlEncode(new Uint8Array(hash));
+}
+
+/**
+ * Create a mock OAuth client and access token for MCP testing
+ */
+export async function createMockOAuthToken() {
+  const clientId = 'test-client-id';
+  const tokenHash = await hashToken(TEST_OAUTH_TOKEN);
+  const expiresAt = new Date(Date.now() + 3600 * 1000).toISOString(); // 1 hour from now
+
+  // Insert client
+  await env.DB.prepare(
+    `INSERT INTO oauth_clients (id, client_id, client_name, redirect_uris, grant_types, token_endpoint_auth_method)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  )
+    .bind(
+      crypto.randomUUID(),
+      clientId,
+      'Test Client',
+      JSON.stringify(['http://localhost:3000/callback']),
+      JSON.stringify(['authorization_code']),
+      'client_secret_post'
+    )
+    .run();
+
+  // Insert access token (matching oauth_access_tokens schema)
+  await env.DB.prepare(
+    `INSERT INTO oauth_access_tokens (id, token_hash, client_id, scope, resource, expires_at, revoked)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(
+      crypto.randomUUID(),
+      tokenHash,
+      clientId,
+      'mcp:read mcp:write',
+      'https://api.8004.dev/mcp',
+      expiresAt,
+      0
+    )
+    .run();
+
+  return TEST_OAUTH_TOKEN;
 }

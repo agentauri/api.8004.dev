@@ -137,6 +137,7 @@ function agentHasDomain(agentId: string, domainSlugs: string[]): boolean {
  */
 export function createMockSearchService(): SearchService {
   return {
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Mock search mirrors production search logic with all filters
     async search(params: SearchParams): Promise<SearchServiceResult> {
       const { query, limit = 20, minScore = 0.3, cursor, offset, filters } = params;
 

@@ -113,6 +113,7 @@ function decodeCursor(cursor: string): number {
  * Filter agents based on params
  */
 function filterAgents(agents: AgentSummary[], params: GetAgentsParams): AgentSummary[] {
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Mock filter mirrors production filter logic
   return agents.filter((agent) => {
     // Filter by chainIds
     if (params.chainIds && params.chainIds.length > 0) {
@@ -204,6 +205,7 @@ export function createMockSDKService(): SDKService {
       return [...MOCK_CHAIN_STATS];
     },
 
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Mock search mirrors production search logic
     async search(params: FallbackSearchParams): Promise<FallbackSearchResult> {
       const {
         query,

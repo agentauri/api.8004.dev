@@ -291,6 +291,7 @@ async function batchClassifyAgents(env: Env): Promise<void> {
 
 // Export for Cloudflare Workers
 export default {
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Main entry point handles routing for MCP, OAuth, and API
   fetch: async (request: Request, env: Env, ctx: ExecutionContext) => {
     // Validate environment on first request
     validateEnv(env);
