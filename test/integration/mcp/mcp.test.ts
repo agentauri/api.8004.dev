@@ -86,7 +86,7 @@ describe('MCP Server', () => {
       expect(body).toMatchObject({
         name: '8004-agents',
         version: '1.0.0',
-        protocolVersion: '2025-03-26',
+        protocolVersion: '2025-06-18',
       });
     });
 
@@ -135,7 +135,7 @@ describe('MCP Server', () => {
       const response = await mcpRequest(
         'initialize',
         {
-          protocolVersion: '2025-03-26',
+          protocolVersion: '2025-06-18',
           capabilities: {},
           clientInfo: { name: 'test', version: '1.0.0' },
         },
@@ -151,7 +151,7 @@ describe('MCP Server', () => {
           capabilities: object;
         };
       };
-      expect(body.result.protocolVersion).toBe('2025-03-26');
+      expect(body.result.protocolVersion).toBe('2025-06-18');
       expect(body.result.serverInfo.name).toBe('8004-agents');
       expect(body.result.capabilities).toBeDefined();
     });

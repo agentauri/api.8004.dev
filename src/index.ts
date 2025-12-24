@@ -26,7 +26,6 @@ import { handleError } from '@/lib/utils/errors';
 import { parseAgentId } from '@/lib/utils/validation';
 import { createMcp8004Handler } from '@/mcp';
 import { metadata, oauth } from '@/oauth';
-import { validateAccessToken } from '@/oauth/services/token-service';
 import { agents, chains, health, openapi, search, stats, taxonomy } from '@/routes';
 import { createClassifierService } from '@/services/classifier';
 import { createEASIndexerService } from '@/services/eas-indexer';
@@ -291,7 +290,6 @@ async function batchClassifyAgents(env: Env): Promise<void> {
 
 // Export for Cloudflare Workers
 export default {
-  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Main entry point handles routing for MCP, OAuth, and API
   fetch: async (request: Request, env: Env, ctx: ExecutionContext) => {
     // Validate environment on first request
     validateEnv(env);
