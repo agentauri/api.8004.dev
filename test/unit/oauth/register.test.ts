@@ -7,7 +7,7 @@ import { env } from 'cloudflare:test';
 import { register } from '@/oauth/routes/register';
 import type { Env, Variables } from '@/types';
 import { Hono } from 'hono';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 // Create test app with register route mounted
 function createTestApp() {
@@ -203,6 +203,45 @@ describe('OAuth Client Registration Route', () => {
 
       expect(body.error).toBe('invalid_request');
       expect(body.error_description).toContain('Unsupported grant_type');
+    });
+
+    it('handles database errors gracefully', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      // Create a broken DB mock
+      const brokenEnv = {
+        ...env,
+        DB: {
+          prepare: () => ({
+            bind: () => ({
+              run: () => Promise.reject(new Error('DB connection failed')),
+            }),
+          }),
+        },
+      };
+
+      const app = createTestApp();
+
+      const res = await app.request(
+        '/oauth/register',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            client_name: 'Error Test Client',
+            redirect_uris: ['https://example.com/callback'],
+          }),
+        },
+        brokenEnv
+      );
+
+      expect(res.status).toBe(500);
+      const body = await res.json();
+
+      expect(body.error).toBe('server_error');
+      expect(body.error_description).toBe('Failed to register client');
+
+      consoleSpy.mockRestore();
     });
   });
 });

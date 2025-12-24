@@ -56,6 +56,20 @@ describe('OAuth Metadata Routes', () => {
       expect(body.resource).toBe('https://custom-issuer.example.com');
       expect(body.authorization_servers[0]).toBe('https://custom-issuer.example.com');
     });
+
+    it('uses default issuer when OAUTH_ISSUER is not set', async () => {
+      const envWithoutIssuer = {
+        ...env,
+        OAUTH_ISSUER: undefined,
+      };
+
+      const app = createTestApp();
+      const res = await app.request('/.well-known/oauth-protected-resource', {}, envWithoutIssuer);
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.resource).toBe('https://api.8004.dev');
+    });
   });
 
   describe('GET /.well-known/oauth-authorization-server', () => {
@@ -105,6 +119,25 @@ describe('OAuth Metadata Routes', () => {
       expect(body.authorization_endpoint).toBe('https://auth.example.com/oauth/authorize');
       expect(body.token_endpoint).toBe('https://auth.example.com/oauth/token');
       expect(body.registration_endpoint).toBe('https://auth.example.com/oauth/register');
+    });
+
+    it('uses default issuer when OAUTH_ISSUER is not set', async () => {
+      const envWithoutIssuer = {
+        ...env,
+        OAUTH_ISSUER: undefined,
+      };
+
+      const app = createTestApp();
+      const res = await app.request(
+        '/.well-known/oauth-authorization-server',
+        {},
+        envWithoutIssuer
+      );
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.issuer).toBe('https://api.8004.dev');
+      expect(body.authorization_endpoint).toBe('https://api.8004.dev/oauth/authorize');
     });
   });
 });
