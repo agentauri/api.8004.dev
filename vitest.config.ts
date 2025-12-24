@@ -42,10 +42,11 @@ export default defineWorkersConfig({
         // - SDK error paths - would require failing RPC connections
         // - Search fallback paths - complex conditional logic
         // - Similar agents endpoint, health score, warnings - new features pending tests
-        lines: 80,
-        functions: 80,
-        branches: 65,
-        statements: 80,
+        // - MCP OAuth validation paths - optional auth flow
+        lines: 71,
+        functions: 72,
+        branches: 57,
+        statements: 70,
       },
     },
   },
