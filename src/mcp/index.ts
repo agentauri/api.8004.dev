@@ -1158,10 +1158,7 @@ async function handlePostRequest(
     });
   }
 
-  if (!token && !isInitMethod) {
-    return createUnauthorizedResponse();
-  }
-
+  // OAuth is optional - validate token only if provided
   if (token && !isInitMethod) {
     const tokenResult = await validateAccessToken(env.DB, token);
     if (!tokenResult.valid) {
