@@ -9,7 +9,7 @@ import { Hono } from 'hono';
 import { getClientById, isRedirectUriAllowed } from '../services/client-service';
 import { isValidChallenge } from '../services/pkce-service';
 import { createAuthorizationCode } from '../services/token-service';
-import type { AuthorizationRequest, OAuthErrorResponse } from '../types';
+import type { AuthorizationRequest } from '../types';
 import { DEFAULT_OAUTH_CONFIG } from '../types';
 
 const authorize = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -78,7 +78,12 @@ authorize.get('/', async (c) => {
 
   // Validate PKCE (required per MCP spec)
   if (!params.code_challenge) {
-    return redirectWithError(redirectUri, 'invalid_request', params.state, 'code_challenge is required');
+    return redirectWithError(
+      redirectUri,
+      'invalid_request',
+      params.state,
+      'code_challenge is required'
+    );
   }
 
   if (params.code_challenge_method !== 'S256') {
@@ -91,7 +96,12 @@ authorize.get('/', async (c) => {
   }
 
   if (!isValidChallenge(params.code_challenge)) {
-    return redirectWithError(redirectUri, 'invalid_request', params.state, 'Invalid code_challenge format');
+    return redirectWithError(
+      redirectUri,
+      'invalid_request',
+      params.state,
+      'Invalid code_challenge format'
+    );
   }
 
   // Get resource (defaults to issuer)

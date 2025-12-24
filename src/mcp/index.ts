@@ -8,12 +8,9 @@
 import { getClassification, getClassificationsBatch } from '@/db/queries';
 import { getTaxonomy } from '@/lib/oasf/taxonomy';
 import { agentIdSchema, parseAgentId, parseClassificationRow } from '@/lib/utils/validation';
-import {
-  extractBearerToken,
-  validateAccessToken,
-} from '@/oauth/services/token-service';
+import { extractBearerToken, validateAccessToken } from '@/oauth/services/token-service';
 import { CACHE_TTL, createCacheService } from '@/services/cache';
-import { createMCPSessionService, type MCPSessionService } from '@/services/mcp-session';
+import { createMCPSessionService } from '@/services/mcp-session';
 import { createReputationService } from '@/services/reputation';
 import { createSDKService } from '@/services/sdk';
 import { createSearchService } from '@/services/search';
@@ -905,7 +902,8 @@ export function createMcp8004Handler(env: Env) {
         headers: {
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'GET, POST, DELETE, HEAD, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, Mcp-Session-Id, X-Request-Id',
+          'Access-Control-Allow-Headers':
+            'Content-Type, Authorization, Accept, Mcp-Session-Id, X-Request-Id',
           'Access-Control-Expose-Headers': 'MCP-Protocol-Version, Mcp-Session-Id',
         },
       });
@@ -988,7 +986,7 @@ export function createMcp8004Handler(env: Env) {
         headers: {
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Connection': 'keep-alive',
+          Connection: 'keep-alive',
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Expose-Headers': 'Mcp-Session-Id, MCP-Protocol-Version',
           'Mcp-Session-Id': sessionId,
@@ -1026,7 +1024,8 @@ export function createMcp8004Handler(env: Env) {
 
       // Allow initialize, notifications/initialized, and empty/probe requests without auth
       // These are needed for connection establishment before OAuth
-      const isInitMethod = body.method === 'initialize' || body.method === 'notifications/initialized';
+      const isInitMethod =
+        body.method === 'initialize' || body.method === 'notifications/initialized';
       const isProbeOrEmpty = !body.method;
 
       // For empty/probe requests, return 204 to acknowledge without triggering OAuth
@@ -1090,9 +1089,11 @@ export function createMcp8004Handler(env: Env) {
 
         // On successful initialize, create session in KV
         if (body.method === 'initialize' && !response.error) {
-          const initParams = body.params as {
-            clientInfo?: { name: string; version: string };
-          } | undefined;
+          const initParams = body.params as
+            | {
+                clientInfo?: { name: string; version: string };
+              }
+            | undefined;
 
           await sessionService.create({
             sessionId,

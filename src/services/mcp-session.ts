@@ -5,7 +5,7 @@
  * reconnection from Claude.ai web connector.
  */
 
-import type { MCPSession, CreateSessionData, UpdateSessionData } from '../types/mcp-session';
+import type { CreateSessionData, MCPSession, UpdateSessionData } from '../types/mcp-session';
 
 /** Session TTL in seconds (1 hour) */
 export const MCP_SESSION_TTL = 3600;
