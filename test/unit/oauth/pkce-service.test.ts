@@ -46,7 +46,7 @@ describe('PKCE Service', () => {
 
     it('rejects verifier with invalid characters', () => {
       // Contains invalid character '!' - 43 chars but invalid character
-      const verifier = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn!opq';
+      const verifier = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklm!opq';
       expect(verifier.length).toBe(43);
       expect(isValidVerifier(verifier)).toBe(false);
     });
