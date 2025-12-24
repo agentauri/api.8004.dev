@@ -4,7 +4,6 @@
  */
 
 import { env } from 'cloudflare:test';
-import type { AgentSummary } from '@/types';
 import {
   type CachedPaginationSet,
   type PaginationCacheParams,
@@ -18,7 +17,8 @@ import {
   setCachedPaginationSet,
   sortAgents,
 } from '@/services/pagination-cache';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AgentSummary } from '@/types';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // Mock agent factory
 function createMockAgent(overrides: Partial<AgentSummary> = {}): AgentSummary {

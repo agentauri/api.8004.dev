@@ -60,7 +60,7 @@ describe('PKCE Service', () => {
 
     it('rejects verifier with unicode characters', () => {
       // Contains non-ASCII characters
-      const verifier = 'A'.repeat(40) + 'é🎉';
+      const verifier = `${'A'.repeat(40)}é🎉`;
       expect(isValidVerifier(verifier)).toBe(false);
     });
   });
