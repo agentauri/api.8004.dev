@@ -34,6 +34,29 @@ metadata.get('/oauth-protected-resource', (c) => {
 });
 
 /**
+ * GET /.well-known/oauth-protected-resource/mcp
+ * Protected Resource Metadata for /mcp path (RFC 9728)
+ *
+ * Some clients (like Claude Desktop) query this specific path
+ */
+metadata.get('/oauth-protected-resource/mcp', (c) => {
+  const issuer = c.env.OAUTH_ISSUER || 'https://api.8004.dev';
+
+  const response: ProtectedResourceMetadata = {
+    resource: `${issuer}/mcp`,
+    authorization_servers: [issuer],
+    scopes_supported: ['mcp:read', 'mcp:write'],
+    bearer_methods_supported: ['header'],
+    resource_name: '8004 Agents MCP',
+    resource_documentation: 'https://docs.8004.dev/mcp',
+  };
+
+  return c.json(response, 200, {
+    'Cache-Control': 'public, max-age=3600',
+  });
+});
+
+/**
  * GET /.well-known/oauth-authorization-server
  * Authorization Server Metadata (RFC 8414)
  *

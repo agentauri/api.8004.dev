@@ -95,7 +95,7 @@ const SUPPORTED_PROTOCOL_VERSIONS = [
   '2025-11-25', // Claude.ai Web Connectors (latest)
 ];
 
-const DEFAULT_PROTOCOL_VERSION = '2025-03-26';
+const DEFAULT_PROTOCOL_VERSION = '2025-06-18'; // Claude Desktop Connectors
 const LATEST_PROTOCOL_VERSION = '2025-06-18'; // Advertised in HEAD response
 
 /**
@@ -1153,18 +1153,13 @@ async function handlePostRequest(
       status: 204,
       headers: {
         ...CORS_HEADERS,
-        'MCP-Protocol-Version': '2025-11-25',
+        'MCP-Protocol-Version': DEFAULT_PROTOCOL_VERSION,
       },
     });
   }
 
-  // OAuth is optional - validate token only if provided
-  if (token && !isInitMethod) {
-    const tokenResult = await validateAccessToken(env.DB, token);
-    if (!tokenResult.valid) {
-      return createUnauthorizedResponse('invalid_token');
-    }
-  }
+  // MCP is fully public - no token validation required
+  // Tokens are accepted but not validated (OAuth flow optional)
 
   try {
     const result = await handleMCPRequest(body, env);
