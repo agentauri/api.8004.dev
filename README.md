@@ -120,7 +120,11 @@ The API also exposes an [MCP (Model Context Protocol)](https://modelcontextproto
 
 ### Connect with Claude Desktop
 
-Add to your `claude_desktop_config.json`:
+We use [mcp-remote](https://github.com/geelen/mcp-remote) to bridge the remote MCP server with Claude Desktop. This is the recommended approach due to a [known issue](https://github.com/anthropics/claude-code/issues/11814) where Claude Desktop/Claude.ai struggle with OAuth-protected remote MCP servers.
+
+**Setup:**
+
+1. Add to your `claude_desktop_config.json`:
 
 ```json
 {
@@ -132,6 +136,21 @@ Add to your `claude_desktop_config.json`:
   }
 }
 ```
+
+2. Restart Claude Desktop
+3. On first use, mcp-remote will open a browser for OAuth authentication
+4. The 8004 Agent tools will then be available in Claude
+
+**Location of config file:**
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+- Linux: `~/.config/Claude/claude_desktop_config.json`
+
+### Claude.ai Web Connectors
+
+> **⚠️ Known Limitation**: Claude.ai web custom connectors currently have a [bug](https://github.com/anthropics/claude-code/issues/11814) with OAuth-protected MCP servers. The connection drops after ~1-2 seconds regardless of server response. We're monitoring this issue and will update when fixed.
+
+For now, use Claude Desktop with mcp-remote as described above.
 
 ### Example MCP Request
 
