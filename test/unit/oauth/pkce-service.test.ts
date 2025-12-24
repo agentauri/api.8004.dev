@@ -19,7 +19,7 @@ describe('PKCE Service', () => {
   describe('isValidVerifier', () => {
     it('accepts valid verifier with exactly 43 characters', () => {
       // 43 characters from unreserved character set
-      const verifier = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnop';
+      const verifier = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq';
       expect(verifier.length).toBe(43);
       expect(isValidVerifier(verifier)).toBe(true);
     });
@@ -45,18 +45,22 @@ describe('PKCE Service', () => {
     });
 
     it('rejects verifier with invalid characters', () => {
-      // Contains invalid character '!'
-      const verifier = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklm!op';
+      // Contains invalid character '!' - 43 chars but invalid character
+      const verifier = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn!opq';
+      expect(verifier.length).toBe(43);
       expect(isValidVerifier(verifier)).toBe(false);
     });
 
     it('rejects verifier with spaces', () => {
+      // 43 chars but contains space
       const verifier = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnop';
+      expect(verifier.length).toBe(43);
       expect(isValidVerifier(verifier)).toBe(false);
     });
 
     it('rejects verifier with unicode characters', () => {
-      const verifier = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmé🎉';
+      // Contains non-ASCII characters
+      const verifier = 'A'.repeat(40) + 'é🎉';
       expect(isValidVerifier(verifier)).toBe(false);
     });
   });
