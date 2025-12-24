@@ -349,33 +349,8 @@ export default {
         console.error('MCP rate limiting error');
       }
 
-      // Optional Bearer token validation (for Claude Desktop OAuth)
-      // If token present, validate it; if absent, allow anonymous access (backward compat)
-      // For GET /sse with session ID (reconnection), defer token validation to MCP handler
-      // to allow session-based reconnection even with expired tokens
-      const authHeader = request.headers.get('Authorization');
-      const sessionId = request.headers.get('Mcp-Session-Id');
-      const isReconnection = request.method === 'GET' && url.pathname === '/sse' && sessionId;
-
-      if (authHeader?.startsWith('Bearer ') && !isReconnection) {
-        const token = authHeader.substring(7);
-        const result = await validateAccessToken(env.DB, token);
-        if (!result.valid) {
-          return new Response(
-            JSON.stringify({
-              jsonrpc: '2.0',
-              error: { code: -32001, message: 'Invalid or expired access token' },
-            }),
-            {
-              status: 401,
-              headers: {
-                'Content-Type': 'application/json',
-                'WWW-Authenticate': 'Bearer realm="8004-mcp", error="invalid_token"',
-              },
-            }
-          );
-        }
-      }
+      // MCP is fully public - no token validation required
+      // Tokens are accepted but not validated (OAuth flow is optional)
 
       const mcpHandler = createMcp8004Handler(env);
       return mcpHandler(request);
