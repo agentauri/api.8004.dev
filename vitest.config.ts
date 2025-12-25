@@ -17,7 +17,7 @@ export default defineWorkersConfig({
     include: ['test/**/*.test.ts'],
     setupFiles: ['./test/setup.ts'],
     // Reduce parallelism to avoid ephemeral port exhaustion on macOS
-    fileParallelism: isMacOS ? false : true,
+    fileParallelism: !isMacOS,
     poolOptions: {
       workers: {
         singleWorker: isMacOS,
