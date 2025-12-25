@@ -1,6 +1,10 @@
 import path from 'node:path';
 import { defineWorkersConfig } from '@cloudflare/vitest-pool-workers/config';
 
+// On macOS, reduce parallelism to avoid ephemeral port exhaustion
+// CI runs on Linux and doesn't have this issue
+const isMacOS = process.platform === 'darwin';
+
 export default defineWorkersConfig({
   resolve: {
     alias: {
@@ -13,10 +17,10 @@ export default defineWorkersConfig({
     include: ['test/**/*.test.ts'],
     setupFiles: ['./test/setup.ts'],
     // Reduce parallelism to avoid ephemeral port exhaustion on macOS
-    fileParallelism: false,
+    fileParallelism: isMacOS ? false : true,
     poolOptions: {
       workers: {
-        singleWorker: true,
+        singleWorker: isMacOS,
         wrangler: {
           configPath: './wrangler.toml',
         },
