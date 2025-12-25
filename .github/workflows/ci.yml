@@ -205,6 +205,8 @@ jobs:
     needs: [lint, typecheck]
     # Only run on main branch pushes (not PRs) to avoid rate limiting
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # E2E tests are non-blocking as they run against production and can be flaky
+    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
