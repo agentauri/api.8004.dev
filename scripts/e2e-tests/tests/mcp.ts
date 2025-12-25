@@ -74,7 +74,7 @@ export function registerMcpTests(): void {
       expect(response.status).toBe(200);
       expect(json.name).toBe('8004-agents');
       expect(json.version).toBe('1.0.0');
-      expect(json.protocolVersion).toBe('2024-11-05');
+      expect(json.protocolVersion).toBe('2025-06-18');
     });
 
     it('GET /mcp includes CORS headers', async () => {
@@ -106,7 +106,7 @@ export function registerMcpTests(): void {
   describe('MCP Initialize', () => {
     it('initialize returns server capabilities', async () => {
       const { response, json } = await mcpRequest('initialize', {
-        protocolVersion: '2024-11-05',
+        protocolVersion: '2025-06-18',
         capabilities: {},
         clientInfo: { name: 'e2e-test', version: '1.0.0' },
       });
@@ -117,15 +117,28 @@ export function registerMcpTests(): void {
         serverInfo: { name: string; version: string };
         capabilities: object;
       };
-      expect(result.protocolVersion).toBe('2024-11-05');
+      expect(result.protocolVersion).toBe('2025-06-18');
       expect(result.serverInfo.name).toBe('8004-agents');
       expect(result.capabilities).toBeDefined();
     });
 
     it('initialized acknowledges correctly', async () => {
-      const { response, json } = await mcpRequest('initialized');
-      expect(response.status).toBe(200);
-      expect(json.result).toBeDefined();
+      // initialized is a notification (no id field), not a request
+      // Per JSON-RPC spec, notifications should not receive a response body
+      const response = await fetch(`${MCP_BASE}/mcp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(API_KEY && { 'X-API-Key': API_KEY }),
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          // NO id field - this makes it a notification per JSON-RPC spec
+          method: 'initialized',
+        }),
+      });
+      // Notifications receive 202 Accepted with no body
+      expect(response.status).toBe(202);
     });
   });
 
