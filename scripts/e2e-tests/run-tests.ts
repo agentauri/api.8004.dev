@@ -12,6 +12,8 @@
  *   pnpm run test:e2e -- --local         # Run against local worker
  *   pnpm run test:e2e -- --delay=500     # Set delay between tests (default: 200ms)
  *   pnpm run test:e2e -- --no-delay      # Disable delay between tests
+ *   pnpm run test:e2e -- --skip-slow     # Skip slow test suites (for CI)
+ *   SKIP_SLOW_TESTS=true pnpm run test:e2e  # Same, via env var
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -44,14 +46,25 @@ const LOCAL_WORKER_URL = `http://localhost:${LOCAL_WORKER_PORT}/api/v1`;
 const LOCAL_API_KEY = 'e2e-test-api-key';
 const WORKER_STARTUP_TIMEOUT = 30000; // 30 seconds
 
+// Slow test suites that can be skipped in CI (they compare multiple data sources and are flaky)
+const SLOW_SUITES = ['consistency', 'mcp-consistency', 'source'];
+
 // Parse CLI arguments
-function parseArgs(): { filter?: string; json: boolean; verbose: boolean; local: boolean; delay: number } {
+function parseArgs(): {
+  filter?: string;
+  json: boolean;
+  verbose: boolean;
+  local: boolean;
+  delay: number;
+  skipSlow: boolean;
+} {
   const args = process.argv.slice(2);
   let filter: string | undefined;
   let json = false;
   let verbose = false;
   let local = false;
   let delay = 200; // Default 200ms delay between tests to avoid rate limiting
+  let skipSlow = process.env.SKIP_SLOW_TESTS === 'true';
 
   for (const arg of args) {
     if (arg.startsWith('--filter=')) {
@@ -66,10 +79,12 @@ function parseArgs(): { filter?: string; json: boolean; verbose: boolean; local:
       delay = Number.parseInt(arg.slice('--delay='.length), 10) || 200;
     } else if (arg === '--no-delay') {
       delay = 0;
+    } else if (arg === '--skip-slow') {
+      skipSlow = true;
     }
   }
 
-  return { filter, json, verbose, local, delay };
+  return { filter, json, verbose, local, delay, skipSlow };
 }
 
 // Map filter strings to test registration functions
@@ -178,7 +193,7 @@ function stopLocalWorker(worker: ChildProcess): void {
 }
 
 async function main(): Promise<void> {
-  const { filter, json, verbose, local, delay } = parseArgs();
+  const { filter, json, verbose, local, delay, skipSlow } = parseArgs();
   let workerProcess: ChildProcess | null = null;
 
   // Set verbose mode
@@ -232,6 +247,9 @@ async function main(): Promise<void> {
       if (filter) {
         console.log(`📋 Filter: ${filter}`);
       }
+      if (skipSlow) {
+        console.log(`⏭️  Skip slow: enabled (skipping ${SLOW_SUITES.join(', ')})`);
+      }
       console.log('');
     }
 
@@ -247,11 +265,16 @@ async function main(): Promise<void> {
       }
 
       for (const [, register] of matchingSuites) {
+        // When using --filter, user explicitly requested these suites
+        // Don't skip them even if --skip-slow is set
         register();
       }
     } else {
-      // Register all suites
-      for (const register of Object.values(testSuites)) {
+      // Register all suites (skip slow ones if flag is set)
+      for (const [name, register] of Object.entries(testSuites)) {
+        if (skipSlow && SLOW_SUITES.includes(name)) {
+          continue;
+        }
         register();
       }
     }

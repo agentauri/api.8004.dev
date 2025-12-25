@@ -12,8 +12,11 @@ export default defineWorkersConfig({
     globals: true,
     include: ['test/**/*.test.ts'],
     setupFiles: ['./test/setup.ts'],
+    // Reduce parallelism to avoid ephemeral port exhaustion on macOS
+    fileParallelism: false,
     poolOptions: {
       workers: {
+        singleWorker: true,
         wrangler: {
           configPath: './wrangler.toml',
         },

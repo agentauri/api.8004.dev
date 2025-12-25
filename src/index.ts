@@ -25,7 +25,7 @@ import {
 import { handleError } from '@/lib/utils/errors';
 import { parseAgentId } from '@/lib/utils/validation';
 import { createMcp8004Handler } from '@/mcp';
-import { agents, chains, health, openapi, search, stats, taxonomy } from '@/routes';
+import { agents, chains, health, openapi, scripts, search, stats, taxonomy } from '@/routes';
 import { createClassifierService } from '@/services/classifier';
 import { createEASIndexerService } from '@/services/eas-indexer';
 import { createSDKService } from '@/services/sdk';
@@ -99,6 +99,9 @@ app.route('/api/v1/search', search);
 app.route('/api/v1/chains', chains);
 app.route('/api/v1/stats', stats);
 app.route('/api/v1/taxonomy', taxonomy);
+
+// Scripts routes (public, no auth required)
+app.route('', scripts);
 
 // Root endpoint
 app.get('/', (c) => {
@@ -291,7 +294,10 @@ export default {
 
     // Handle MCP routes (public access with rate limiting)
     const url = new URL(request.url);
-    if (url.pathname.startsWith('/mcp') || url.pathname.startsWith('/sse')) {
+    const isMcpRoute =
+      (url.pathname.startsWith('/mcp') && !url.pathname.startsWith('/mcp-setup')) ||
+      url.pathname.startsWith('/sse');
+    if (isMcpRoute) {
       // Simple rate limiting for MCP endpoints using KV
       const clientIp = request.headers.get('CF-Connecting-IP') || 'anonymous';
       const rateLimitKey = `mcp-ratelimit:${clientIp}`;
