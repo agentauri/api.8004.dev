@@ -1,0 +1,472 @@
+/**
+ * Qdrant-based search service
+ * Replaces the external search-service with native Qdrant vector search
+ * @module services/qdrant-search
+ */
+
+import { buildFilter } from '../lib/qdrant/filter-builder';
+import type { AgentFilterParams, AgentPayload, OrderBy, QdrantFilter } from '../lib/qdrant/types';
+import type {
+  AgentSummary,
+  Env,
+  SearchFilters,
+  SearchResultItem,
+  SearchServiceResult,
+} from '../types';
+import type { OASFClassification } from '../types/classification';
+import { type EmbeddingService, createEmbeddingService } from './embedding';
+import { type QdrantClient, createQdrantClient, decodeCursor, encodeCursor } from './qdrant';
+
+/**
+ * Search parameters for Qdrant search
+ */
+export interface QdrantSearchParams {
+  /** Natural language query */
+  query?: string;
+  /** Maximum results to return */
+  limit?: number;
+  /** Minimum similarity score (0-1) */
+  minScore?: number;
+  /** Pagination cursor */
+  cursor?: string;
+  /** Direct offset for pagination */
+  offset?: number;
+  /** Filters */
+  filters?: AgentFilterParams;
+  /** Sort field */
+  sort?: 'relevance' | 'name' | 'createdAt' | 'reputation';
+  /** Sort order */
+  order?: 'asc' | 'desc';
+}
+
+/**
+ * Qdrant search service class
+ */
+export class QdrantSearchService {
+  private readonly qdrant: QdrantClient;
+  private readonly embedding: EmbeddingService;
+  private readonly cache: KVNamespace;
+
+  constructor(config: {
+    qdrant: QdrantClient;
+    embedding: EmbeddingService;
+    cache: KVNamespace;
+  }) {
+    this.qdrant = config.qdrant;
+    this.embedding = config.embedding;
+    this.cache = config.cache;
+  }
+
+  /**
+   * Perform semantic search
+   */
+  async search(params: QdrantSearchParams): Promise<SearchServiceResult> {
+    const limit = params.limit ?? 20;
+    const minScore = params.minScore ?? 0.3;
+
+    // Determine offset from cursor or direct offset
+    let offset = params.offset ?? 0;
+    if (params.cursor && !params.offset) {
+      const decoded = decodeCursor(params.cursor);
+      if (decoded) {
+        offset = Number.parseInt(decoded.lastValue as string, 10) || 0;
+      }
+    }
+
+    // Build filter from params
+    const filter = params.filters ? buildFilter(params.filters) : undefined;
+
+    // If we have a query, do vector search
+    if (params.query && params.query.trim().length > 0) {
+      return this.vectorSearch(params.query, {
+        filter,
+        limit,
+        offset,
+        minScore,
+        sort: params.sort,
+        order: params.order,
+      });
+    }
+
+    // No query - use scroll for filtered listing
+    return this.filteredListing({
+      filter,
+      limit,
+      offset,
+      sort: params.sort,
+      order: params.order,
+    });
+  }
+
+  /**
+   * Vector similarity search
+   */
+  private async vectorSearch(
+    query: string,
+    options: {
+      filter?: QdrantFilter;
+      limit: number;
+      offset: number;
+      minScore: number;
+      sort?: 'relevance' | 'name' | 'createdAt' | 'reputation';
+      order?: 'asc' | 'desc';
+    }
+  ): Promise<SearchServiceResult> {
+    // Generate embedding for query
+    const queryVector = await this.embedding.embedSingle(query);
+
+    // If sorting by non-relevance, we need to fetch more and re-sort
+    const isRelevanceSort = !options.sort || options.sort === 'relevance';
+
+    if (isRelevanceSort) {
+      // Direct vector search with Qdrant's native sorting
+      const result = await this.qdrant.search({
+        vector: queryVector,
+        qdrantFilter: options.filter,
+        limit: options.limit,
+        offset: options.offset,
+        scoreThreshold: options.minScore,
+      });
+
+      const results = result.items.map((item) =>
+        this.payloadToSearchResult(item.payload, item.score)
+      );
+      const byChain = this.calculateByChain(results);
+
+      return {
+        results,
+        total: await this.qdrant.count({ chainIds: undefined }), // Total in index
+        hasMore: result.hasMore,
+        nextCursor: result.hasMore
+          ? this.encodeSearchCursor(options.offset + options.limit)
+          : undefined,
+        byChain,
+      };
+    }
+
+    // Non-relevance sort: fetch all matching, sort, then paginate
+    // This is more expensive but necessary for non-score sorting
+    const allResults = await this.fetchAllVectorMatches(
+      queryVector,
+      options.filter,
+      options.minScore
+    );
+
+    // Sort results (only for non-relevance sorts)
+    const sortField = options.sort as 'name' | 'createdAt' | 'reputation';
+    const sorted = this.sortResults(allResults, sortField, options.order ?? 'desc');
+
+    // Paginate
+    const paginated = sorted.slice(options.offset, options.offset + options.limit);
+    const hasMore = options.offset + options.limit < sorted.length;
+
+    const results = paginated.map((item) => this.payloadToSearchResult(item.payload, item.score));
+    const byChain = this.calculateByChain(results);
+
+    return {
+      results,
+      total: sorted.length,
+      hasMore,
+      nextCursor: hasMore ? this.encodeSearchCursor(options.offset + options.limit) : undefined,
+      byChain,
+    };
+  }
+
+  /**
+   * Filtered listing without vector search
+   */
+  private async filteredListing(options: {
+    filter?: QdrantFilter;
+    limit: number;
+    offset: number;
+    sort?: 'relevance' | 'name' | 'createdAt' | 'reputation';
+    order?: 'asc' | 'desc';
+  }): Promise<SearchServiceResult> {
+    const orderBy = this.buildOrderBy(options.sort, options.order);
+
+    // Use scroll API for non-vector queries
+    const result = await this.qdrant.scroll({
+      qdrantFilter: options.filter,
+      limit: options.limit,
+      cursor: options.offset > 0 ? String(options.offset) : undefined,
+      orderBy,
+    });
+
+    const results = result.items.map((item) => this.payloadToSearchResult(item.payload, undefined));
+    const byChain = this.calculateByChain(results);
+    const total = await this.qdrant.count(options.filter ? { chainIds: undefined } : undefined);
+
+    return {
+      results,
+      total,
+      hasMore: result.hasMore,
+      nextCursor: result.hasMore
+        ? this.encodeSearchCursor(options.offset + options.limit)
+        : undefined,
+      byChain,
+    };
+  }
+
+  /**
+   * Fetch all vector matches (for non-relevance sorting)
+   */
+  private async fetchAllVectorMatches(
+    queryVector: number[],
+    filter: QdrantFilter | undefined,
+    minScore: number
+  ): Promise<Array<{ payload: AgentPayload; score: number }>> {
+    const results: Array<{ payload: AgentPayload; score: number }> = [];
+    let offset = 0;
+    const batchSize = 100;
+    let hasMore = true;
+
+    // Limit to reasonable max to avoid memory issues
+    const maxResults = 1000;
+
+    while (hasMore && results.length < maxResults) {
+      const batch = await this.qdrant.search({
+        vector: queryVector,
+        qdrantFilter: filter,
+        limit: batchSize,
+        offset,
+        scoreThreshold: minScore,
+      });
+
+      for (const item of batch.items) {
+        results.push({ payload: item.payload, score: item.score ?? 0 });
+      }
+
+      hasMore = batch.hasMore;
+      offset += batchSize;
+    }
+
+    return results;
+  }
+
+  /**
+   * Sort results by field
+   */
+  private sortResults(
+    results: Array<{ payload: AgentPayload; score: number }>,
+    sort: 'name' | 'createdAt' | 'reputation',
+    order: 'asc' | 'desc'
+  ): Array<{ payload: AgentPayload; score: number }> {
+    const multiplier = order === 'desc' ? -1 : 1;
+
+    return [...results].sort((a, b) => {
+      let comparison = 0;
+
+      switch (sort) {
+        case 'name':
+          comparison = a.payload.name.localeCompare(b.payload.name);
+          break;
+        case 'createdAt':
+          comparison =
+            new Date(a.payload.created_at).getTime() - new Date(b.payload.created_at).getTime();
+          break;
+        case 'reputation':
+          comparison = a.payload.reputation - b.payload.reputation;
+          break;
+      }
+
+      // Use agent_id as tie-breaker for stable pagination
+      if (comparison === 0) {
+        comparison = a.payload.agent_id.localeCompare(b.payload.agent_id);
+      }
+
+      return comparison * multiplier;
+    });
+  }
+
+  /**
+   * Convert Qdrant payload to search result item
+   */
+  private payloadToSearchResult(payload: AgentPayload, score?: number): SearchResultItem {
+    return {
+      agentId: payload.agent_id,
+      chainId: payload.chain_id,
+      name: payload.name,
+      description: payload.description,
+      score: score ?? 0,
+      metadata: {
+        active: payload.active,
+        hasMcp: payload.has_mcp,
+        hasA2a: payload.has_a2a,
+        x402Support: payload.x402_support,
+        skills: payload.skills,
+        domains: payload.domains,
+        reputation: payload.reputation,
+        image: payload.image,
+        ens: payload.ens,
+        did: payload.did,
+      },
+      matchReasons: this.generateMatchReasons(payload, score),
+    };
+  }
+
+  /**
+   * Generate match reasons based on payload and score
+   */
+  private generateMatchReasons(payload: AgentPayload, score?: number): string[] {
+    const reasons: string[] = [];
+
+    if (score && score > 0.8) {
+      reasons.push('high_relevance');
+    } else if (score && score > 0.5) {
+      reasons.push('moderate_relevance');
+    }
+
+    if (payload.has_mcp) reasons.push('has_mcp');
+    if (payload.has_a2a) reasons.push('has_a2a');
+    if (payload.x402_support) reasons.push('has_x402');
+    if (payload.skills.length > 0) reasons.push('has_skills');
+    if (payload.domains.length > 0) reasons.push('has_domains');
+
+    return reasons.length > 0 ? reasons : ['filter_match'];
+  }
+
+  /**
+   * Calculate result count by chain
+   */
+  private calculateByChain(results: SearchResultItem[]): Record<number, number> {
+    const byChain: Record<number, number> = {};
+    for (const result of results) {
+      byChain[result.chainId] = (byChain[result.chainId] ?? 0) + 1;
+    }
+    return byChain;
+  }
+
+  /**
+   * Build order_by clause
+   */
+  private buildOrderBy(
+    sort?: 'relevance' | 'name' | 'createdAt' | 'reputation',
+    order?: 'asc' | 'desc'
+  ): OrderBy | undefined {
+    if (!sort || sort === 'relevance') {
+      return undefined;
+    }
+
+    const keyMap: Record<string, string> = {
+      name: 'name',
+      createdAt: 'created_at',
+      reputation: 'reputation',
+    };
+
+    return {
+      key: keyMap[sort] ?? sort,
+      direction: order ?? 'desc',
+    };
+  }
+
+  /**
+   * Encode search cursor
+   */
+  private encodeSearchCursor(offset: number): string {
+    return encodeCursor({
+      sortField: 'offset',
+      lastValue: offset,
+      lastId: '',
+    });
+  }
+
+  /**
+   * Health check
+   */
+  async healthCheck(): Promise<boolean> {
+    try {
+      const info = await this.qdrant.getCollectionInfo();
+      return info.status === 'ok' || info.result.status === 'green';
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Get total count with optional filters
+   */
+  async count(filters?: AgentFilterParams): Promise<number> {
+    return this.qdrant.count(filters);
+  }
+}
+
+/**
+ * Convert SearchFilters to AgentFilterParams
+ */
+export function searchFiltersToAgentFilters(filters: SearchFilters): AgentFilterParams {
+  return {
+    chainIds: filters.chainIds,
+    active: filters.active,
+    mcp: filters.mcp,
+    a2a: filters.a2a,
+    x402: filters.x402,
+    skills: filters.skills,
+    domains: filters.domains,
+    filterMode: filters.filterMode,
+  };
+}
+
+/**
+ * Convert AgentPayload to AgentSummary
+ */
+export function payloadToAgentSummary(payload: AgentPayload, score?: number): AgentSummary {
+  // Build OASF classification if skills/domains exist
+  let oasf: OASFClassification | undefined;
+  if (payload.skills.length > 0 || payload.domains.length > 0) {
+    oasf = {
+      skills: payload.skills.map((slug) => ({ slug, confidence: 1 })),
+      domains: payload.domains.map((slug) => ({ slug, confidence: 1 })),
+      confidence: 1,
+      classifiedAt: payload.created_at,
+      modelVersion: 'qdrant-indexed',
+    };
+  }
+
+  return {
+    id: payload.agent_id,
+    chainId: payload.chain_id,
+    tokenId: payload.token_id,
+    name: payload.name,
+    description: payload.description,
+    image: payload.image || undefined,
+    active: payload.active,
+    hasMcp: payload.has_mcp,
+    hasA2a: payload.has_a2a,
+    x402Support: payload.x402_support,
+    supportedTrust: payload.x402_support ? ['x402'] : [],
+    oasf,
+    oasfSource: oasf ? 'llm-classification' : 'none',
+    searchScore: score,
+    reputationScore: payload.reputation > 0 ? payload.reputation : undefined,
+    operators: payload.operators.length > 0 ? payload.operators : undefined,
+    ens: payload.ens || undefined,
+    did: payload.did || undefined,
+    walletAddress: payload.wallet_address || undefined,
+    inputModes: payload.input_modes.length > 0 ? payload.input_modes : undefined,
+    outputModes: payload.output_modes.length > 0 ? payload.output_modes : undefined,
+  };
+}
+
+/**
+ * Create Qdrant search service from environment
+ */
+export function createQdrantSearchService(env: Env): QdrantSearchService {
+  const qdrant = createQdrantClient(
+    env as unknown as {
+      QDRANT_URL: string;
+      QDRANT_API_KEY: string;
+      QDRANT_COLLECTION?: string;
+    }
+  );
+
+  const embedding = createEmbeddingService({
+    VENICE_API_KEY: env.VENICE_API_KEY,
+    EMBEDDING_MODEL: env.EMBEDDING_MODEL,
+  });
+
+  return new QdrantSearchService({
+    qdrant,
+    embedding,
+    cache: env.CACHE,
+  });
+}

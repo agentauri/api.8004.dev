@@ -22,6 +22,20 @@ export interface Env {
   BASE_SEPOLIA_RPC_URL: string;
   POLYGON_AMOY_RPC_URL: string;
 
+  // Qdrant configuration
+  /** Qdrant Cloud URL */
+  QDRANT_URL: string;
+  /** Qdrant API key */
+  QDRANT_API_KEY: string;
+  /** Qdrant collection name (default: agents) */
+  QDRANT_COLLECTION?: string;
+
+  // Embedding configuration
+  /** Venice AI API key for embeddings */
+  VENICE_API_KEY?: string;
+  /** Embedding model to use (default: text-embedding-3-small) */
+  EMBEDDING_MODEL?: string;
+
   // Configuration (with defaults in wrangler.toml)
   ENVIRONMENT: string;
   CACHE_TTL: string;

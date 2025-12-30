@@ -44,6 +44,50 @@ export interface SearchRequest {
 }
 
 /**
+ * Typed metadata for search results
+ */
+export interface SearchResultMetadata {
+  /** Agent active status */
+  active?: boolean;
+  /** Has MCP support */
+  hasMcp?: boolean;
+  /** Has A2A support */
+  hasA2a?: boolean;
+  /** Has x402 support */
+  x402Support?: boolean;
+  /** OASF skills */
+  skills?: string[];
+  /** OASF domains */
+  domains?: string[];
+  /** Reputation score */
+  reputation?: number;
+  /** Agent image URL */
+  image?: string;
+  /** ENS name */
+  ens?: string;
+  /** DID identifier */
+  did?: string;
+  /** Wallet address */
+  walletAddress?: string;
+  /** MCP tools */
+  mcpTools?: string[];
+  /** MCP prompts */
+  mcpPrompts?: string[];
+  /** MCP resources */
+  mcpResources?: string[];
+  /** A2A skills */
+  a2aSkills?: string[];
+  /** Operators */
+  operators?: string[];
+  /** x402 support flag (alternate name) */
+  x402support?: boolean;
+  /** Supported trust methods */
+  supportedTrusts?: string[];
+  /** Agent wallet (alternate name) */
+  agentWallet?: string;
+}
+
+/**
  * Individual search result from search-service
  */
 export interface SearchResultItem {
@@ -58,7 +102,7 @@ export interface SearchResultItem {
   /** Similarity score (0-1) */
   score: number;
   /** Additional metadata */
-  metadata: Record<string, unknown>;
+  metadata?: SearchResultMetadata;
   /** Reasons why this agent matched the query */
   matchReasons?: string[];
 }
