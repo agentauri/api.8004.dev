@@ -132,10 +132,12 @@ export class QdrantSearchService {
         this.payloadToSearchResult(item.payload, item.score)
       );
       const byChain = this.calculateByChain(results);
+      // Use filtered count for total
+      const total = await this.qdrant.countWithFilter(options.filter);
 
       return {
         results,
-        total: await this.qdrant.count({ chainIds: undefined }), // Total in index
+        total,
         hasMore: result.hasMore,
         nextCursor: result.hasMore
           ? this.encodeSearchCursor(options.offset + options.limit)
@@ -174,6 +176,8 @@ export class QdrantSearchService {
 
   /**
    * Filtered listing without vector search
+   * Note: Qdrant order_by only works with numeric/datetime fields.
+   * For name sorting, we fetch all and sort in-memory.
    */
   private async filteredListing(options: {
     filter?: QdrantFilter;
@@ -182,29 +186,130 @@ export class QdrantSearchService {
     sort?: 'relevance' | 'name' | 'createdAt' | 'reputation';
     order?: 'asc' | 'desc';
   }): Promise<SearchServiceResult> {
+    // For name sorting, Qdrant doesn't support order_by on keyword fields
+    // We need to fetch all matching results and sort in-memory
+    if (options.sort === 'name') {
+      return this.filteredListingWithInMemorySort(options);
+    }
+
+    // For numeric/datetime fields, use Qdrant's native order_by
     const orderBy = this.buildOrderBy(options.sort, options.order);
 
-    // Use scroll API for non-vector queries
+    // Qdrant scroll API uses point IDs for cursor, not numeric offsets.
+    // For offset-based pagination, we need to fetch extra and skip.
+    const fetchLimit = options.offset + options.limit + 1; // +1 to detect hasMore
+
     const result = await this.qdrant.scroll({
       qdrantFilter: options.filter,
-      limit: options.limit,
-      cursor: options.offset > 0 ? String(options.offset) : undefined,
+      limit: fetchLimit,
       orderBy,
     });
 
-    const results = result.items.map((item) => this.payloadToSearchResult(item.payload, undefined));
+    // Skip offset items and take limit items
+    const allItems = result.items;
+    const paginatedItems = allItems.slice(options.offset, options.offset + options.limit);
+    const hasMore = allItems.length > options.offset + options.limit;
+
+    const results = paginatedItems.map((item) =>
+      this.payloadToSearchResult(item.payload, undefined)
+    );
     const byChain = this.calculateByChain(results);
-    const total = await this.qdrant.count(options.filter ? { chainIds: undefined } : undefined);
+    // Use filtered count, not global count
+    const total = await this.qdrant.countWithFilter(options.filter);
 
     return {
       results,
       total,
-      hasMore: result.hasMore,
-      nextCursor: result.hasMore
-        ? this.encodeSearchCursor(options.offset + options.limit)
-        : undefined,
+      hasMore,
+      nextCursor: hasMore ? this.encodeSearchCursor(options.offset + options.limit) : undefined,
       byChain,
     };
+  }
+
+  /**
+   * Filtered listing with in-memory sorting (for fields Qdrant can't sort)
+   */
+  private async filteredListingWithInMemorySort(options: {
+    filter?: QdrantFilter;
+    limit: number;
+    offset: number;
+    sort?: 'relevance' | 'name' | 'createdAt' | 'reputation';
+    order?: 'asc' | 'desc';
+  }): Promise<SearchServiceResult> {
+    // Fetch all matching results (up to a reasonable limit)
+    const allResults: Array<{ payload: AgentPayload }> = [];
+    let cursor: string | undefined;
+    const batchSize = 100;
+    const maxResults = 1000;
+
+    while (allResults.length < maxResults) {
+      const batch = await this.qdrant.scroll({
+        qdrantFilter: options.filter,
+        limit: batchSize,
+        cursor,
+      });
+
+      for (const item of batch.items) {
+        allResults.push({ payload: item.payload });
+      }
+
+      if (!batch.hasMore || !batch.nextCursor) break;
+      cursor = batch.nextCursor;
+    }
+
+    // Sort in-memory
+    const sortField = options.sort as 'name' | 'createdAt' | 'reputation';
+    const sorted = this.sortPayloads(allResults, sortField, options.order ?? 'desc');
+
+    // Paginate
+    const paginated = sorted.slice(options.offset, options.offset + options.limit);
+    const hasMore = options.offset + options.limit < sorted.length;
+
+    const results = paginated.map((item) => this.payloadToSearchResult(item.payload, undefined));
+    const byChain = this.calculateByChain(results);
+
+    return {
+      results,
+      total: sorted.length,
+      hasMore,
+      nextCursor: hasMore ? this.encodeSearchCursor(options.offset + options.limit) : undefined,
+      byChain,
+    };
+  }
+
+  /**
+   * Sort payloads by field (for in-memory sorting)
+   */
+  private sortPayloads(
+    results: Array<{ payload: AgentPayload }>,
+    sort: 'name' | 'createdAt' | 'reputation',
+    order: 'asc' | 'desc'
+  ): Array<{ payload: AgentPayload }> {
+    const multiplier = order === 'desc' ? -1 : 1;
+
+    return [...results].sort((a, b) => {
+      let comparison = 0;
+
+      switch (sort) {
+        case 'name':
+          comparison = a.payload.name.localeCompare(b.payload.name);
+          break;
+        case 'createdAt':
+          comparison =
+            new Date(a.payload.created_at).getTime() - new Date(b.payload.created_at).getTime();
+          break;
+        case 'reputation':
+          comparison = a.payload.reputation - b.payload.reputation;
+          break;
+      }
+
+      // Use agent_id as tie-breaker for stable pagination
+      if (comparison === 0) {
+        comparison = a.payload.agent_id.localeCompare(b.payload.agent_id);
+      }
+
+      return comparison * multiplier;
+    });
   }
 
   /**

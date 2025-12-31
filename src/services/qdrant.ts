@@ -258,7 +258,13 @@ export class QdrantClient {
    */
   async count(filters?: AgentFilterParams): Promise<number> {
     const filter = filters ? buildFilter(filters) : undefined;
+    return this.countWithFilter(filter);
+  }
 
+  /**
+   * Count points matching a pre-built Qdrant filter
+   */
+  async countWithFilter(filter?: QdrantFilter): Promise<number> {
     const request: QdrantCountRequest = {
       filter,
       exact: true,
