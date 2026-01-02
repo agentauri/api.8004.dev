@@ -5,6 +5,7 @@
 
 import { createEASIndexerService } from '@/services/eas-indexer';
 import { createSearchService } from '@/services/search';
+import { syncFromGraph, syncFromSDK, syncD1ToQdrant } from '@/services/sync';
 import type { Env, HealthResponse, ServiceStatus, Variables } from '@/types';
 import { Hono } from 'hono';
 
@@ -115,6 +116,216 @@ health.post('/sync-eas', async (c) => {
     data: summary,
     timestamp: new Date().toISOString(),
   });
+});
+
+/**
+ * POST /api/v1/health/sync-qdrant
+ * Manually trigger Qdrant sync from Graph and D1 (admin only)
+ * Query params:
+ *   - limit: Max agents to sync (default: 5000)
+ *   - batchSize: Agents per batch (default: 10)
+ *   - skipD1: Skip D1 sync (default: false)
+ *   - includeAll: Include agents without registration files (default: false)
+ */
+health.post('/sync-qdrant', async (c) => {
+  const env = c.env;
+
+  // Parse query parameters
+  const limitParam = c.req.query('limit');
+  const batchSizeParam = c.req.query('batchSize');
+  const skipD1 = c.req.query('skipD1') === 'true';
+  const includeAll = c.req.query('includeAll') === 'true';
+
+  const limit = limitParam ? Number.parseInt(limitParam, 10) : 5000;
+  const batchSize = batchSizeParam ? Number.parseInt(batchSizeParam, 10) : 10;
+
+  // Check required env vars
+  if (!env.QDRANT_URL || !env.QDRANT_API_KEY || !env.VENICE_API_KEY) {
+    return c.json(
+      {
+        success: false,
+        error: 'Missing required environment variables: QDRANT_URL, QDRANT_API_KEY, or VENICE_API_KEY',
+      },
+      500
+    );
+  }
+
+  const qdrantEnv = {
+    QDRANT_URL: env.QDRANT_URL,
+    QDRANT_API_KEY: env.QDRANT_API_KEY,
+    QDRANT_COLLECTION: env.QDRANT_COLLECTION,
+    VENICE_API_KEY: env.VENICE_API_KEY,
+    GRAPH_API_KEY: env.GRAPH_API_KEY,
+  };
+
+  try {
+    // Use SDK sync if no Graph API key, otherwise use Graph sync
+    const useSDK = !env.GRAPH_API_KEY;
+
+    let agentSyncResult: { newAgents: number; updatedAgents: number; errors: string[]; reembedded?: number };
+
+    if (useSDK) {
+      console.info(`Using SDK sync (limit: ${limit}, batchSize: ${batchSize}, includeAll: ${includeAll})`);
+      agentSyncResult = await syncFromSDK(env, qdrantEnv, { limit, batchSize, includeAll });
+    } else {
+      console.info('Using Graph sync');
+      agentSyncResult = await syncFromGraph(env.DB, qdrantEnv);
+    }
+
+    // Run D1 sync (optional)
+    let d1Result = { classificationsUpdated: 0, reputationUpdated: 0, errors: [] as string[] };
+    if (!skipD1) {
+      d1Result = await syncD1ToQdrant(env.DB, qdrantEnv);
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        source: useSDK ? 'sdk' : 'graph',
+        options: { limit, batchSize, skipD1, includeAll },
+        agents: {
+          newAgents: agentSyncResult.newAgents,
+          updatedAgents: agentSyncResult.updatedAgents,
+          reembedded: agentSyncResult.reembedded ?? 0,
+          errors: agentSyncResult.errors.slice(0, 10),
+        },
+        d1: skipD1
+          ? { skipped: true }
+          : {
+              classificationsUpdated: d1Result.classificationsUpdated,
+              reputationUpdated: d1Result.reputationUpdated,
+              errors: d1Result.errors.slice(0, 10),
+            },
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('Qdrant sync failed:', error);
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});
+
+/**
+ * POST /api/v1/health/qdrant/indexes
+ * Create required payload indexes in Qdrant (admin only)
+ */
+health.post('/qdrant/indexes', async (c) => {
+  const env = c.env;
+
+  if (!env.QDRANT_URL || !env.QDRANT_API_KEY) {
+    return c.json(
+      {
+        success: false,
+        error: 'QDRANT_URL or QDRANT_API_KEY not set',
+      },
+      500
+    );
+  }
+
+  try {
+    const { createQdrantClient } = await import('@/services/qdrant');
+    const qdrant = createQdrantClient({
+      QDRANT_URL: env.QDRANT_URL,
+      QDRANT_API_KEY: env.QDRANT_API_KEY,
+      QDRANT_COLLECTION: env.QDRANT_COLLECTION,
+    });
+
+    await qdrant.ensurePayloadIndexes();
+
+    return c.json({
+      success: true,
+      message: 'Payload indexes created/verified successfully',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('Failed to create indexes:', error);
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});
+
+/**
+ * GET /api/v1/health/qdrant
+ * Check Qdrant connection and collection status
+ */
+health.get('/qdrant', async (c) => {
+  const env = c.env;
+
+  if (!env.QDRANT_URL || !env.QDRANT_API_KEY) {
+    return c.json({
+      success: true,
+      data: {
+        configured: false,
+        error: 'QDRANT_URL or QDRANT_API_KEY not set',
+      },
+    });
+  }
+
+  const collection = env.QDRANT_COLLECTION ?? 'agents';
+
+  try {
+    // Check collection info
+    const response = await fetch(
+      `${env.QDRANT_URL}/collections/${collection}`,
+      {
+        headers: {
+          'api-key': env.QDRANT_API_KEY,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      return c.json({
+        success: true,
+        data: {
+          configured: true,
+          collection,
+          status: 'error',
+          error: `HTTP ${response.status}: ${await response.text()}`,
+        },
+      });
+    }
+
+    const data = (await response.json()) as {
+      result?: {
+        status?: string;
+        points_count?: number;
+        vectors_count?: number;
+      };
+    };
+
+    return c.json({
+      success: true,
+      data: {
+        configured: true,
+        collection,
+        status: data.result?.status ?? 'unknown',
+        pointsCount: data.result?.points_count ?? 0,
+        vectorsCount: data.result?.vectors_count ?? 0,
+      },
+    });
+  } catch (error) {
+    return c.json({
+      success: true,
+      data: {
+        configured: true,
+        collection,
+        status: 'error',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      },
+    });
+  }
 });
 
 export { health };

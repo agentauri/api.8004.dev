@@ -52,7 +52,22 @@ dead_letter_queue = "classification-jobs-dlq"
 
 # Scheduled triggers (cron)
 [triggers]
-crons = ["0 * * * *"]  # Run EAS indexer every hour
+crons = [
+  "*/15 * * * *",  # Run Qdrant sync every 15 minutes
+  "0 * * * *"      # Run EAS indexer + reconciliation every hour
+]
+
+# ------------------------------------------------------------------
+# RPC URLs for supported chains (secrets set via `wrangler secret put`)
+# ------------------------------------------------------------------
+# Ethereum Sepolia (11155111):      SEPOLIA_RPC_URL
+# Base Sepolia (84532):             BASE_SEPOLIA_RPC_URL
+# Polygon Amoy (80002):             POLYGON_AMOY_RPC_URL
+# Linea Sepolia (59141):            LINEA_SEPOLIA_RPC_URL
+# Hedera Testnet (296):             HEDERA_TESTNET_RPC_URL
+# HyperEVM Testnet (998):           HYPEREVM_TESTNET_RPC_URL
+# SKALE Base Sepolia (1351057110):  SKALE_BASE_SEPOLIA_RPC_URL
+# ------------------------------------------------------------------
 
 # Staging environment
 [env.staging]

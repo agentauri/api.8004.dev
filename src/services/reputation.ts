@@ -48,6 +48,12 @@ export interface ReputationService {
    * Recalculate reputation for an agent from all feedback
    */
   recalculateReputation(agentId: string, chainId: number): Promise<AgentReputation>;
+
+  /**
+   * Recalculate reputation for all agents (after migration)
+   * @returns Number of agents recalculated
+   */
+  recalculateAll(): Promise<number>;
 }
 
 /**
@@ -264,6 +270,22 @@ export function createReputationService(db: D1Database): ReputationService {
           high: calculated.high,
         },
       };
+    },
+
+    async recalculateAll(): Promise<number> {
+      // Get all unique agent IDs from feedback
+      const result = await db
+        .prepare('SELECT DISTINCT agent_id, chain_id FROM agent_feedback')
+        .all<{ agent_id: string; chain_id: number }>();
+
+      let count = 0;
+      for (const row of result.results ?? []) {
+        await this.recalculateReputation(row.agent_id, row.chain_id);
+        count++;
+      }
+
+      console.info(`Recalculated reputation for ${count} agents`);
+      return count;
     },
   };
 }

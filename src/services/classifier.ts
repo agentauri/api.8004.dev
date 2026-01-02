@@ -7,6 +7,7 @@
  */
 
 import { buildClassificationPrompt } from '@/lib/oasf/prompt';
+import { validateDomainSlug, validateSkillSlug } from '@/lib/oasf/taxonomy';
 import type {
   AgentClassificationInput,
   ClassificationResult,
@@ -100,6 +101,49 @@ export function calculateOverallConfidence(
 }
 
 /**
+ * Sanitize classification result by filtering out invalid OASF slugs
+ *
+ * LLMs may return slugs that don't exist in the taxonomy. This function
+ * filters them out to ensure only valid slugs are stored in the database.
+ *
+ * @param skills - Raw skill classifications from LLM
+ * @param domains - Raw domain classifications from LLM
+ * @returns Sanitized classifications with only valid slugs
+ * @internal Exported for testing
+ */
+export function sanitizeClassification(
+  skills: SkillClassification[],
+  domains: DomainClassification[]
+): { skills: SkillClassification[]; domains: DomainClassification[]; invalidSlugs: string[] } {
+  const invalidSlugs: string[] = [];
+
+  // Filter skills - keep only valid OASF slugs
+  const validSkills = skills.filter((s) => {
+    const isValid = validateSkillSlug(s.slug);
+    if (!isValid) {
+      invalidSlugs.push(`skill:${s.slug}`);
+    }
+    return isValid;
+  });
+
+  // Filter domains - keep only valid OASF slugs
+  const validDomains = domains.filter((d) => {
+    const isValid = validateDomainSlug(d.slug);
+    if (!isValid) {
+      invalidSlugs.push(`domain:${d.slug}`);
+    }
+    return isValid;
+  });
+
+  // Log warning if any slugs were filtered
+  if (invalidSlugs.length > 0) {
+    console.warn(`Filtered invalid OASF slugs: ${invalidSlugs.join(', ')}`);
+  }
+
+  return { skills: validSkills, domains: validDomains, invalidSlugs };
+}
+
+/**
  * Default timeout for classification requests (30 seconds)
  */
 const CLASSIFICATION_TIMEOUT_MS = 30_000;
@@ -137,17 +181,20 @@ export function createClaudeClassifier(apiKey: string, model: string): Classifie
       const parsed = parseClassificationResponse(textContent.text);
 
       // Transform to our types
-      const skills: SkillClassification[] = parsed.skills.map((s) => ({
+      const rawSkills: SkillClassification[] = parsed.skills.map((s) => ({
         slug: s.slug,
         confidence: s.confidence,
         reasoning: s.reasoning,
       }));
 
-      const domains: DomainClassification[] = parsed.domains.map((d) => ({
+      const rawDomains: DomainClassification[] = parsed.domains.map((d) => ({
         slug: d.slug,
         confidence: d.confidence,
         reasoning: d.reasoning,
       }));
+
+      // Sanitize - filter out invalid OASF slugs
+      const { skills, domains } = sanitizeClassification(rawSkills, rawDomains);
 
       const confidence = calculateOverallConfidence(skills, domains);
 
@@ -204,17 +251,20 @@ export function createGeminiClassifier(apiKey: string, model: string): Classifie
       const parsed = parseClassificationResponse(text);
 
       // Transform to our types
-      const skills: SkillClassification[] = parsed.skills.map((s) => ({
+      const rawSkills: SkillClassification[] = parsed.skills.map((s) => ({
         slug: s.slug,
         confidence: s.confidence,
         reasoning: s.reasoning,
       }));
 
-      const domains: DomainClassification[] = parsed.domains.map((d) => ({
+      const rawDomains: DomainClassification[] = parsed.domains.map((d) => ({
         slug: d.slug,
         confidence: d.confidence,
         reasoning: d.reasoning,
       }));
+
+      // Sanitize - filter out invalid OASF slugs
+      const { skills, domains } = sanitizeClassification(rawSkills, rawDomains);
 
       const confidence = calculateOverallConfidence(skills, domains);
 

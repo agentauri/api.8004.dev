@@ -10,8 +10,22 @@ import type { SearchMode } from './search';
 
 /**
  * Supported blockchain chain IDs
+ * - 11155111: Ethereum Sepolia
+ * - 84532: Base Sepolia
+ * - 80002: Polygon Amoy
+ * - 59141: Linea Sepolia
+ * - 296: Hedera Testnet
+ * - 998: HyperEVM Testnet
+ * - 1351057110: SKALE Base Sepolia
  */
-export type SupportedChainId = 11155111 | 84532 | 80002;
+export type SupportedChainId =
+  | 11155111
+  | 84532
+  | 80002
+  | 59141
+  | 296
+  | 998
+  | 1351057110;
 
 /**
  * Supported trust methods
@@ -68,6 +82,14 @@ export interface AgentSummary {
   inputModes?: string[];
   /** Supported output modes (derived from MCP resources) */
   outputModes?: string[];
+  /** MCP protocol version */
+  mcpVersion?: string;
+  /** A2A protocol version */
+  a2aVersion?: string;
+  /** Chain ID of agent's wallet */
+  agentWalletChainId?: number;
+  /** Supported trust models (from subgraph) */
+  supportedTrusts?: string[];
 }
 
 /**
@@ -104,6 +126,8 @@ export interface AgentEndpoints {
   did?: string;
   /** Agent wallet address */
   agentWallet?: string;
+  /** Chain ID of agent's wallet */
+  agentWalletChainId?: number;
   /** OASF endpoint with creator-defined skills/domains */
   oasf?: OASFEndpoint;
 }

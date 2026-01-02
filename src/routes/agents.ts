@@ -31,6 +31,8 @@ import type {
   ChainStats,
   Env,
   OASFSource,
+  SearchMode,
+  SearchModeInput,
   Variables,
 } from '@/types';
 import { Hono } from 'hono';
@@ -202,6 +204,154 @@ async function getCachedChainStats(
   return stats;
 }
 
+/**
+ * Perform SDK-based name substring search
+ * Used when searchMode='name' or as fallback when vector search returns 0 results
+ */
+async function performNameSearch(
+  c: { env: Env; executionCtx: ExecutionContext },
+  sdk: ReturnType<typeof createSDKService>,
+  query: ListAgentsQuery,
+  chainIds: number[] | undefined,
+  searchModeLabel: SearchMode
+): Promise<AgentListResponse> {
+  // Use SDK search with substring matching
+  // DON'T pass mcp/a2a/x402 to SDK - the external SDK doesn't handle false values correctly
+  // We'll apply all boolean filters ourselves after getting results
+  const sdkSearchResult = await sdk.search({
+    query: query.q ?? '',
+    chainIds,
+    active: query.active,
+    // Note: mcp/a2a/x402/filterMode NOT passed - we handle them in post-filtering
+    // mcpTools and a2aSkills are passed to SDK for native filtering
+    mcpTools: query.mcpTools,
+    a2aSkills: query.a2aSkills,
+    limit: query.limit * 3, // Over-fetch for post-filtering
+    cursor: query.cursor,
+  });
+
+  // Batch fetch classifications and reputations
+  const agentIds = sdkSearchResult.items.map((item) => item.agent.id);
+  const [classificationsMap, reputationsMap] = await Promise.all([
+    getClassificationsBatch(c.env.DB, agentIds),
+    getReputationsBatch(c.env.DB, agentIds),
+  ]);
+
+  // Enrich SDK search results with OASF and reputation data
+  const enrichedAgents: AgentSummary[] = sdkSearchResult.items.map((item) => {
+    const classificationRow = classificationsMap.get(item.agent.id);
+    const oasf = parseClassificationRow(classificationRow);
+    const reputationRow = reputationsMap.get(item.agent.id);
+    return {
+      ...item.agent,
+      oasf,
+      oasfSource: (oasf ? 'llm-classification' : 'none') as OASFSource,
+      searchScore: item.score,
+      matchReasons: item.matchReasons,
+      reputationScore: reputationRow?.average_score,
+      reputationCount: reputationRow?.feedback_count,
+    };
+  });
+
+  // Determine if we need post-filtering
+  const hasBooleanFilters =
+    query.mcp !== undefined || query.a2a !== undefined || query.x402 !== undefined;
+  const hasOASFFilters =
+    (query.skills && query.skills.length > 0) || (query.domains && query.domains.length > 0);
+
+  // Post-filter using enriched SDK data
+  let postFilteredAgents = enrichedAgents;
+
+  if (hasBooleanFilters || hasOASFFilters) {
+    const isOrMode = query.filterMode === 'OR';
+
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Filter logic requires checking multiple OASF and boolean conditions
+    postFilteredAgents = enrichedAgents.filter((agent) => {
+      // Skills filter (always AND)
+      if (query.skills?.length) {
+        const agentSkillSlugs = agent.oasf?.skills?.map((s) => s.slug) ?? [];
+        const hasMatchingSkill = query.skills.some((reqSkill) =>
+          agentSkillSlugs.includes(reqSkill)
+        );
+        if (!hasMatchingSkill) return false;
+      }
+
+      // Domains filter (always AND)
+      if (query.domains?.length) {
+        const agentDomainSlugs = agent.oasf?.domains?.map((d) => d.slug) ?? [];
+        const hasMatchingDomain = query.domains.some((reqDomain) =>
+          agentDomainSlugs.includes(reqDomain)
+        );
+        if (!hasMatchingDomain) return false;
+      }
+
+      // Boolean filters (mcp, a2a, x402) - apply filterMode logic
+      const boolFilters: boolean[] = [];
+      if (query.mcp !== undefined) boolFilters.push(agent.hasMcp === query.mcp);
+      if (query.a2a !== undefined) boolFilters.push(agent.hasA2a === query.a2a);
+      if (query.x402 !== undefined) boolFilters.push(agent.x402Support === query.x402);
+
+      if (boolFilters.length === 0) return true;
+
+      return isOrMode
+        ? boolFilters.some((b) => b) // OR: at least one must match
+        : boolFilters.every((b) => b); // AND: all must match
+    });
+  }
+
+  // Apply limit after post-filtering
+  const limitedAgents = postFilteredAgents.slice(0, query.limit);
+
+  // Apply reputation filtering
+  const filteredAgents = filterByReputation(limitedAgents, query.minRep, query.maxRep);
+
+  // Apply sorting
+  const sortedAgents = sortAgents(filteredAgents, query.sort, query.order);
+
+  // Fetch chain stats for totals (from KV cache)
+  const chainStats = await getCachedChainStats(c.env, sdk);
+  const stats = {
+    total: chainStats.reduce((sum, ch) => sum + ch.totalCount, 0),
+    withRegistrationFile: chainStats.reduce((sum, ch) => sum + ch.withRegistrationFileCount, 0),
+    active: chainStats.reduce((sum, ch) => sum + ch.activeCount, 0),
+    byChain: chainStats.map((ch) => ({
+      chainId: ch.chainId,
+      name: ch.name,
+      totalCount: ch.totalCount,
+      withRegistrationFileCount: ch.withRegistrationFileCount,
+      activeCount: ch.activeCount,
+    })),
+  };
+
+  const response: AgentListResponse = {
+    success: true,
+    data: sortedAgents,
+    meta: {
+      total: postFilteredAgents.length,
+      hasMore: postFilteredAgents.length > query.limit,
+      nextCursor: sdkSearchResult.nextCursor,
+      stats,
+      searchMode: searchModeLabel,
+    },
+  };
+
+  // Trigger background classification for unclassified agents (non-blocking)
+  const unclassifiedIds = sortedAgents
+    .filter((a) => !a.oasf)
+    .slice(0, 10)
+    .map((a) => a.id);
+
+  if (unclassifiedIds.length > 0) {
+    c.executionCtx.waitUntil(
+      enqueueClassificationsWithQueue(c.env, unclassifiedIds).catch((err) => {
+        console.error('Failed to enqueue classifications:', err);
+      })
+    );
+  }
+
+  return response;
+}
+
 const agents = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 // Apply rate limiting
@@ -253,8 +403,30 @@ agents.get('/', async (c) => {
   // Convert page to offset for pagination (page is 1-indexed)
   const offset = query.page ? (query.page - 1) * query.limit : undefined;
 
-  // If search query provided, use semantic search
+  // Get search mode (default to 'auto' for backward compatibility)
+  const searchModeInput: SearchModeInput = query.searchMode ?? 'auto';
+
+  // If search query provided, use search logic based on searchMode
   if (query.q) {
+    // If searchMode is 'name', skip vector search entirely
+    if (searchModeInput === 'name') {
+      try {
+        const response = await performNameSearch(
+          { env: c.env, executionCtx: c.executionCtx },
+          sdk,
+          query,
+          chainIds,
+          'name'
+        );
+        await cache.set(cacheKey, response, CACHE_TTL.AGENTS);
+        return c.json(response);
+      } catch (sdkError) {
+        console.error('SDK name search failed:', sdkError);
+        return errors.internalError(c, 'Search service error');
+      }
+    }
+
+    // For 'semantic' or 'auto' mode, try vector search first
     try {
       const searchService = createSearchService(c.env.SEARCH_SERVICE_URL, undefined, c.env);
 
@@ -286,10 +458,13 @@ agents.get('/', async (c) => {
         },
       });
 
-      // If vector search returns 0 results, fall back to SDK search
-      // This handles cases where agents aren't indexed in vector DB
+      // If vector search returns 0 results and searchMode is 'auto', fall back to SDK name search
+      // For 'semantic' mode, don't fall back - return empty results
       if (searchResults.results.length === 0 && !query.cursor) {
-        throw new Error('Vector search returned 0 results, trying SDK fallback');
+        if (searchModeInput === 'auto') {
+          throw new Error('Vector search returned 0 results, trying SDK name fallback');
+        }
+        // For 'semantic' mode, return empty results
       }
 
       // Batch fetch classifications and reputations for all search results (N+1 fix)
@@ -434,15 +609,15 @@ agents.get('/', async (c) => {
       // Fetch chain stats for totals (from KV cache)
       const chainStats = await getCachedChainStats(c.env, sdk);
       const stats = {
-        total: chainStats.reduce((sum, c) => sum + c.totalCount, 0),
-        withRegistrationFile: chainStats.reduce((sum, c) => sum + c.withRegistrationFileCount, 0),
-        active: chainStats.reduce((sum, c) => sum + c.activeCount, 0),
-        byChain: chainStats.map((c) => ({
-          chainId: c.chainId,
-          name: c.name,
-          totalCount: c.totalCount,
-          withRegistrationFileCount: c.withRegistrationFileCount,
-          activeCount: c.activeCount,
+        total: chainStats.reduce((sum, ch) => sum + ch.totalCount, 0),
+        withRegistrationFile: chainStats.reduce((sum, ch) => sum + ch.withRegistrationFileCount, 0),
+        active: chainStats.reduce((sum, ch) => sum + ch.activeCount, 0),
+        byChain: chainStats.map((ch) => ({
+          chainId: ch.chainId,
+          name: ch.name,
+          totalCount: ch.totalCount,
+          withRegistrationFileCount: ch.withRegistrationFileCount,
+          activeCount: ch.activeCount,
         })),
       };
 
@@ -483,147 +658,21 @@ agents.get('/', async (c) => {
       await cache.set(cacheKey, response, CACHE_TTL.AGENTS);
       return c.json(response);
     } catch (vectorSearchError) {
-      // ========== FALLBACK: SDK SEARCH ==========
+      // ========== FALLBACK: SDK NAME SEARCH (only for 'auto' mode) ==========
+      // For 'semantic' mode, we would have already returned above (no fallback)
       console.warn(
-        'Vector search failed in agents route, falling back to SDK search:',
+        'Vector search failed in agents route, falling back to SDK name search:',
         vectorSearchError instanceof Error ? vectorSearchError.message : vectorSearchError
       );
 
       try {
-        // Use SDK search with substring matching
-        // DON'T pass mcp/a2a/x402 to SDK - the external SDK doesn't handle false values correctly
-        // We'll apply all boolean filters ourselves after getting results
-        const sdkSearchResult = await sdk.search({
-          query: query.q,
+        const response = await performNameSearch(
+          { env: c.env, executionCtx: c.executionCtx },
+          sdk,
+          query,
           chainIds,
-          active: query.active,
-          // Note: mcp/a2a/x402/filterMode NOT passed - we handle them in post-filtering
-          // mcpTools and a2aSkills are passed to SDK for native filtering
-          mcpTools: query.mcpTools,
-          a2aSkills: query.a2aSkills,
-          limit: query.limit * 3, // Over-fetch for post-filtering
-          cursor: query.cursor,
-        });
-
-        // Batch fetch classifications and reputations
-        const agentIds = sdkSearchResult.items.map((item) => item.agent.id);
-        const [classificationsMap, reputationsMap] = await Promise.all([
-          getClassificationsBatch(c.env.DB, agentIds),
-          getReputationsBatch(c.env.DB, agentIds),
-        ]);
-
-        // Enrich SDK search results with OASF and reputation data
-        const enrichedAgents: AgentSummary[] = sdkSearchResult.items.map((item) => {
-          const classificationRow = classificationsMap.get(item.agent.id);
-          const oasf = parseClassificationRow(classificationRow);
-          const reputationRow = reputationsMap.get(item.agent.id);
-          return {
-            ...item.agent,
-            oasf,
-            oasfSource: (oasf ? 'llm-classification' : 'none') as OASFSource,
-            searchScore: item.score,
-            matchReasons: item.matchReasons,
-            reputationScore: reputationRow?.average_score,
-            reputationCount: reputationRow?.feedback_count,
-          };
-        });
-
-        // Determine if we need post-filtering
-        const hasBooleanFilters =
-          query.mcp !== undefined || query.a2a !== undefined || query.x402 !== undefined;
-        const hasOASFFilters =
-          (query.skills && query.skills.length > 0) || (query.domains && query.domains.length > 0);
-
-        // Post-filter using enriched SDK data
-        let postFilteredAgents = enrichedAgents;
-
-        if (hasBooleanFilters || hasOASFFilters) {
-          const isOrMode = query.filterMode === 'OR';
-
-          // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Filter logic requires checking multiple OASF and boolean conditions
-          postFilteredAgents = enrichedAgents.filter((agent) => {
-            // Skills filter (always AND)
-            if (query.skills?.length) {
-              const agentSkillSlugs = agent.oasf?.skills?.map((s) => s.slug) ?? [];
-              const hasMatchingSkill = query.skills.some((reqSkill) =>
-                agentSkillSlugs.includes(reqSkill)
-              );
-              if (!hasMatchingSkill) return false;
-            }
-
-            // Domains filter (always AND)
-            if (query.domains?.length) {
-              const agentDomainSlugs = agent.oasf?.domains?.map((d) => d.slug) ?? [];
-              const hasMatchingDomain = query.domains.some((reqDomain) =>
-                agentDomainSlugs.includes(reqDomain)
-              );
-              if (!hasMatchingDomain) return false;
-            }
-
-            // Boolean filters (mcp, a2a, x402) - apply filterMode logic
-            const boolFilters: boolean[] = [];
-            if (query.mcp !== undefined) boolFilters.push(agent.hasMcp === query.mcp);
-            if (query.a2a !== undefined) boolFilters.push(agent.hasA2a === query.a2a);
-            if (query.x402 !== undefined) boolFilters.push(agent.x402Support === query.x402);
-
-            if (boolFilters.length === 0) return true;
-
-            return isOrMode
-              ? boolFilters.some((b) => b) // OR: at least one must match
-              : boolFilters.every((b) => b); // AND: all must match
-          });
-        }
-
-        // Apply limit after post-filtering
-        const limitedAgents = postFilteredAgents.slice(0, query.limit);
-
-        // Apply reputation filtering
-        const filteredAgents = filterByReputation(limitedAgents, query.minRep, query.maxRep);
-
-        // Apply sorting
-        const sortedAgents = sortAgents(filteredAgents, query.sort, query.order);
-
-        // Fetch chain stats for totals (from KV cache)
-        const chainStats = await getCachedChainStats(c.env, sdk);
-        const stats = {
-          total: chainStats.reduce((sum, c) => sum + c.totalCount, 0),
-          withRegistrationFile: chainStats.reduce((sum, c) => sum + c.withRegistrationFileCount, 0),
-          active: chainStats.reduce((sum, c) => sum + c.activeCount, 0),
-          byChain: chainStats.map((c) => ({
-            chainId: c.chainId,
-            name: c.name,
-            totalCount: c.totalCount,
-            withRegistrationFileCount: c.withRegistrationFileCount,
-            activeCount: c.activeCount,
-          })),
-        };
-
-        const response: AgentListResponse = {
-          success: true,
-          data: sortedAgents,
-          meta: {
-            total: postFilteredAgents.length,
-            hasMore: postFilteredAgents.length > query.limit,
-            nextCursor: sdkSearchResult.nextCursor,
-            stats,
-            searchMode: 'fallback',
-          },
-        };
-
-        // Trigger background classification for unclassified agents (non-blocking)
-        const unclassifiedIds = sortedAgents
-          .filter((a) => !a.oasf)
-          .slice(0, 10)
-          .map((a) => a.id);
-
-        if (unclassifiedIds.length > 0) {
-          c.executionCtx.waitUntil(
-            enqueueClassificationsWithQueue(c.env, unclassifiedIds).catch((err) => {
-              console.error('Failed to enqueue classifications:', err);
-            })
-          );
-        }
-
+          'fallback'
+        );
         await cache.set(cacheKey, response, CACHE_TTL.AGENTS);
         return c.json(response);
       } catch (sdkError) {
@@ -648,7 +697,7 @@ agents.get('/', async (c) => {
   // Fetch chain stats for accurate total count (from KV cache)
   // Use withRegistrationFileCount because this endpoint only returns agents with metadata
   const chainStats = await getCachedChainStats(c.env, sdk);
-  const totalAgentsFromStats = chainStats.reduce((sum, c) => sum + c.withRegistrationFileCount, 0);
+  const totalAgentsFromStats = chainStats.reduce((sum, ch) => sum + ch.withRegistrationFileCount, 0);
 
   if (isOrMode) {
     // OR mode: run separate queries for each boolean filter and merge results
@@ -660,10 +709,10 @@ agents.get('/', async (c) => {
       const cachedCursor = decodeOrModeCursor(query.cursor);
       if (cachedCursor) {
         // Paginate from cached results
-        const cached = await orModeCache.get<OrModeCachedData>(cachedCursor.k);
-        if (cached) {
-          const pageItems = cached.items.slice(cachedCursor.o, cachedCursor.o + query.limit);
-          const hasMore = cachedCursor.o + query.limit < cached.total;
+        const cachedData = await orModeCache.get<OrModeCachedData>(cachedCursor.k);
+        if (cachedData) {
+          const pageItems = cachedData.items.slice(cachedCursor.o, cachedCursor.o + query.limit);
+          const hasMore = cachedCursor.o + query.limit < cachedData.total;
           agentsResult = {
             items: pageItems,
             nextCursor: hasMore
@@ -840,15 +889,15 @@ agents.get('/', async (c) => {
 
   // Build stats from chain stats (already fetched above)
   const stats = {
-    total: chainStats.reduce((sum, c) => sum + c.totalCount, 0),
-    withRegistrationFile: chainStats.reduce((sum, c) => sum + c.withRegistrationFileCount, 0),
-    active: chainStats.reduce((sum, c) => sum + c.activeCount, 0),
-    byChain: chainStats.map((c) => ({
-      chainId: c.chainId,
-      name: c.name,
-      totalCount: c.totalCount,
-      withRegistrationFileCount: c.withRegistrationFileCount,
-      activeCount: c.activeCount,
+    total: chainStats.reduce((sum, ch) => sum + ch.totalCount, 0),
+    withRegistrationFile: chainStats.reduce((sum, ch) => sum + ch.withRegistrationFileCount, 0),
+    active: chainStats.reduce((sum, ch) => sum + ch.activeCount, 0),
+    byChain: chainStats.map((ch) => ({
+      chainId: ch.chainId,
+      name: ch.name,
+      totalCount: ch.totalCount,
+      withRegistrationFileCount: ch.withRegistrationFileCount,
+      activeCount: ch.activeCount,
     })),
   };
 
@@ -1116,7 +1165,7 @@ agents.get('/:agentId/similar', async (c) => {
     similarAgents.sort((a, b) => b.similarityScore - a.similarityScore);
     const topSimilar = similarAgents.slice(0, limit);
 
-    const response = {
+    const similarResponse = {
       success: true as const,
       data: topSimilar,
       meta: {
@@ -1126,8 +1175,8 @@ agents.get('/:agentId/similar', async (c) => {
       },
     };
 
-    await cache.set(cacheKey, response, CACHE_TTL.AGENTS);
-    return c.json(response);
+    await cache.set(cacheKey, similarResponse, CACHE_TTL.AGENTS);
+    return c.json(similarResponse);
   } catch (error) {
     console.error('Similar agents error:', error);
     return errors.internalError(c, 'Failed to find similar agents');

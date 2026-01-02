@@ -5,8 +5,17 @@
 
 import { createExecutionContext, env, waitOnExecutionContext } from 'cloudflare:test';
 import app from '@/index';
+import {
+  createMockQdrantSearchService,
+  mockQdrantConfig,
+} from '@/services/mock/mock-qdrant-search';
+import { setMockQdrantSearchServiceFactory } from '@/services/qdrant-search';
 import type { Env } from '@/types';
 import { vi } from 'vitest';
+import { mockConfig } from './mocks/agent0-sdk';
+
+// Inject mock Qdrant search service factory for tests
+setMockQdrantSearchServiceFactory(() => createMockQdrantSearchService());
 
 // Run migrations before tests
 beforeAll(async () => {
@@ -32,6 +41,11 @@ beforeAll(async () => {
     "CREATE TABLE IF NOT EXISTS eas_sync_state (chain_id INTEGER PRIMARY KEY, last_block INTEGER NOT NULL DEFAULT 0, last_timestamp TEXT, attestations_synced INTEGER NOT NULL DEFAULT 0, last_error TEXT, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))"
   );
 
+  // Qdrant sync state table
+  await env.DB.exec(
+    "CREATE TABLE IF NOT EXISTS qdrant_sync_state (id TEXT PRIMARY KEY DEFAULT 'global', last_sync TEXT, last_full_sync TEXT, last_error TEXT, agents_indexed INTEGER DEFAULT 0, last_graph_feedback_sync TEXT, last_feedback_created_at TEXT, feedback_synced INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))"
+  );
+
   // OAuth tables (matching migrations/0006_oauth.sql)
   await env.DB.exec(
     "CREATE TABLE IF NOT EXISTS oauth_clients (id TEXT PRIMARY KEY, client_id TEXT NOT NULL UNIQUE, client_secret TEXT, client_name TEXT NOT NULL, redirect_uris TEXT NOT NULL, grant_types TEXT DEFAULT '[\"authorization_code\"]', token_endpoint_auth_method TEXT DEFAULT 'client_secret_post', registered_at TEXT DEFAULT (datetime('now')))"
@@ -52,15 +66,25 @@ beforeAll(async () => {
 
 // Clean up between tests
 afterEach(async () => {
+  // Clean up database
   await env.DB.exec('DELETE FROM agent_classifications');
   await env.DB.exec('DELETE FROM classification_queue');
   await env.DB.exec('DELETE FROM agent_feedback');
   await env.DB.exec('DELETE FROM agent_reputation');
   await env.DB.exec('DELETE FROM eas_sync_state');
+  await env.DB.exec('DELETE FROM qdrant_sync_state');
   await env.DB.exec('DELETE FROM oauth_access_tokens');
   await env.DB.exec('DELETE FROM oauth_refresh_tokens');
   await env.DB.exec('DELETE FROM oauth_authorization_codes');
   await env.DB.exec('DELETE FROM oauth_clients');
+
+  // Reset mock SDK configuration to prevent cross-test contamination
+  mockConfig.searchAgentsError = null;
+  mockConfig.getAgentError = null;
+  mockConfig.chainErrorMap.clear();
+
+  // Reset mock Qdrant configuration
+  mockQdrantConfig.searchError = null;
 });
 
 /**
@@ -159,15 +183,31 @@ export function createMockEnv() {
     CACHE: env.CACHE,
     CLASSIFICATION_QUEUE: env.CLASSIFICATION_QUEUE,
     ANTHROPIC_API_KEY: 'sk-ant-test-key',
+    GOOGLE_AI_API_KEY: 'test-google-api-key',
     SEARCH_SERVICE_URL: 'https://search.example.com',
+    // RPC URLs for all supported chains
     SEPOLIA_RPC_URL: 'https://sepolia.example.com',
     BASE_SEPOLIA_RPC_URL: 'https://base-sepolia.example.com',
     POLYGON_AMOY_RPC_URL: 'https://polygon-amoy.example.com',
+    LINEA_SEPOLIA_RPC_URL: 'https://linea-sepolia.example.com',
+    HEDERA_TESTNET_RPC_URL: 'https://hedera-testnet.example.com',
+    HYPEREVM_TESTNET_RPC_URL: 'https://hyperevm-testnet.example.com',
+    SKALE_BASE_SEPOLIA_RPC_URL: 'https://skale-base-sepolia.example.com',
+    // Qdrant configuration
+    QDRANT_URL: 'https://qdrant.example.com',
+    QDRANT_API_KEY: 'test-qdrant-api-key',
+    QDRANT_COLLECTION: 'test-agents',
+    // Venice AI configuration
+    VENICE_API_KEY: 'test-venice-api-key',
+    EMBEDDING_MODEL: 'text-embedding-bge-m3',
     ENVIRONMENT: 'test',
     CACHE_TTL: '300',
     RATE_LIMIT_RPM: '100',
     CLASSIFICATION_MODEL: 'claude-3-haiku-20240307',
+    FALLBACK_MODEL: 'claude-3-haiku-20240307',
     API_KEY: TEST_API_KEY,
+    // Enable mock services for tests
+    MOCK_EXTERNAL_SERVICES: 'true',
   };
 }
 

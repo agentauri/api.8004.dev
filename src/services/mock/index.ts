@@ -7,6 +7,11 @@
 
 export { createMockSDKService, filterBySkills, filterByDomains } from './mock-sdk';
 export { createMockSearchService } from './mock-search';
+export {
+  createMockQdrantSearchService,
+  MockQdrantSearchService,
+  mockQdrantConfig,
+} from './mock-qdrant-search';
 
 // Re-export fixtures
 export * from './fixtures';

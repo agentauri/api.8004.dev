@@ -11,6 +11,7 @@ import {
   listAgentsQuerySchema,
   parseAgentId,
   parseClassificationRow,
+  searchModeInputSchema,
   searchRequestSchema,
   taxonomyQuerySchema,
 } from '@/lib/utils/validation';
@@ -50,6 +51,30 @@ describe('parseAgentId', () => {
   it('parses valid agent IDs', () => {
     expect(parseAgentId('11155111:1')).toEqual({ chainId: 11155111, tokenId: '1' });
     expect(parseAgentId('84532:123')).toEqual({ chainId: 84532, tokenId: '123' });
+  });
+});
+
+describe('searchModeInputSchema', () => {
+  it('accepts semantic mode', () => {
+    expect(searchModeInputSchema.parse('semantic')).toBe('semantic');
+  });
+
+  it('accepts name mode', () => {
+    expect(searchModeInputSchema.parse('name')).toBe('name');
+  });
+
+  it('accepts auto mode', () => {
+    expect(searchModeInputSchema.parse('auto')).toBe('auto');
+  });
+
+  it('defaults to auto when undefined', () => {
+    expect(searchModeInputSchema.parse(undefined)).toBe('auto');
+  });
+
+  it('rejects invalid modes', () => {
+    expect(() => searchModeInputSchema.parse('invalid')).toThrow();
+    expect(() => searchModeInputSchema.parse('vector')).toThrow();
+    expect(() => searchModeInputSchema.parse('fallback')).toThrow();
   });
 });
 
@@ -166,6 +191,30 @@ describe('listAgentsQuerySchema', () => {
     // Valid: minRep > maxRep (impossible range - returns empty results, doesn't throw)
     expect(() => listAgentsQuerySchema.parse({ minRep: '90', maxRep: '10' })).not.toThrow();
   });
+
+  it('accepts searchMode parameter', () => {
+    // When not provided, searchMode is undefined (default handled at route level)
+    expect(listAgentsQuerySchema.parse({}).searchMode).toBeUndefined();
+
+    // Explicit modes
+    expect(listAgentsQuerySchema.parse({ searchMode: 'semantic' }).searchMode).toBe('semantic');
+    expect(listAgentsQuerySchema.parse({ searchMode: 'name' }).searchMode).toBe('name');
+    expect(listAgentsQuerySchema.parse({ searchMode: 'auto' }).searchMode).toBe('auto');
+  });
+
+  it('rejects invalid searchMode values', () => {
+    expect(() => listAgentsQuerySchema.parse({ searchMode: 'invalid' })).toThrow();
+    expect(() => listAgentsQuerySchema.parse({ searchMode: 'vector' })).toThrow();
+  });
+
+  it('accepts searchMode with q parameter', () => {
+    const result = listAgentsQuerySchema.parse({
+      q: 'test agent',
+      searchMode: 'name',
+    });
+    expect(result.q).toBe('test agent');
+    expect(result.searchMode).toBe('name');
+  });
 });
 
 describe('searchRequestSchema', () => {
@@ -195,6 +244,27 @@ describe('searchRequestSchema', () => {
     const result = searchRequestSchema.parse({ query: 'test' });
     expect(result.minScore).toBe(0.3);
     expect(result.limit).toBe(20);
+  });
+
+  it('accepts searchMode parameter', () => {
+    // When not provided, searchMode is undefined (default handled at route level)
+    expect(searchRequestSchema.parse({ query: 'test' }).searchMode).toBeUndefined();
+
+    // Explicit modes
+    expect(searchRequestSchema.parse({ query: 'test', searchMode: 'semantic' }).searchMode).toBe(
+      'semantic'
+    );
+    expect(searchRequestSchema.parse({ query: 'test', searchMode: 'name' }).searchMode).toBe(
+      'name'
+    );
+    expect(searchRequestSchema.parse({ query: 'test', searchMode: 'auto' }).searchMode).toBe(
+      'auto'
+    );
+  });
+
+  it('rejects invalid searchMode values', () => {
+    expect(() => searchRequestSchema.parse({ query: 'test', searchMode: 'invalid' })).toThrow();
+    expect(() => searchRequestSchema.parse({ query: 'test', searchMode: 'vector' })).toThrow();
   });
 });
 

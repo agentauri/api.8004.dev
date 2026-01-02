@@ -6,6 +6,7 @@
 import { getEasSyncState, updateEasSyncState } from '@/db/queries';
 import type { NewFeedback } from '@/db/schema';
 import { fetchWithTimeout } from '@/lib/utils/fetch';
+import { normalizeEASScore } from '@/lib/utils/score';
 import { decodeAbiParameters } from 'viem';
 import { createReputationService } from './reputation';
 
@@ -357,11 +358,15 @@ export function createEASIndexerService(
               continue;
             }
 
-            // Create feedback entry
+            // Normalize EAS score from 1-5 to 0-100 scale
+            // This ensures consistency with Graph feedback which uses 0-100 natively
+            const normalizedScore = normalizeEASScore(decoded.score);
+
+            // Create feedback entry with normalized score
             const feedback: NewFeedback = {
               agent_id: decoded.agentId,
               chain_id: chainId,
-              score: decoded.score,
+              score: normalizedScore,
               tags: JSON.stringify(decoded.tags),
               context: decoded.context,
               feedback_uri: `https://easscan.org/attestation/view/${attestation.id}`,

@@ -263,20 +263,26 @@ export class EmbeddingService {
   }
 }
 
+// Re-export the unified formatAgentText for full control
+export { formatAgentText as formatAgentTextFull } from '@/lib/ai/formatting';
+
+// Import for internal use
+import { formatAgentText as formatAgentTextUnified } from '@/lib/ai/formatting';
+
 /**
- * Format agent name and description for embedding
+ * Format agent name and description for embedding (simple version)
+ *
+ * @deprecated Use formatAgentTextFull from @/lib/ai/formatting for full control
+ * over all embedding fields (mcpTools, a2aSkills, etc.)
+ *
+ * This simplified version exists for backward compatibility with code that
+ * only has access to name and description.
  */
 export function formatAgentText(name: string, description: string): string {
-  // Combine name and description with clear separation
-  // Truncate to stay within token limits (approx 8192 tokens = ~32KB)
-  const combined = `${name}\n\n${description}`;
-  const maxLength = 30000; // Leave some buffer for tokenization overhead
-
-  if (combined.length > maxLength) {
-    return combined.slice(0, maxLength);
-  }
-
-  return combined;
+  return formatAgentTextUnified({
+    name,
+    description,
+  });
 }
 
 /**
@@ -292,6 +298,15 @@ export function createEmbeddingService(env: {
     openaiApiKey: env.OPENAI_API_KEY,
     model: env.EMBEDDING_MODEL,
   });
+}
+
+/**
+ * Simple function to generate embedding using Venice API
+ * Used by sync workers that don't need full EmbeddingService
+ */
+export async function generateEmbedding(text: string, veniceApiKey: string): Promise<number[]> {
+  const service = new EmbeddingService({ veniceApiKey });
+  return service.embedSingle(text);
 }
 
 /**

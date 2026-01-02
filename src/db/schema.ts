@@ -70,11 +70,30 @@ export interface QueueStatusUpdate {
 
 /**
  * Agent feedback database row
+ *
+ * **Score Field (0-100 scale)**:
+ * Feedback score is stored on a standardized 0-100 scale:
+ * - 0-33: Low (poor feedback)
+ * - 34-66: Medium (average feedback)
+ * - 67-100: High (excellent feedback)
+ *
+ * **Score Sources**:
+ * - EAS attestations originally use 1-5 scale, normalized at indexing time:
+ *   1->0, 2->25, 3->50, 4->75, 5->100
+ * - On-chain feedback (ERC-8004 Reputation Registry via The Graph) uses 0-100 natively.
+ *
+ * **Identifying Feedback Source**:
+ * - EAS feedback: eas_uid is NOT NULL and does NOT start with 'graph:'
+ * - Graph feedback: eas_uid starts with 'graph:'
  */
 export interface AgentFeedbackRow {
   id: string;
   agent_id: string;
   chain_id: number;
+  /**
+   * Feedback score on 0-100 scale.
+   * @see AgentFeedbackRow documentation for scale details.
+   */
   score: number;
   /** JSON string of string[] */
   tags: string;
@@ -91,15 +110,25 @@ export interface AgentFeedbackRow {
 
 /**
  * Agent reputation database row (aggregated scores)
+ *
+ * **Score Distribution Buckets**:
+ * Based on 0-100 normalized score scale:
+ * - low_count: Number of feedback entries with score <= 33
+ * - medium_count: Number of feedback entries with score > 33 and <= 66
+ * - high_count: Number of feedback entries with score > 66
  */
 export interface AgentReputationRow {
   id: string;
   agent_id: string;
   chain_id: number;
   feedback_count: number;
+  /** Average score on 0-100 scale */
   average_score: number;
+  /** Count of low scores (0-33) */
   low_count: number;
+  /** Count of medium scores (34-66) */
   medium_count: number;
+  /** Count of high scores (67-100) */
   high_count: number;
   last_calculated_at: string;
   created_at: string;
@@ -121,10 +150,18 @@ export interface EasSyncStateRow {
 
 /**
  * New feedback insert data
+ *
+ * **Score Field**:
+ * Score must be on 0-100 scale. For EAS attestations (1-5 scale),
+ * use `normalizeEASScore()` from `@/lib/utils/score` before inserting.
  */
 export interface NewFeedback {
   agent_id: string;
   chain_id: number;
+  /**
+   * Feedback score on 0-100 scale.
+   * EAS scores (1-5) must be normalized before insertion.
+   */
   score: number;
   tags: string;
   context?: string;
@@ -143,9 +180,13 @@ export interface NewReputation {
   agent_id: string;
   chain_id: number;
   feedback_count: number;
+  /** Average score on 0-100 scale */
   average_score: number;
+  /** Count of low scores (0-33) */
   low_count: number;
+  /** Count of medium scores (34-66) */
   medium_count: number;
+  /** Count of high scores (67-100) */
   high_count: number;
   last_calculated_at: string;
 }

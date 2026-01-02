@@ -26,6 +26,18 @@ export interface ChainStats {
 }
 
 /**
+ * RPC URL environment variable keys
+ */
+export type RpcEnvKey =
+  | 'SEPOLIA_RPC_URL'
+  | 'BASE_SEPOLIA_RPC_URL'
+  | 'POLYGON_AMOY_RPC_URL'
+  | 'LINEA_SEPOLIA_RPC_URL'
+  | 'HEDERA_TESTNET_RPC_URL'
+  | 'HYPEREVM_TESTNET_RPC_URL'
+  | 'SKALE_BASE_SEPOLIA_RPC_URL';
+
+/**
  * Chain configuration
  */
 export interface ChainConfig {
@@ -34,7 +46,7 @@ export interface ChainConfig {
   /** Chain display name */
   name: string;
   /** Environment variable key for RPC URL */
-  rpcEnvKey: 'SEPOLIA_RPC_URL' | 'BASE_SEPOLIA_RPC_URL' | 'POLYGON_AMOY_RPC_URL';
+  rpcEnvKey: RpcEnvKey;
 }
 
 /**
