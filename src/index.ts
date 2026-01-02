@@ -25,10 +25,11 @@ import {
 import { handleError } from '@/lib/utils/errors';
 import { parseAgentId } from '@/lib/utils/validation';
 import { createMcp8004Handler } from '@/mcp';
-import { agents, chains, health, openapi, scripts, search, stats, taxonomy } from '@/routes';
+import { agents, chains, compose, events, health, intents, openapi, scripts, search, stats, taxonomy } from '@/routes';
 import { createClassifierService } from '@/services/classifier';
 import { createEASIndexerService } from '@/services/eas-indexer';
 import { createSDKService } from '@/services/sdk';
+import { runReconciliation, syncD1ToQdrant, syncFromGraph } from '@/services/sync';
 import type { ClassificationJob, Env, Variables } from '@/types';
 import { Hono } from 'hono';
 
@@ -90,6 +91,10 @@ app.use('/api/v1/stats', requireApiKey());
 app.use('/api/v1/stats/*', requireApiKey());
 app.use('/api/v1/taxonomy', requireApiKey());
 app.use('/api/v1/taxonomy/*', requireApiKey());
+app.use('/api/v1/events', requireApiKey());
+app.use('/api/v1/events/*', requireApiKey());
+app.use('/api/v1/compose', requireApiKey());
+app.use('/api/v1/compose/*', requireApiKey());
 
 // Mount routes
 app.route('/api/v1/health', health);
@@ -99,6 +104,9 @@ app.route('/api/v1/search', search);
 app.route('/api/v1/chains', chains);
 app.route('/api/v1/stats', stats);
 app.route('/api/v1/taxonomy', taxonomy);
+app.route('/api/v1/events', events);
+app.route('/api/v1/compose', compose);
+app.route('/api/v1/intents', intents);
 
 // Scripts routes (public, no auth required)
 app.route('', scripts);
@@ -372,13 +380,96 @@ export default {
   },
 
   /**
-   * Scheduled handler for periodic tasks (runs every hour via cron)
+   * Scheduled handler for periodic tasks
+   * - Every 15 min: Graph + D1 → Qdrant sync
+   * - Every hour: EAS attestations, reconciliation, batch classification
    */
-  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-    // Sync EAS attestations every hour
-    ctx.waitUntil(syncEASAttestations(env));
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+    const minute = new Date(event.scheduledTime).getMinutes();
 
-    // Batch classify unclassified agents (50 per hour)
-    ctx.waitUntil(batchClassifyAgents(env));
+    // Every 15 minutes: Sync Graph + D1 data to Qdrant
+    // Store env vars for use in async closures (TypeScript narrowing)
+    const qdrantUrl = env.QDRANT_URL;
+    const qdrantApiKey = env.QDRANT_API_KEY;
+    const qdrantCollection = env.QDRANT_COLLECTION;
+    const veniceApiKey = env.VENICE_API_KEY;
+    const graphApiKey = env.GRAPH_API_KEY;
+
+    if (qdrantUrl && qdrantApiKey && veniceApiKey) {
+      ctx.waitUntil(
+        (async () => {
+          console.info('Starting Graph → Qdrant sync...');
+          try {
+            const graphResult = await syncFromGraph(env.DB, {
+              QDRANT_URL: qdrantUrl,
+              QDRANT_API_KEY: qdrantApiKey,
+              QDRANT_COLLECTION: qdrantCollection,
+              VENICE_API_KEY: veniceApiKey,
+              GRAPH_API_KEY: graphApiKey,
+            });
+            console.info(
+              `Graph sync: ${graphResult.newAgents} new, ${graphResult.updatedAgents} updated, ` +
+                `${graphResult.reembedded} reembedded, ${graphResult.errors.length} errors`
+            );
+          } catch (error) {
+            console.error('Graph sync failed:', error instanceof Error ? error.message : error);
+          }
+        })()
+      );
+
+      ctx.waitUntil(
+        (async () => {
+          console.info('Starting D1 → Qdrant sync...');
+          try {
+            const d1Result = await syncD1ToQdrant(env.DB, {
+              QDRANT_URL: qdrantUrl,
+              QDRANT_API_KEY: qdrantApiKey,
+              QDRANT_COLLECTION: qdrantCollection,
+            });
+            console.info(
+              `D1 sync: ${d1Result.classificationsUpdated} classifications, ` +
+                `${d1Result.reputationUpdated} reputation, ${d1Result.errors.length} errors`
+            );
+          } catch (error) {
+            console.error('D1 sync failed:', error instanceof Error ? error.message : error);
+          }
+        })()
+      );
+
+      // Hourly only: Run reconciliation (at minute 0)
+      if (minute === 0) {
+        ctx.waitUntil(
+          (async () => {
+            console.info('Starting Qdrant reconciliation...');
+            try {
+              const reconResult = await runReconciliation(env.DB, {
+                QDRANT_URL: qdrantUrl,
+                QDRANT_API_KEY: qdrantApiKey,
+                QDRANT_COLLECTION: qdrantCollection,
+                VENICE_API_KEY: veniceApiKey,
+              });
+              console.info(
+                `Reconciliation: ${reconResult.orphansDeleted} orphans deleted, ` +
+                  `${reconResult.missingIndexed} missing indexed, ${reconResult.errors.length} errors`
+              );
+            } catch (error) {
+              console.error(
+                'Reconciliation failed:',
+                error instanceof Error ? error.message : error
+              );
+            }
+          })()
+        );
+      }
+    }
+
+    // Hourly only (at minute 0): EAS + batch classification
+    if (minute === 0) {
+      // Sync EAS attestations every hour
+      ctx.waitUntil(syncEASAttestations(env));
+
+      // Batch classify unclassified agents (50 per hour)
+      ctx.waitUntil(batchClassifyAgents(env));
+    }
   },
 };

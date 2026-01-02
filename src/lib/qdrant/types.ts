@@ -58,6 +58,24 @@ export interface AgentPayload {
   output_modes: string[];
   /** Token ID on the chain */
   token_id: string;
+  /** Whether A2A endpoint was recently verified as reachable */
+  is_reachable_a2a: boolean;
+  /** Whether MCP endpoint was recently verified as reachable */
+  is_reachable_mcp: boolean;
+  /** MCP protocol version (empty string if not set) */
+  mcp_version: string;
+  /** A2A protocol version (empty string if not set) */
+  a2a_version: string;
+  /** Chain ID of agent's wallet (0 if not set) */
+  agent_wallet_chain_id: number;
+  /** Supported trust models (empty array if not set) */
+  supported_trusts: string[];
+  /** Agent metadata URI (IPFS or HTTP, empty string if not set) */
+  agent_uri: string;
+  /** Last update timestamp (ISO string, empty string if not set) */
+  updated_at: string;
+  /** Trust score from PageRank algorithm (0-100, 0 if not computed) */
+  trust_score: number;
 }
 
 /**
@@ -340,9 +358,11 @@ export interface AgentFilterParams {
   maxRep?: number;
   filterMode?: 'AND' | 'OR';
 
-  // New filters
+  // Date filters
   createdAfter?: string;
   createdBefore?: string;
+  updatedAfter?: string;
+  updatedBefore?: string;
   hasImage?: boolean;
   hasENS?: boolean;
   hasDID?: boolean;
@@ -353,6 +373,24 @@ export interface AgentFilterParams {
   hasResources?: boolean;
   inputMode?: string;
   outputMode?: string;
+
+  // Reachability filters
+  /** Filter by A2A reachability */
+  reachableA2a?: boolean;
+  /** Filter by MCP reachability */
+  reachableMcp?: boolean;
+
+  // Trust model filter
+  /** Filter by agents with trust models */
+  hasTrusts?: boolean;
+  /** Filter by specific trust models */
+  trustModels?: string[];
+
+  // Wallet filters
+  /** Filter by owner wallet address */
+  owner?: string;
+  /** Filter by agent wallet address */
+  walletAddress?: string;
 
   // Pagination
   limit?: number;

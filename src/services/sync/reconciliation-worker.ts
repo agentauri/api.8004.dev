@@ -1,0 +1,376 @@
+/**
+ * Reconciliation Worker
+ *
+ * Performs drift detection between The Graph and Qdrant:
+ * - Finds orphans (in Qdrant but not in Graph) → hard delete
+ * - Finds missing (in Graph but not in Qdrant) → index
+ *
+ * Run hourly as a backstop for the 15-minute delta sync.
+ */
+
+import { formatAgentText } from '@/lib/ai/formatting';
+import type { D1Database } from '@cloudflare/workers-types';
+import type { AgentPayload } from '../../lib/qdrant/types';
+import { generateEmbedding } from '../embedding';
+import { createQdrantClient } from '../qdrant';
+
+// Graph endpoints per chain
+const GRAPH_ENDPOINTS: Record<number, string> = {
+  11155111: 'https://api.studio.thegraph.com/query/67879/agent0-mainnet-sepolia/version/latest',
+  84532: 'https://api.studio.thegraph.com/query/67879/agent0-base-sepolia/version/latest',
+  80002: 'https://api.studio.thegraph.com/query/67879/agent0-polygon-amoy/version/latest',
+};
+
+interface GraphAgent {
+  chainId: string;
+  agentId: string;
+  registrationFile: {
+    name: string;
+    description: string;
+    image: string | null;
+    active: boolean;
+    mcpEndpoint: string | null;
+    a2aEndpoint: string | null;
+    x402support: boolean;
+    ens: string | null;
+    did: string | null;
+    mcpTools?: Array<{ name: string }>;
+    a2aSkills?: Array<{ name: string }>;
+    createdAt?: string;
+    mcpVersion?: string;
+    a2aVersion?: string;
+    agentWalletChainId?: string;
+    supportedTrusts?: string[];
+  } | null;
+  operators: string[];
+}
+
+export interface ReconciliationResult {
+  orphansDeleted: number;
+  missingIndexed: number;
+  errors: string[];
+}
+
+/**
+ * Fetch all agent IDs from a single chain
+ */
+async function fetchAgentIdsFromChain(chainId: number): Promise<string[]> {
+  const endpoint = GRAPH_ENDPOINTS[chainId];
+  if (!endpoint) return [];
+
+  const ids: string[] = [];
+  let skip = 0;
+  const first = 1000;
+
+  while (true) {
+    const query = `
+      query GetAgentIds($first: Int!, $skip: Int!) {
+        agents(first: $first, skip: $skip, where: { registrationFile_not: null }) {
+          chainId
+          agentId
+        }
+      }
+    `;
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, variables: { first, skip } }),
+    });
+
+    if (!response.ok) break;
+
+    const data = (await response.json()) as {
+      data?: { agents: Array<{ chainId: string; agentId: string }> };
+    };
+
+    const agents = data.data?.agents ?? [];
+    if (agents.length === 0) break;
+
+    for (const agent of agents) {
+      ids.push(`${agent.chainId}:${agent.agentId}`);
+    }
+
+    skip += first;
+    if (skip > 10000) break; // Safety limit
+  }
+
+  return ids;
+}
+
+/**
+ * Fetch all agent IDs from all chains
+ */
+async function fetchAllAgentIdsFromGraph(): Promise<Set<string>> {
+  const allIds = new Set<string>();
+
+  for (const chainId of Object.keys(GRAPH_ENDPOINTS)) {
+    const ids = await fetchAgentIdsFromChain(Number(chainId));
+    for (const id of ids) {
+      allIds.add(id);
+    }
+  }
+
+  return allIds;
+}
+
+/**
+ * Fetch agents by IDs from Graph (for indexing missing ones)
+ */
+async function fetchAgentsByIds(agentIds: string[]): Promise<GraphAgent[]> {
+  const agents: GraphAgent[] = [];
+
+  // Group by chain
+  const byChain = new Map<number, string[]>();
+  for (const id of agentIds) {
+    const parts = id.split(':');
+    const chainId = parts[0];
+    const tokenId = parts[1];
+    if (!chainId || !tokenId) continue;
+    const chain = Number(chainId);
+    if (!byChain.has(chain)) {
+      byChain.set(chain, []);
+    }
+    byChain.get(chain)!.push(tokenId);
+  }
+
+  // Fetch from each chain
+  for (const [chainId, tokenIds] of byChain) {
+    const endpoint = GRAPH_ENDPOINTS[chainId];
+    if (!endpoint) continue;
+
+    const query = `
+      query GetAgentsByIds($ids: [String!]!) {
+        agents(where: { agentId_in: $ids, registrationFile_not: null }) {
+          chainId
+          agentId
+          operators
+          registrationFile {
+            name
+            description
+            image
+            active
+            mcpEndpoint
+            a2aEndpoint
+            x402support
+            ens
+            did
+            mcpTools { name }
+            a2aSkills { name }
+            createdAt
+            mcpVersion
+            a2aVersion
+            agentWalletChainId
+            supportedTrusts
+          }
+        }
+      }
+    `;
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, variables: { ids: tokenIds } }),
+    });
+
+    if (!response.ok) continue;
+
+    const data = (await response.json()) as { data?: { agents: GraphAgent[] } };
+    agents.push(...(data.data?.agents ?? []));
+  }
+
+  return agents;
+}
+
+/**
+ * Index missing agents to Qdrant
+ */
+async function indexAgentsToQdrant(
+  agents: GraphAgent[],
+  env: {
+    QDRANT_URL: string;
+    QDRANT_API_KEY: string;
+    QDRANT_COLLECTION?: string;
+    VENICE_API_KEY: string;
+  }
+): Promise<number> {
+  const qdrant = createQdrantClient(env);
+  let indexed = 0;
+
+  for (const agent of agents) {
+    if (!agent.registrationFile) continue;
+
+    const agentId = `${agent.chainId}:${agent.agentId}`;
+    const reg = agent.registrationFile;
+
+    try {
+      // Generate embedding using unified formatAgentText
+      const text = formatAgentText({
+        name: reg.name ?? '',
+        description: reg.description ?? '',
+        mcpTools: reg.mcpTools?.map((t) => t.name) ?? [],
+        mcpPrompts: [],
+        mcpResources: [],
+        a2aSkills: reg.a2aSkills?.map((s) => s.name) ?? [],
+        inputModes: [],
+        outputModes: [],
+      });
+
+      const vector = await generateEmbedding(text, env.VENICE_API_KEY);
+
+      // Parse agentWalletChainId from BigInt string to number
+      let agentWalletChainId = 0;
+      if (reg.agentWalletChainId) {
+        const parsed = Number.parseInt(reg.agentWalletChainId, 10);
+        if (!Number.isNaN(parsed)) {
+          agentWalletChainId = parsed;
+        }
+      }
+
+      // Create payload
+      const payload: AgentPayload = {
+        agent_id: agentId,
+        chain_id: Number(agent.chainId),
+        token_id: agent.agentId,
+        name: reg.name ?? '',
+        description: reg.description ?? '',
+        image: reg.image ?? '',
+        active: reg.active ?? false,
+        has_mcp: !!reg.mcpEndpoint,
+        has_a2a: !!reg.a2aEndpoint,
+        x402_support: reg.x402support ?? false,
+        has_registration_file: true,
+        ens: reg.ens ?? '',
+        did: reg.did ?? '',
+        wallet_address: '',
+        operators: agent.operators ?? [],
+        mcp_tools: reg.mcpTools?.map((t) => t.name) ?? [],
+        mcp_prompts: [],
+        mcp_resources: [],
+        a2a_skills: reg.a2aSkills?.map((s) => s.name) ?? [],
+        skills: [],
+        domains: [],
+        reputation: 0,
+        input_modes: [],
+        output_modes: [],
+        created_at: reg.createdAt ?? new Date().toISOString(),
+        is_reachable_a2a: false, // Will be populated from feedback data during regular sync
+        is_reachable_mcp: false, // Will be populated from feedback data during regular sync
+        // New fields from subgraph schema
+        mcp_version: reg.mcpVersion ?? '',
+        a2a_version: reg.a2aVersion ?? '',
+        agent_wallet_chain_id: agentWalletChainId,
+        supported_trusts: reg.supportedTrusts ?? [],
+        agent_uri: '', // Not available in reconciliation context
+        updated_at: '', // Not available in reconciliation context
+        trust_score: 0,
+      };
+
+      await qdrant.upsertAgent(agentId, vector, payload);
+      indexed++;
+    } catch (error) {
+      console.error(`Failed to index ${agentId}:`, error);
+    }
+  }
+
+  return indexed;
+}
+
+/**
+ * Run reconciliation between Graph and Qdrant
+ */
+export async function runReconciliation(
+  db: D1Database,
+  env: {
+    QDRANT_URL: string;
+    QDRANT_API_KEY: string;
+    QDRANT_COLLECTION?: string;
+    VENICE_API_KEY: string;
+  }
+): Promise<ReconciliationResult> {
+  const qdrant = createQdrantClient(env);
+  const result: ReconciliationResult = {
+    orphansDeleted: 0,
+    missingIndexed: 0,
+    errors: [],
+  };
+
+  try {
+    // Get all agent IDs from Graph
+    const graphAgentIds = await fetchAllAgentIdsFromGraph();
+    console.info(`Reconciliation: ${graphAgentIds.size} agents in Graph`);
+
+    // Get all agent IDs from Qdrant
+    const qdrantAgentIds = new Set(await qdrant.getAllAgentIds());
+    console.info(`Reconciliation: ${qdrantAgentIds.size} agents in Qdrant`);
+
+    // Find orphans (in Qdrant but not in Graph) → DELETE
+    const orphans: string[] = [];
+    for (const id of qdrantAgentIds) {
+      if (!graphAgentIds.has(id)) {
+        orphans.push(id);
+      }
+    }
+
+    // Find missing (in Graph but not in Qdrant) → INDEX
+    const missing: string[] = [];
+    for (const id of graphAgentIds) {
+      if (!qdrantAgentIds.has(id)) {
+        missing.push(id);
+      }
+    }
+
+    console.info(`Reconciliation: ${orphans.length} orphans, ${missing.length} missing`);
+
+    // Hard delete orphans from Qdrant
+    if (orphans.length > 0) {
+      try {
+        await qdrant.deleteByAgentIds(orphans);
+        result.orphansDeleted = orphans.length;
+
+        // Remove from sync metadata
+        for (const id of orphans) {
+          await db.prepare('DELETE FROM agent_sync_metadata WHERE agent_id = ?').bind(id).run();
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        result.errors.push(`Delete orphans: ${message}`);
+      }
+    }
+
+    // Index missing agents (in batches to avoid timeout)
+    if (missing.length > 0) {
+      const batchSize = 50;
+      for (let i = 0; i < missing.length; i += batchSize) {
+        const batch = missing.slice(i, i + batchSize);
+        try {
+          const agents = await fetchAgentsByIds(batch);
+          const indexed = await indexAgentsToQdrant(agents, env);
+          result.missingIndexed += indexed;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          result.errors.push(`Index batch ${i}: ${message}`);
+        }
+      }
+    }
+
+    // Update global sync state
+    const now = new Date().toISOString();
+    await db
+      .prepare(
+        `UPDATE qdrant_sync_state
+         SET last_reconciliation = ?,
+             agents_deleted = agents_deleted + ?,
+             agents_synced = agents_synced + ?,
+             updated_at = datetime('now')
+         WHERE id = 'global'`
+      )
+      .bind(now, result.orphansDeleted, result.missingIndexed)
+      .run();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    result.errors.push(`Reconciliation: ${message}`);
+  }
+
+  return result;
+}

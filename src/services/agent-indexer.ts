@@ -283,6 +283,16 @@ export class AgentIndexer {
       input_modes: agent.inputModes ?? [],
       output_modes: agent.outputModes ?? [],
       token_id: agent.tokenId,
+      is_reachable_a2a: false, // Will be populated from feedback data during sync
+      is_reachable_mcp: false, // Will be populated from feedback data during sync
+      // New fields from subgraph schema
+      mcp_version: agent.mcpVersion ?? '',
+      a2a_version: agent.a2aVersion ?? '',
+      agent_wallet_chain_id: agent.agentWalletChainId ?? 0,
+      supported_trusts: agent.supportedTrusts ?? [],
+      agent_uri: '', // Will be populated from subgraph during full sync
+      updated_at: '', // Will be populated from subgraph during full sync
+      trust_score: 0, // Will be populated from PageRank computation
     };
   }
 

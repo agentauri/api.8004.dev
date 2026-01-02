@@ -9,7 +9,10 @@ export { search } from './search-qdrant';
 
 export { chains } from './chains';
 export { classify } from './classify';
+export { compose } from './compose';
+export { events } from './events';
 export { health } from './health';
+export { intents } from './intents';
 export { openapi } from './openapi';
 export { reputation } from './reputation';
 export { scripts } from './scripts';

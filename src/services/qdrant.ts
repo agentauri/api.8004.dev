@@ -232,6 +232,87 @@ export class QdrantClient {
   }
 
   /**
+   * Set payload on points matching a filter (partial update, no re-embedding)
+   */
+  async setPayload(
+    payload: Partial<AgentPayload>,
+    filter: QdrantFilter,
+    wait = true
+  ): Promise<void> {
+    await this.request<{ status: string }>(
+      'POST',
+      `/collections/${this.collection}/points/payload`,
+      { payload, filter, wait }
+    );
+  }
+
+  /**
+   * Set payload on a single point by agent_id (partial update, no re-embedding)
+   */
+  async setPayloadByAgentId(
+    agentId: string,
+    payload: Partial<AgentPayload>,
+    wait = true
+  ): Promise<void> {
+    const filter: QdrantFilter = {
+      must: [{ key: 'agent_id', match: { value: agentId } }],
+    };
+    await this.setPayload(payload, filter, wait);
+  }
+
+  /**
+   * Batch set payload on multiple agents (partial update, no re-embedding)
+   * More efficient than individual updates
+   */
+  async batchSetPayload(
+    updates: Array<{ agentId: string; payload: Partial<AgentPayload> }>,
+    wait = true
+  ): Promise<void> {
+    // Group by payload to minimize API calls
+    for (const update of updates) {
+      const filter: QdrantFilter = {
+        must: [{ key: 'agent_id', match: { value: update.agentId } }],
+      };
+      await this.setPayload(update.payload, filter, wait);
+    }
+  }
+
+  /**
+   * Get all agent IDs in the collection (for reconciliation)
+   */
+  async getAllAgentIds(): Promise<string[]> {
+    const agentIds: string[] = [];
+    let cursor: string | undefined;
+
+    do {
+      const result = await this.scroll({
+        limit: 1000,
+        cursor,
+      });
+
+      for (const item of result.items) {
+        agentIds.push(item.payload.agent_id);
+      }
+
+      cursor = result.nextCursor;
+    } while (cursor);
+
+    return agentIds;
+  }
+
+  /**
+   * Delete points by agent IDs
+   */
+  async deleteByAgentIds(agentIds: string[], wait = true): Promise<void> {
+    if (agentIds.length === 0) return;
+
+    const filter: QdrantFilter = {
+      must: [{ key: 'agent_id', match: { any: agentIds } }],
+    };
+    await this.deleteByFilter(filter, wait);
+  }
+
+  /**
    * Get points by IDs
    */
   async getByIds(ids: string[]): Promise<QdrantSearchResultItem[]> {
@@ -251,6 +332,78 @@ export class QdrantClient {
   async getById(id: string): Promise<QdrantSearchResultItem | null> {
     const results = await this.getByIds([id]);
     return results[0] ?? null;
+  }
+
+  /**
+   * Create a payload index for a field
+   * Required for filtering on fields that aren't indexed by default
+   */
+  async createPayloadIndex(
+    fieldName: string,
+    fieldType: 'keyword' | 'integer' | 'float' | 'bool' | 'geo' | 'datetime' | 'text',
+    wait = true
+  ): Promise<void> {
+    await this.request<{ status: string }>(
+      'PUT',
+      `/collections/${this.collection}/index`,
+      {
+        field_name: fieldName,
+        field_schema: fieldType,
+        wait,
+      }
+    );
+  }
+
+  /**
+   * Ensure all required payload indexes exist
+   * Call this after creating a collection or when adding new filterable fields
+   */
+  async ensurePayloadIndexes(): Promise<void> {
+    const requiredIndexes: Array<{
+      field: string;
+      type: 'keyword' | 'integer' | 'float' | 'bool' | 'geo' | 'datetime' | 'text';
+    }> = [
+      { field: 'has_registration_file', type: 'bool' },
+      { field: 'active', type: 'bool' },
+      { field: 'has_mcp', type: 'bool' },
+      { field: 'has_a2a', type: 'bool' },
+      { field: 'x402_support', type: 'bool' },
+      { field: 'is_reachable_a2a', type: 'bool' },
+      { field: 'is_reachable_mcp', type: 'bool' },
+      { field: 'chain_id', type: 'integer' },
+      { field: 'reputation', type: 'float' },
+      { field: 'created_at', type: 'datetime' },
+      { field: 'agent_id', type: 'keyword' },
+      { field: 'name', type: 'keyword' },
+      { field: 'ens', type: 'keyword' },
+      { field: 'did', type: 'keyword' },
+      { field: 'wallet_address', type: 'keyword' },
+      { field: 'skills', type: 'keyword' },
+      { field: 'domains', type: 'keyword' },
+      { field: 'mcp_tools', type: 'keyword' },
+      { field: 'a2a_skills', type: 'keyword' },
+      { field: 'mcp_prompts', type: 'keyword' },
+      { field: 'mcp_resources', type: 'keyword' },
+      { field: 'operators', type: 'keyword' },
+      { field: 'input_modes', type: 'keyword' },
+      { field: 'output_modes', type: 'keyword' },
+      { field: 'supported_trusts', type: 'keyword' },
+      { field: 'agent_uri', type: 'keyword' },
+      { field: 'updated_at', type: 'datetime' },
+      { field: 'trust_score', type: 'float' },
+    ];
+
+    for (const index of requiredIndexes) {
+      try {
+        await this.createPayloadIndex(index.field, index.type, false);
+      } catch (error) {
+        // Ignore errors if index already exists
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (!errorMessage.includes('already exists')) {
+          console.warn(`Failed to create index for ${index.field}:`, errorMessage);
+        }
+      }
+    }
   }
 
   /**
