@@ -25,6 +25,28 @@ export interface SearchFilters {
   domains?: string[];
   /** Filter mode: AND (all filters must match) or OR (any filter matches) */
   filterMode?: 'AND' | 'OR';
+  /** Filter by MCP tools */
+  mcpTools?: string[];
+  /** Filter by A2A skills */
+  a2aSkills?: string[];
+  /** Minimum reputation score */
+  minRep?: number;
+  /** Maximum reputation score */
+  maxRep?: number;
+  /** Filter by owner wallet address */
+  owner?: string;
+  /** Filter by agent wallet address */
+  walletAddress?: string;
+  /** Filter by specific trust models */
+  trustModels?: string[];
+  /** Filter by agents with trust models */
+  hasTrusts?: boolean;
+  /** Filter by A2A reachability */
+  reachableA2a?: boolean;
+  /** Filter by MCP reachability */
+  reachableMcp?: boolean;
+  /** Filter by registration file presence */
+  hasRegistrationFile?: boolean;
 }
 
 /**
@@ -85,6 +107,10 @@ export interface SearchResultMetadata {
   supportedTrusts?: string[];
   /** Agent wallet (alternate name) */
   agentWallet?: string;
+  /** Input modes (from A2A AgentCard) */
+  inputModes?: string[];
+  /** Output modes (from A2A AgentCard) */
+  outputModes?: string[];
 }
 
 /**
@@ -149,11 +175,20 @@ export interface SearchStats {
 }
 
 /**
- * Search mode indicator
+ * Search mode indicator for response
  * - 'vector': Semantic/vector search using external service (primary)
  * - 'fallback': SDK-based substring search (when vector search is unavailable)
+ * - 'name': Direct name substring search via SDK (user requested)
  */
-export type SearchMode = 'vector' | 'fallback';
+export type SearchMode = 'vector' | 'fallback' | 'name';
+
+/**
+ * Search mode input parameter
+ * - 'semantic': Use semantic/vector search (default)
+ * - 'name': Use SDK name substring search
+ * - 'auto': Try semantic first, fall back to name if no results
+ */
+export type SearchModeInput = 'semantic' | 'name' | 'auto';
 
 /**
  * Search API response
@@ -174,7 +209,7 @@ export interface SearchResponse {
     byChain?: Record<number, number>;
     /** Platform-wide agent statistics */
     stats?: SearchStats;
-    /** Search mode used (vector or fallback) */
+    /** Search mode used (vector, fallback, or name) */
     searchMode?: SearchMode;
   };
 }

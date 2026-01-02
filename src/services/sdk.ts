@@ -74,7 +74,16 @@ export interface ChainConfig {
   name: string;
   shortName: string;
   explorerUrl: string;
-  rpcEnvKey: keyof Pick<Env, 'SEPOLIA_RPC_URL' | 'BASE_SEPOLIA_RPC_URL' | 'POLYGON_AMOY_RPC_URL'>;
+  rpcEnvKey: keyof Pick<
+    Env,
+    | 'SEPOLIA_RPC_URL'
+    | 'BASE_SEPOLIA_RPC_URL'
+    | 'POLYGON_AMOY_RPC_URL'
+    | 'LINEA_SEPOLIA_RPC_URL'
+    | 'HEDERA_TESTNET_RPC_URL'
+    | 'HYPEREVM_TESTNET_RPC_URL'
+    | 'SKALE_BASE_SEPOLIA_RPC_URL'
+  >;
 }
 
 /**
@@ -101,6 +110,34 @@ export const SUPPORTED_CHAINS: ChainConfig[] = [
     shortName: 'amoy',
     explorerUrl: 'https://amoy.polygonscan.com',
     rpcEnvKey: 'POLYGON_AMOY_RPC_URL',
+  },
+  {
+    chainId: 59141,
+    name: 'Linea Sepolia',
+    shortName: 'linea-sepolia',
+    explorerUrl: 'https://sepolia.lineascan.build',
+    rpcEnvKey: 'LINEA_SEPOLIA_RPC_URL',
+  },
+  {
+    chainId: 296,
+    name: 'Hedera Testnet',
+    shortName: 'hedera-testnet',
+    explorerUrl: 'https://hashscan.io/testnet',
+    rpcEnvKey: 'HEDERA_TESTNET_RPC_URL',
+  },
+  {
+    chainId: 998,
+    name: 'HyperEVM Testnet',
+    shortName: 'hyperevm-testnet',
+    explorerUrl: 'https://testnet.purrsec.com',
+    rpcEnvKey: 'HYPEREVM_TESTNET_RPC_URL',
+  },
+  {
+    chainId: 1351057110,
+    name: 'SKALE Base Sepolia',
+    shortName: 'skale-base-sepolia',
+    explorerUrl: 'https://wan-red-ain.explorer.mainnet.skalenodes.com',
+    rpcEnvKey: 'SKALE_BASE_SEPOLIA_RPC_URL',
   },
 ];
 
@@ -301,14 +338,28 @@ let pendingChainStatsPromise: Promise<ChainStats[]> | null = null;
 
 /**
  * Subgraph URLs for direct queries (used by getChainStats for accurate count)
+ * All subgraphs are deployed on The Graph Network
  */
 const SUBGRAPH_URLS: Record<number, string> = {
+  // Ethereum Sepolia
   11155111:
     'https://gateway.thegraph.com/api/REDACTED_GRAPH_API_KEY/subgraphs/id/6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT',
+  // Base Sepolia
   84532:
     'https://gateway.thegraph.com/api/REDACTED_GRAPH_API_KEY/subgraphs/id/GjQEDgEKqoh5Yc8MUgxoQoRATEJdEiH7HbocfR1aFiHa',
+  // Polygon Amoy
   80002:
     'https://gateway.thegraph.com/api/REDACTED_GRAPH_API_KEY/subgraphs/id/2A1JB18r1mF2VNP4QBH4mmxd74kbHoM6xLXC8ABAKf7j',
+  // Linea Sepolia
+  59141:
+    'https://gateway.thegraph.com/api/REDACTED_GRAPH_API_KEY/subgraphs/id/7GyxsUkWZ5aDNEqZQhFnMQk8CDxCDgT9WZKqFkNJ7YPx',
+  // Hedera Testnet
+  296: 'https://gateway.thegraph.com/api/REDACTED_GRAPH_API_KEY/subgraphs/id/5GwJ2UKQK3WQhJNqvCqV9EFKBYD6wPYJvFqEPmBKcFsP',
+  // HyperEVM Testnet
+  998: 'https://gateway.thegraph.com/api/REDACTED_GRAPH_API_KEY/subgraphs/id/3L8DKCwQwpLEYF7m3mE8PCvr8qJcJBvXTk3a9f9sLQrP',
+  // SKALE Base Sepolia
+  1351057110:
+    'https://gateway.thegraph.com/api/REDACTED_GRAPH_API_KEY/subgraphs/id/HvYWvsPKqWrSzV8VT4mjLGwPNMgVFgRiNMZFdJUg8BPf',
 };
 
 /**
@@ -537,6 +588,159 @@ export async function fetchValidationsFromSubgraph(
   } catch {
     return [];
   }
+}
+
+/**
+ * Raw agent data from subgraph (includes agents without registration files)
+ */
+export interface SubgraphRawAgent {
+  id: string; // format: "chainId:tokenId"
+  chainId: string;
+  agentId: string;
+  agentURI: string | null;
+  operators: string[];
+  createdAt: string;
+  updatedAt: string;
+  registrationFile: {
+    name: string;
+    description: string;
+    image: string | null;
+    active: boolean;
+    mcpEndpoint: string | null;
+    a2aEndpoint: string | null;
+    x402support: boolean;
+    ens: string | null;
+    did: string | null;
+    agentWallet: string | null;
+    agentWalletChainId: string | null;
+    mcpVersion: string | null;
+    a2aVersion: string | null;
+    supportedTrusts: string[] | null;
+    mcpTools?: Array<{ name: string }>;
+    mcpPrompts?: Array<{ name: string }>;
+    mcpResources?: Array<{ name: string }>;
+    a2aSkills?: Array<{ name: string }>;
+    createdAt?: string;
+  } | null;
+}
+
+/**
+ * Fetch ALL agents from subgraph directly (bypassing SDK's registrationFile filter)
+ *
+ * This function queries the subgraph GraphQL API directly to get ALL agents,
+ * including those without registration files. The SDK's searchAgents method
+ * hardcodes `registrationFile_not: null` which excludes agents without metadata.
+ *
+ * @param chainId - Chain ID to query
+ * @param options - Query options
+ * @returns Array of raw agents from subgraph
+ */
+export async function fetchAllAgentsFromSubgraph(
+  chainId: number,
+  options: {
+    /** Include only agents WITH registration files (default: false = include ALL) */
+    withRegistrationFileOnly?: boolean;
+    /** Maximum agents to fetch (default: 5000) */
+    limit?: number;
+    /** Pagination skip offset */
+    skip?: number;
+  } = {}
+): Promise<SubgraphRawAgent[]> {
+  const { withRegistrationFileOnly = false, limit = 5000, skip = 0 } = options;
+  const url = SUBGRAPH_URLS[chainId];
+  if (!url) return [];
+
+  const allAgents: SubgraphRawAgent[] = [];
+  let currentSkip = skip;
+  const batchSize = Math.min(1000, limit); // Graph has 1000 limit per query
+
+  // Build WHERE clause
+  const whereClause = withRegistrationFileOnly
+    ? 'where: { registrationFile_not: null }'
+    : ''; // No filter = all agents
+
+  while (allAgents.length < limit) {
+    const query = `{
+      agents(
+        first: ${batchSize}
+        skip: ${currentSkip}
+        orderBy: agentId
+        ${whereClause}
+      ) {
+        id
+        chainId
+        agentId
+        agentURI
+        operators
+        createdAt
+        updatedAt
+        registrationFile {
+          name
+          description
+          image
+          active
+          mcpEndpoint
+          a2aEndpoint
+          x402support
+          ens
+          did
+          agentWallet
+          agentWalletChainId
+          mcpVersion
+          a2aVersion
+          supportedTrusts
+          mcpTools { name }
+          mcpPrompts { name }
+          mcpResources { name }
+          a2aSkills { name }
+          createdAt
+        }
+      }
+    }`;
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+      });
+
+      if (!response.ok) {
+        console.error(`Subgraph query failed for chain ${chainId}: ${response.status}`);
+        break;
+      }
+
+      const data = (await response.json()) as {
+        data?: { agents?: SubgraphRawAgent[] };
+        errors?: Array<{ message: string }>;
+      };
+
+      if (data.errors?.length) {
+        console.error(`Subgraph errors for chain ${chainId}:`, data.errors[0]?.message);
+        break;
+      }
+
+      const agents = data?.data?.agents || [];
+      if (agents.length === 0) break;
+
+      allAgents.push(...agents);
+      currentSkip += agents.length;
+
+      // If we got less than batch size, no more results
+      if (agents.length < batchSize) break;
+
+      // Safety limit to prevent infinite loops
+      if (currentSkip > 20000) {
+        console.warn(`fetchAllAgentsFromSubgraph: hit safety limit at ${currentSkip} for chain ${chainId}`);
+        break;
+      }
+    } catch (error) {
+      console.error(`Subgraph fetch error for chain ${chainId}:`, error);
+      break;
+    }
+  }
+
+  return allAgents.slice(0, limit);
 }
 
 /**
@@ -903,6 +1107,7 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
         hasX402,
         mcpTools,
         a2aSkills,
+        hasRegistrationFile,
         sort,
         order,
       } = params;
@@ -928,6 +1133,7 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
       if (hasX402 === true) baseSearchParams.x402support = true;
       if (mcpTools && mcpTools.length > 0) baseSearchParams.mcpTools = mcpTools;
       if (a2aSkills && a2aSkills.length > 0) baseSearchParams.a2aSkills = a2aSkills;
+      // Note: hasRegistrationFile is handled by post-filtering as SDK doesn't support it directly
 
       try {
         // Single chain: use direct SDK query with cursor/offset pagination
@@ -987,6 +1193,7 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
           hasX402,
           mcpTools,
           a2aSkills,
+          hasRegistrationFile,
           sort,
           order,
         };

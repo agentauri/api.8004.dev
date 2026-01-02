@@ -112,6 +112,14 @@ export const sortFieldSchema = z
 export const sortOrderSchema = z.enum(['asc', 'desc']).default('desc');
 
 /**
+ * Search mode input schema
+ * - 'semantic': Use semantic/vector search (default)
+ * - 'name': Use SDK name substring search
+ * - 'auto': Try semantic first, fall back to name if no results
+ */
+export const searchModeInputSchema = z.enum(['semantic', 'name', 'auto']).default('auto');
+
+/**
  * List agents query parameters schema
  */
 export const listAgentsQuerySchema = z.object({
@@ -147,12 +155,31 @@ export const listAgentsQuerySchema = z.object({
   minScore: z.coerce.number().min(0).max(1).optional(),
   minRep: z.coerce.number().min(0).max(100).optional(),
   maxRep: z.coerce.number().min(0).max(100).optional(),
+  // Wallet filters
+  owner: z.string().optional(),
+  walletAddress: z.string().optional(),
+  // Trust model filters
+  trustModels: z
+    .string()
+    .transform((val) => val.split(',').map((s) => s.trim()))
+    .optional(),
+  hasTrusts: stringBooleanSchema.optional(),
+  // Reachability filters
+  reachableA2a: stringBooleanSchema.optional(),
+  reachableMcp: stringBooleanSchema.optional(),
+  // Date range filters
+  createdAfter: z.string().datetime({ offset: true }).optional(),
+  createdBefore: z.string().datetime({ offset: true }).optional(),
+  updatedAfter: z.string().datetime({ offset: true }).optional(),
+  updatedBefore: z.string().datetime({ offset: true }).optional(),
   sort: sortFieldSchema.optional(),
   order: sortOrderSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.string().optional(),
   /** Offset-based pagination: page number (1-indexed) */
   page: z.coerce.number().int().min(1).optional(),
+  /** Search mode: semantic (vector search), name (substring), or auto (semantic with name fallback) */
+  searchMode: searchModeInputSchema.optional(),
 });
 
 export type ListAgentsQuery = z.infer<typeof listAgentsQuerySchema>;
@@ -174,12 +201,23 @@ export const searchRequestSchema = z.object({
       mcpTools: z.array(z.string()).optional(),
       a2aSkills: z.array(z.string()).optional(),
       filterMode: z.enum(['AND', 'OR']).optional(),
+      // Wallet filters
+      owner: z.string().optional(),
+      walletAddress: z.string().optional(),
+      // Trust model filters
+      trustModels: z.array(z.string()).optional(),
+      hasTrusts: z.boolean().optional(),
+      // Reachability filters
+      reachableA2a: z.boolean().optional(),
+      reachableMcp: z.boolean().optional(),
     })
     .optional(),
   minScore: z.number().min(0).max(1).default(0.3),
   limit: z.number().int().min(1).max(100).default(20),
   cursor: z.string().optional(),
   offset: z.number().int().min(0).optional(),
+  /** Search mode: semantic (vector search), name (substring), or auto (semantic with name fallback) */
+  searchMode: searchModeInputSchema.optional(),
 });
 
 export type SearchRequestBody = z.infer<typeof searchRequestSchema>;

@@ -151,6 +151,24 @@ export function buildFilter(params: AgentFilterParams): QdrantFilter | undefined
     });
   }
 
+  // Updated after/before (datetime range)
+  if (params.updatedAfter || params.updatedBefore) {
+    const range: { gte?: string; lte?: string } = {};
+
+    if (params.updatedAfter) {
+      range.gte = params.updatedAfter;
+    }
+
+    if (params.updatedBefore) {
+      range.lte = params.updatedBefore;
+    }
+
+    mustConditions.push({
+      key: 'updated_at',
+      range,
+    });
+  }
+
   // Has image filter
   if (params.hasImage !== undefined) {
     if (params.hasImage) {
@@ -270,6 +288,65 @@ export function buildFilter(params: AgentFilterParams): QdrantFilter | undefined
       key: 'output_modes',
       match: { any: [params.outputMode] },
     });
+  }
+
+  // --- Reachability filters ---
+
+  // A2A reachability filter
+  if (params.reachableA2a !== undefined) {
+    mustConditions.push({
+      key: 'is_reachable_a2a',
+      match: { value: params.reachableA2a },
+    });
+  }
+
+  // MCP reachability filter
+  if (params.reachableMcp !== undefined) {
+    mustConditions.push({
+      key: 'is_reachable_mcp',
+      match: { value: params.reachableMcp },
+    });
+  }
+
+  // --- Missing filters (P1C) ---
+
+  // Owner filter (owners array contains the specified address)
+  if (params.owner) {
+    mustConditions.push({
+      key: 'operators',
+      match: { any: [params.owner.toLowerCase()] },
+    });
+  }
+
+  // Wallet address filter (agent's own wallet address)
+  if (params.walletAddress) {
+    mustConditions.push({
+      key: 'wallet_address',
+      match: { value: params.walletAddress.toLowerCase() },
+    });
+  }
+
+  // Trust models filter (array containment)
+  if (params.trustModels && params.trustModels.length > 0) {
+    mustConditions.push({
+      key: 'supported_trusts',
+      match: { any: params.trustModels },
+    });
+  }
+
+  // Has trusts filter (has at least one trust model)
+  if (params.hasTrusts !== undefined) {
+    if (params.hasTrusts) {
+      mustConditions.push({
+        key: 'supported_trusts',
+        values_count: { gte: 1 },
+      });
+    } else {
+      mustConditions.push({
+        key: 'supported_trusts',
+        values_count: { lte: 0 },
+      });
+    }
   }
 
   // Build final filter

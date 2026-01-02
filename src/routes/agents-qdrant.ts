@@ -4,6 +4,7 @@
  * @module routes/agents-qdrant
  */
 
+import { findComplementaryAgents, findIOCompatibleAgents } from '@/services/complementarity';
 import { enqueueClassificationsBatch, getClassification } from '@/db/queries';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
@@ -135,6 +136,22 @@ agents.get('/', async (c) => {
     skills: query.skills,
     domains: query.domains,
     filterMode: query.filterMode,
+    // Extended filters
+    mcpTools: query.mcpTools,
+    a2aSkills: query.a2aSkills,
+    minRep: query.minRep,
+    maxRep: query.maxRep,
+    // Wallet filters
+    owner: query.owner,
+    walletAddress: query.walletAddress,
+    // Trust model filters
+    trustModels: query.trustModels,
+    hasTrusts: query.hasTrusts,
+    // Reachability filters
+    reachableA2a: query.reachableA2a,
+    reachableMcp: query.reachableMcp,
+    // Registration file filter
+    hasRegistrationFile: query.hasRegistrationFile,
   });
 
   // Perform search with Qdrant
@@ -148,6 +165,93 @@ agents.get('/', async (c) => {
     sort: query.sort,
     order: query.order,
   });
+
+  // SDK fallback: If Qdrant returns 0 results and no semantic query, try SDK directly
+  // This handles the case when Qdrant is empty or needs resyncing
+  // Note: Only fall back if user is NOT explicitly asking for hasRegistrationFile=false,
+  // since SDK only returns agents WITH registration files
+  const sdk = createSDKService(c.env, c.env.CACHE);
+  let usedSdkFallback = false;
+
+  const shouldFallback =
+    searchResult.results.length === 0 &&
+    !query.q &&
+    query.hasRegistrationFile !== false; // Don't fallback if user wants agents without reg files
+
+  if (shouldFallback) {
+    console.info('Qdrant returned 0 results, falling back to SDK...');
+    try {
+      const sdkResult = await sdk.getAgents({
+        limit: query.limit,
+        hasRegistrationFile: query.hasRegistrationFile ?? true,
+        chainIds,
+        active: query.active,
+        hasMcp: query.mcp,
+        hasA2a: query.a2a,
+        cursor: query.cursor,
+      });
+
+      // Convert SDK results to search results format
+      if (sdkResult.items.length > 0) {
+        usedSdkFallback = true;
+        const sdkAgents: AgentSummary[] = sdkResult.items.map((item) => ({
+          id: item.id,
+          chainId: Number(item.id.split(':')[0]),
+          tokenId: item.id.split(':')[1] ?? '0',
+          name: item.name,
+          description: item.description,
+          image: item.image,
+          active: item.active,
+          hasMcp: item.hasMcp,
+          hasA2a: item.hasA2a,
+          x402Support: item.x402Support,
+          supportedTrust: item.x402Support ? ['x402'] : [],
+          operators: item.operators,
+          ens: item.ens,
+          did: item.did,
+          oasf: undefined,
+          oasfSource: 'none' as OASFSource,
+          searchScore: undefined,
+          matchReasons: [],
+          reputationScore: undefined,
+        }));
+
+        // Get chain stats for totals
+        const chainStats = await getCachedChainStats(c.env, sdk);
+        const stats = {
+          total: chainStats.reduce((sum, s) => sum + s.totalCount, 0),
+          withRegistrationFile: chainStats.reduce((sum, s) => sum + s.withRegistrationFileCount, 0),
+          active: chainStats.reduce((sum, s) => sum + s.activeCount, 0),
+          byChain: chainStats.map((s) => ({
+            chainId: s.chainId,
+            name: s.name,
+            totalCount: s.totalCount,
+            withRegistrationFileCount: s.withRegistrationFileCount,
+            activeCount: s.activeCount,
+          })),
+        };
+
+        const fallbackResponse: AgentListResponse = {
+          success: true,
+          data: sdkAgents,
+          meta: {
+            total: sdkResult.total ?? sdkAgents.length,
+            hasMore: !!sdkResult.nextCursor,
+            nextCursor: sdkResult.nextCursor,
+            stats,
+            searchMode: 'fallback',
+          },
+        };
+
+        // Cache the SDK fallback response for a short time
+        await cache.set(cacheKey, fallbackResponse, CACHE_TTL.AGENTS);
+        return c.json(fallbackResponse);
+      }
+    } catch (sdkError) {
+      console.error('SDK fallback failed:', sdkError instanceof Error ? sdkError.message : sdkError);
+      // Continue with empty Qdrant results if SDK also fails
+    }
+  }
 
   // Transform results to AgentSummary format
   let agents: AgentSummary[] = searchResult.results.map((result) => ({
@@ -197,8 +301,7 @@ agents.get('/', async (c) => {
     });
   }
 
-  // Get chain stats for totals
-  const sdk = createSDKService(c.env, c.env.CACHE);
+  // Get chain stats for totals (SDK already created above for fallback)
   const chainStats = await getCachedChainStats(c.env, sdk);
   const stats = {
     total: chainStats.reduce((sum, c) => sum + c.totalCount, 0),
@@ -442,6 +545,128 @@ agents.get('/:agentId/similar', async (c) => {
   } catch (error) {
     console.error('Similar agents error:', error);
     return errors.internalError(c, 'Failed to find similar agents');
+  }
+});
+
+/**
+ * GET /api/v1/agents/:agentId/complementary
+ * Find agents that complement this agent (work well together, not substitutes)
+ *
+ * Complementary agents have:
+ * - Different skills that work well together in workflows
+ * - Some domain overlap (can communicate about same topics)
+ * - Compatible protocol capabilities (MCP + A2A agents work together)
+ * - Compatible trust models
+ */
+agents.get('/:agentId/complementary', async (c) => {
+  const agentIdParam = c.req.param('agentId');
+
+  const result = agentIdSchema.safeParse(agentIdParam);
+  if (!result.success) {
+    return errors.validationError(c, result.error.issues[0]?.message ?? 'Invalid agent ID');
+  }
+  const agentId = result.data;
+
+  const parsed = parseAgentId(agentId);
+  if (!parsed) {
+    return errors.validationError(c, 'Invalid agent ID format. Expected: chainId:tokenId');
+  }
+
+  const limitParam = c.req.query('limit');
+  const limit = limitParam ? Math.min(Math.max(1, Number.parseInt(limitParam, 10)), 20) : 10;
+
+  const cache = createCacheService(c.env.CACHE, CACHE_TTL.AGENTS);
+  const cacheKey = `${CACHE_KEYS.agentDetail(agentId)}:complementary:${limit}`;
+
+  const cached = await cache.get(cacheKey);
+  if (cached) {
+    return c.json(cached);
+  }
+
+  try {
+    const complementaryResult = await findComplementaryAgents(c.env, agentId, limit);
+
+    const response = {
+      success: true as const,
+      data: complementaryResult.complementaryAgents,
+      meta: {
+        total: complementaryResult.complementaryAgents.length,
+        limit,
+        sourceAgentId: agentId,
+        sourceSkills: complementaryResult.sourceSkills,
+        sourceDomains: complementaryResult.sourceDomains,
+        analysisTimeMs: complementaryResult.analysisTimeMs,
+      },
+    };
+
+    await cache.set(cacheKey, response, CACHE_TTL.AGENTS);
+    return c.json(response);
+  } catch (error) {
+    console.error('Complementary agents error:', error);
+    return errors.internalError(c, 'Failed to find complementary agents');
+  }
+});
+
+/**
+ * GET /api/v1/agents/:agentId/compatible
+ * Find I/O compatible agents for multi-agent pipelines
+ *
+ * Returns agents that can be chained together:
+ * - Upstream: Agents whose output_modes match source's input_modes
+ *   (can send data TO the source agent)
+ * - Downstream: Agents whose input_modes match source's output_modes
+ *   (can receive data FROM the source agent)
+ */
+agents.get('/:agentId/compatible', async (c) => {
+  const agentIdParam = c.req.param('agentId');
+
+  const result = agentIdSchema.safeParse(agentIdParam);
+  if (!result.success) {
+    return errors.validationError(c, result.error.issues[0]?.message ?? 'Invalid agent ID');
+  }
+  const agentId = result.data;
+
+  const parsed = parseAgentId(agentId);
+  if (!parsed) {
+    return errors.validationError(c, 'Invalid agent ID format. Expected: chainId:tokenId');
+  }
+
+  const limitParam = c.req.query('limit');
+  const limit = limitParam ? Math.min(Math.max(1, Number.parseInt(limitParam, 10)), 20) : 10;
+
+  const cache = createCacheService(c.env.CACHE, CACHE_TTL.AGENTS);
+  const cacheKey = `${CACHE_KEYS.agentDetail(agentId)}:compatible:${limit}`;
+
+  const cached = await cache.get(cacheKey);
+  if (cached) {
+    return c.json(cached);
+  }
+
+  try {
+    const compatibilityResult = await findIOCompatibleAgents(c.env, agentId, limit);
+
+    const response = {
+      success: true as const,
+      data: {
+        upstream: compatibilityResult.upstream,
+        downstream: compatibilityResult.downstream,
+      },
+      meta: {
+        sourceAgentId: agentId,
+        sourceInputModes: compatibilityResult.sourceInputModes,
+        sourceOutputModes: compatibilityResult.sourceOutputModes,
+        upstreamCount: compatibilityResult.upstream.length,
+        downstreamCount: compatibilityResult.downstream.length,
+        limit,
+        analysisTimeMs: compatibilityResult.analysisTimeMs,
+      },
+    };
+
+    await cache.set(cacheKey, response, CACHE_TTL.AGENTS);
+    return c.json(response);
+  } catch (error) {
+    console.error('I/O compatible agents error:', error);
+    return errors.internalError(c, 'Failed to find I/O compatible agents');
   }
 });
 

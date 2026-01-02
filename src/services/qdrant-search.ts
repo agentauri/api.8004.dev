@@ -15,7 +15,9 @@ import type {
 } from '../types';
 import type { OASFClassification } from '../types/classification';
 import { type EmbeddingService, createEmbeddingService } from './embedding';
+import { type HyDEService, createHyDEService } from './hyde';
 import { type QdrantClient, createQdrantClient, decodeCursor, encodeCursor } from './qdrant';
+import { type RerankerService, createRerankerService } from './reranker';
 
 /**
  * Search parameters for Qdrant search
@@ -37,6 +39,38 @@ export interface QdrantSearchParams {
   sort?: 'relevance' | 'name' | 'createdAt' | 'reputation';
   /** Sort order */
   order?: 'asc' | 'desc';
+  /** Enable HyDE for this query (default: use service config) */
+  useHyDE?: boolean;
+  /** Enable reranking for this query (default: use service config) */
+  useReranker?: boolean;
+}
+
+/**
+ * Extended search result with HyDE and reranker metadata
+ */
+export interface ExtendedSearchResult extends SearchServiceResult {
+  /** HyDE metadata if used */
+  hydeMetadata?: {
+    /** Whether HyDE was used */
+    used: boolean;
+    /** Generated hypothetical description (if used) */
+    hypotheticalDescription?: string;
+    /** Generation time in ms */
+    generationTimeMs?: number;
+    /** Whether result was cached */
+    cached?: boolean;
+  };
+  /** Reranker metadata if used */
+  rerankerMetadata?: {
+    /** Whether reranker was used */
+    used: boolean;
+    /** Number of items reranked */
+    itemsReranked?: number;
+    /** Reranking time in ms */
+    rerankTimeMs?: number;
+    /** Model used for reranking */
+    modelUsed?: string;
+  };
 }
 
 /**
@@ -46,21 +80,33 @@ export class QdrantSearchService {
   private readonly qdrant: QdrantClient;
   private readonly embedding: EmbeddingService;
   private readonly cache: KVNamespace;
+  private readonly hyde: HyDEService | null;
+  private readonly hydeEnabled: boolean;
+  private readonly reranker: RerankerService | null;
+  private readonly rerankerEnabled: boolean;
 
   constructor(config: {
     qdrant: QdrantClient;
     embedding: EmbeddingService;
     cache: KVNamespace;
+    hyde?: HyDEService | null;
+    hydeEnabled?: boolean;
+    reranker?: RerankerService | null;
+    rerankerEnabled?: boolean;
   }) {
     this.qdrant = config.qdrant;
     this.embedding = config.embedding;
     this.cache = config.cache;
+    this.hyde = config.hyde ?? null;
+    this.hydeEnabled = config.hydeEnabled ?? true;
+    this.reranker = config.reranker ?? null;
+    this.rerankerEnabled = config.rerankerEnabled ?? false;
   }
 
   /**
    * Perform semantic search
    */
-  async search(params: QdrantSearchParams): Promise<SearchServiceResult> {
+  async search(params: QdrantSearchParams): Promise<ExtendedSearchResult> {
     const limit = params.limit ?? 20;
     const minScore = params.minScore ?? 0.3;
 
@@ -76,6 +122,10 @@ export class QdrantSearchService {
     // Build filter from params
     const filter = params.filters ? buildFilter(params.filters) : undefined;
 
+    // Determine if HyDE and reranker should be used
+    const useHyDE = params.useHyDE ?? this.hydeEnabled;
+    const useReranker = params.useReranker ?? this.rerankerEnabled;
+
     // If we have a query, do vector search
     if (params.query && params.query.trim().length > 0) {
       return this.vectorSearch(params.query, {
@@ -85,17 +135,24 @@ export class QdrantSearchService {
         minScore,
         sort: params.sort,
         order: params.order,
+        useHyDE,
+        useReranker,
       });
     }
 
     // No query - use scroll for filtered listing
-    return this.filteredListing({
+    const result = await this.filteredListing({
       filter,
       limit,
       offset,
       sort: params.sort,
       order: params.order,
     });
+
+    return {
+      ...result,
+      hydeMetadata: { used: false },
+    };
   }
 
   /**
@@ -110,27 +167,79 @@ export class QdrantSearchService {
       minScore: number;
       sort?: 'relevance' | 'name' | 'createdAt' | 'reputation';
       order?: 'asc' | 'desc';
+      useHyDE?: boolean;
+      useReranker?: boolean;
     }
-  ): Promise<SearchServiceResult> {
-    // Generate embedding for query
-    const queryVector = await this.embedding.embedSingle(query);
+  ): Promise<ExtendedSearchResult> {
+    // Track HyDE and reranker metadata
+    let hydeMetadata: ExtendedSearchResult['hydeMetadata'] = { used: false };
+    let rerankerMetadata: ExtendedSearchResult['rerankerMetadata'] = { used: false };
+    let textToEmbed = query;
+
+    // Use HyDE if enabled and appropriate for this query
+    if (options.useHyDE && this.hyde && this.hyde.shouldUseHyDE(query)) {
+      try {
+        const hydeResult = await this.hyde.generateHypotheticalAgent(query);
+        textToEmbed = hydeResult.hypotheticalDescription;
+        hydeMetadata = {
+          used: true,
+          hypotheticalDescription: hydeResult.hypotheticalDescription,
+          generationTimeMs: hydeResult.generationTimeMs,
+          cached: hydeResult.cached,
+        };
+      } catch (error) {
+        // Log error but continue with original query
+        console.error('HyDE generation failed, using original query:', error);
+        hydeMetadata = { used: false };
+      }
+    }
+
+    // Generate embedding for query (or HyDE-enhanced query)
+    const queryVector = await this.embedding.embedSingle(textToEmbed);
 
     // If sorting by non-relevance, we need to fetch more and re-sort
     const isRelevanceSort = !options.sort || options.sort === 'relevance';
 
     if (isRelevanceSort) {
+      // For reranking, fetch more results initially (reranker topK)
+      const fetchLimit = options.useReranker && this.reranker
+        ? Math.max(options.limit, this.reranker.getTopK())
+        : options.limit;
+
       // Direct vector search with Qdrant's native sorting
       const result = await this.qdrant.search({
         vector: queryVector,
         qdrantFilter: options.filter,
-        limit: options.limit,
+        limit: fetchLimit,
         offset: options.offset,
         scoreThreshold: options.minScore,
       });
 
-      const results = result.items.map((item) =>
+      let results = result.items.map((item) =>
         this.payloadToSearchResult(item.payload, item.score)
       );
+
+      // Apply reranking if enabled
+      if (options.useReranker && this.reranker && results.length > 0) {
+        try {
+          const rerankResult = await this.reranker.rerank(query, results);
+          results = rerankResult.items.slice(0, options.limit);
+          rerankerMetadata = {
+            used: true,
+            itemsReranked: rerankResult.itemsReranked,
+            rerankTimeMs: rerankResult.rerankTimeMs,
+            modelUsed: rerankResult.modelUsed,
+          };
+        } catch (error) {
+          console.error('Reranking failed:', error);
+          results = results.slice(0, options.limit);
+          rerankerMetadata = { used: false };
+        }
+      } else {
+        // No reranking, just limit results
+        results = results.slice(0, options.limit);
+      }
+
       const byChain = this.calculateByChain(results);
       // Use filtered count for total
       const total = await this.qdrant.countWithFilter(options.filter);
@@ -143,6 +252,8 @@ export class QdrantSearchService {
           ? this.encodeSearchCursor(options.offset + options.limit)
           : undefined,
         byChain,
+        hydeMetadata,
+        rerankerMetadata,
       };
     }
 
@@ -171,6 +282,8 @@ export class QdrantSearchService {
       hasMore,
       nextCursor: hasMore ? this.encodeSearchCursor(options.offset + options.limit) : undefined,
       byChain,
+      hydeMetadata,
+      rerankerMetadata,
     };
   }
 
@@ -404,6 +517,8 @@ export class QdrantSearchService {
         image: payload.image,
         ens: payload.ens,
         did: payload.did,
+        inputModes: payload.input_modes,
+        outputModes: payload.output_modes,
       },
       matchReasons: this.generateMatchReasons(payload, score),
     };
@@ -508,6 +623,22 @@ export function searchFiltersToAgentFilters(filters: SearchFilters): AgentFilter
     skills: filters.skills,
     domains: filters.domains,
     filterMode: filters.filterMode,
+    // Extended filters
+    mcpTools: filters.mcpTools,
+    a2aSkills: filters.a2aSkills,
+    minRep: filters.minRep,
+    maxRep: filters.maxRep,
+    // Wallet filters
+    owner: filters.owner,
+    walletAddress: filters.walletAddress,
+    // Trust model filters
+    trustModels: filters.trustModels,
+    hasTrusts: filters.hasTrusts,
+    // Reachability filters
+    reachableA2a: filters.reachableA2a,
+    reachableMcp: filters.reachableMcp,
+    // Registration file filter
+    hasRegistrationFile: filters.hasRegistrationFile,
   };
 }
 
@@ -554,8 +685,19 @@ export function payloadToAgentSummary(payload: AgentPayload, score?: number): Ag
 
 /**
  * Create Qdrant search service from environment
+ * When MOCK_EXTERNAL_SERVICES=true, returns a mock implementation for E2E testing
  */
 export function createQdrantSearchService(env: Env): QdrantSearchService {
+  // Return mock for E2E testing
+  // The mock is injected via the createMockQdrantSearchServiceInstance function
+  // which is set by tests when MOCK_EXTERNAL_SERVICES=true
+  if (
+    env.MOCK_EXTERNAL_SERVICES === 'true' &&
+    _mockQdrantSearchServiceFactory !== null
+  ) {
+    return _mockQdrantSearchServiceFactory() as unknown as QdrantSearchService;
+  }
+
   const qdrant = createQdrantClient(
     env as unknown as {
       QDRANT_URL: string;
@@ -569,9 +711,37 @@ export function createQdrantSearchService(env: Env): QdrantSearchService {
     EMBEDDING_MODEL: env.EMBEDDING_MODEL,
   });
 
+  // Create HyDE service if enabled
+  const hyde = createHyDEService(env);
+  const hydeEnabled = env.HYDE_ENABLED !== 'false';
+
+  // Create reranker service if enabled
+  const reranker = createRerankerService(env);
+  const rerankerEnabled = env.RERANKER_ENABLED === 'true';
+
   return new QdrantSearchService({
     qdrant,
     embedding,
     cache: env.CACHE,
+    hyde,
+    hydeEnabled,
+    reranker,
+    rerankerEnabled,
   });
+}
+
+/**
+ * Factory function for creating mock Qdrant search service
+ * Set by tests to inject the mock implementation
+ */
+let _mockQdrantSearchServiceFactory: (() => QdrantSearchService) | null = null;
+
+/**
+ * Set the mock factory for testing
+ * @internal Only for testing
+ */
+export function setMockQdrantSearchServiceFactory(
+  factory: (() => QdrantSearchService) | null
+): void {
+  _mockQdrantSearchServiceFactory = factory;
 }
