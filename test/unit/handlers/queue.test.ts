@@ -173,6 +173,29 @@ describe('Scheduled handler', () => {
   });
 
   it('calls ctx.waitUntil with sync function', async () => {
+    // Mock all sync workers that run in scheduled handler
+    vi.doMock('@/services/sync/graph-sync-worker', () => ({
+      syncFromGraph: vi.fn().mockResolvedValue({
+        newAgents: 0,
+        updatedAgents: 0,
+        reembedded: 0,
+        errors: [],
+      }),
+    }));
+    vi.doMock('@/services/sync/d1-sync-worker', () => ({
+      syncD1ToQdrant: vi.fn().mockResolvedValue({
+        classificationsUpdated: 0,
+        reputationUpdated: 0,
+        errors: [],
+      }),
+    }));
+    vi.doMock('@/services/sync/reconciliation-worker', () => ({
+      runReconciliation: vi.fn().mockResolvedValue({
+        orphansDeleted: 0,
+        missingIndexed: 0,
+        errors: [],
+      }),
+    }));
     vi.doMock('@/services/eas-indexer', () => ({
       createEASIndexerService: () => createMockEASIndexerService(),
       EAS_CONFIGS: [],
@@ -190,6 +213,9 @@ describe('Scheduled handler', () => {
     expect(ctx.waitUntil).toHaveBeenCalled();
     await Promise.all(waitUntilPromises);
 
+    // Verify all sync workers were called
+    expect(consoleInfoSpy).toHaveBeenCalledWith('Starting Graph → Qdrant sync...');
+    expect(consoleInfoSpy).toHaveBeenCalledWith('Starting D1 → Qdrant sync...');
     expect(consoleInfoSpy).toHaveBeenCalledWith('Starting EAS attestation sync...');
     expect(consoleInfoSpy).toHaveBeenCalledWith('EAS attestation sync complete');
   });
