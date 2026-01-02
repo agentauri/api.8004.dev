@@ -8,7 +8,9 @@ This guide covers deploying 8004-backend to Cloudflare Workers.
 - [pnpm](https://pnpm.io/) 9+
 - [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/)
 - [Cloudflare account](https://dash.cloudflare.com/sign-up)
-- API keys for external services
+- [Qdrant Cloud account](https://cloud.qdrant.io/)
+- [Venice AI account](https://venice.ai/) (for embeddings)
+- API keys for LLM classification (Google AI and Anthropic)
 
 ## Step 1: Cloudflare Setup
 
@@ -53,24 +55,72 @@ id = "your-kv-namespace-id-here"
 wrangler queues create classification-jobs
 ```
 
-## Step 2: Set Secrets
+## Step 2: Qdrant Cloud Setup
 
-Set required secrets using Wrangler:
+### 2.1 Create Qdrant Cluster
+
+1. Go to [Qdrant Cloud](https://cloud.qdrant.io/)
+2. Create a new cluster (Free tier works for development)
+3. Choose a region close to your Cloudflare Workers region
+4. Note your cluster URL (e.g., `https://xxx.region.gcp.cloud.qdrant.io`)
+
+### 2.2 Create API Key
+
+1. In Qdrant Cloud, go to Data Access Control
+2. Create an API key with read/write access
+3. Save the API key securely
+
+### 2.3 Create Collection
+
+The collection is auto-created on first sync, but you can pre-create it:
 
 ```bash
-# Gemini API key for OASF classification (primary)
+curl -X PUT "https://your-cluster.region.gcp.cloud.qdrant.io/collections/agents" \
+  -H "api-key: your-qdrant-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "vectors": {
+      "size": 1024,
+      "distance": "Cosine"
+    }
+  }'
+```
+
+## Step 3: Venice AI Setup (Embeddings)
+
+### 3.1 Get Venice API Key
+
+1. Go to [Venice AI](https://venice.ai/)
+2. Create an account or sign in
+3. Navigate to API settings
+4. Generate an API key
+
+### 3.2 Verify Embedding Model
+
+The service uses `text-embedding-bge-m3` model with 1024 dimensions. Verify it's available:
+
+```bash
+curl "https://api.venice.ai/api/v1/models" \
+  -H "Authorization: Bearer your-venice-api-key"
+```
+
+## Step 4: Set Secrets
+
+Set all required secrets using Wrangler:
+
+```bash
+# LLM Classification
 wrangler secret put GOOGLE_AI_API_KEY
 # Enter: AIza...
 
-# Claude API key for OASF classification (fallback)
 wrangler secret put ANTHROPIC_API_KEY
 # Enter: sk-ant-api03-xxxxx
 
-# Search service URL
+# Search service (legacy fallback)
 wrangler secret put SEARCH_SERVICE_URL
 # Enter: https://your-search-service.workers.dev
 
-# RPC URLs for blockchain access
+# Blockchain RPC URLs
 wrangler secret put SEPOLIA_RPC_URL
 # Enter: https://eth-sepolia.g.alchemy.com/v2/your-key
 
@@ -79,19 +129,69 @@ wrangler secret put BASE_SEPOLIA_RPC_URL
 
 wrangler secret put POLYGON_AMOY_RPC_URL
 # Enter: https://polygon-amoy.g.alchemy.com/v2/your-key
+
+# Qdrant Cloud
+wrangler secret put QDRANT_URL
+# Enter: https://your-cluster.region.gcp.cloud.qdrant.io
+
+wrangler secret put QDRANT_API_KEY
+# Enter: your-qdrant-api-key
+
+# Venice AI
+wrangler secret put VENICE_API_KEY
+# Enter: your-venice-api-key
+
+# The Graph (optional, for subgraph queries)
+wrangler secret put GRAPH_API_KEY
+# Enter: your-graph-api-key
 ```
 
-## Step 3: Run Migrations
+## Step 5: Run Migrations
+
+Run all database migrations in order:
 
 ```bash
-# Run migrations on production database
-wrangler d1 execute 8004-backend-db --file=./migrations/0001_init.sql
+# Core tables
+wrangler d1 execute 8004-backend-db --file=./migrations/0001_init.sql --remote
+
+# Reputation system
+wrangler d1 execute 8004-backend-db --file=./migrations/0002_reputation.sql --remote
+
+# Performance indexes
+wrangler d1 execute 8004-backend-db --file=./migrations/0003_performance_indexes.sql --remote
+
+# OASF taxonomy
+wrangler d1 execute 8004-backend-db --file=./migrations/0004_oasf_taxonomy_reset.sql --remote
+
+# Reliability tracking
+wrangler d1 execute 8004-backend-db --file=./migrations/0005_reliability.sql --remote
+
+# Trust graph
+wrangler d1 execute 8004-backend-db --file=./migrations/0006_trust_graph.sql --remote
+
+# Intent templates
+wrangler d1 execute 8004-backend-db --file=./migrations/0007_intent_templates.sql --remote
 
 # Verify tables were created
-wrangler d1 execute 8004-backend-db --command="SELECT name FROM sqlite_master WHERE type='table'"
+wrangler d1 execute 8004-backend-db --remote \
+  --command="SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
 ```
 
-## Step 4: Deploy
+Expected tables:
+- `agent_classifications`
+- `agent_feedback`
+- `agent_reliability`
+- `agent_reputation`
+- `agent_trust_scores`
+- `classification_queue`
+- `eas_sync_state`
+- `intent_template_steps`
+- `intent_templates`
+- `trust_edges`
+- `trust_graph_state`
+- `wallet_trust_scores`
+
+## Step 6: Deploy
 
 ```bash
 # Deploy to production
@@ -101,14 +201,36 @@ pnpm run deploy
 wrangler deploy
 ```
 
-## Step 5: Verify Deployment
+## Step 7: Verify Deployment
 
 ```bash
 # Check health endpoint
-curl https://8004-backend.your-subdomain.workers.dev/api/v1/health
+curl https://api.8004.dev/api/v1/health
 
 # Expected response:
-# {"status":"ok","timestamp":"...","version":"1.0.0","services":{...}}
+# {"status":"ok","timestamp":"...","version":"2.0.0","services":{...}}
+
+# Test agent search (requires API key)
+curl "https://api.8004.dev/api/v1/agents?limit=5" \
+  -H "X-API-Key: your-api-key"
+
+# Test MCP endpoint (public)
+curl -X POST "https://api.8004.dev/mcp" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
+```
+
+## Step 8: Initial Data Sync
+
+The scheduled cron jobs will sync data automatically, but you can trigger manually:
+
+```bash
+# Trigger sync via scheduled event (not directly callable)
+# The system syncs every 15 minutes automatically
+
+# Check Qdrant collection status
+curl "https://your-cluster.region.gcp.cloud.qdrant.io/collections/agents" \
+  -H "api-key: your-qdrant-api-key"
 ```
 
 ## Custom Domain Setup
@@ -182,6 +304,18 @@ View metrics in Cloudflare Dashboard:
 - Workers & Pages > your worker > Metrics
 - Requests, errors, CPU time, duration
 
+### Qdrant Monitoring
+
+```bash
+# Collection info
+curl "https://your-cluster.region.gcp.cloud.qdrant.io/collections/agents" \
+  -H "api-key: your-qdrant-api-key"
+
+# Check point count
+curl "https://your-cluster.region.gcp.cloud.qdrant.io/collections/agents/points/count" \
+  -H "api-key: your-qdrant-api-key"
+```
+
 ## Rollback
 
 ```bash
@@ -198,7 +332,15 @@ wrangler rollback
 
 ```bash
 # Test database connection
-wrangler d1 execute 8004-backend-db --command="SELECT 1"
+wrangler d1 execute 8004-backend-db --remote --command="SELECT 1"
+```
+
+### Qdrant Connection Issues
+
+```bash
+# Test Qdrant connection
+curl "https://your-cluster.region.gcp.cloud.qdrant.io/collections" \
+  -H "api-key: your-qdrant-api-key"
 ```
 
 ### Secret Issues
@@ -208,8 +350,8 @@ wrangler d1 execute 8004-backend-db --command="SELECT 1"
 wrangler secret list
 
 # Delete and re-add a secret
-wrangler secret delete ANTHROPIC_API_KEY
-wrangler secret put ANTHROPIC_API_KEY
+wrangler secret delete QDRANT_API_KEY
+wrangler secret put QDRANT_API_KEY
 ```
 
 ### Build Issues
@@ -219,6 +361,19 @@ wrangler secret put ANTHROPIC_API_KEY
 rm -rf dist node_modules
 pnpm install
 pnpm run build
+```
+
+### Embedding Issues
+
+```bash
+# Test Venice AI embeddings
+curl -X POST "https://api.venice.ai/api/v1/embeddings" \
+  -H "Authorization: Bearer your-venice-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "text-embedding-bge-m3",
+    "input": "test embedding"
+  }'
 ```
 
 ## CI/CD Deployment
@@ -234,8 +389,8 @@ The release workflow automatically deploys on version tags:
 
 ```bash
 # Create and push a version tag
-git tag v1.0.0
-git push origin v1.0.0
+git tag v2.0.0
+git push origin v2.0.0
 ```
 
 ## Resource Limits
@@ -251,15 +406,18 @@ git push origin v1.0.0
 
 ## Cost Estimation
 
-For typical usage:
+For typical usage (~100K requests/day):
 
 | Service | Estimated Cost |
 |---------|----------------|
-| Workers | $5/month (Paid plan) |
+| Cloudflare Workers | $5/month (Paid plan) |
 | D1 | Included |
 | KV | Included |
 | Queues | ~$0.40/million messages |
-| Gemini API | ~$0.0001/classification (primary) |
+| Qdrant Cloud (Free) | $0 (1GB storage) |
+| Qdrant Cloud (Pro) | $25+/month |
+| Venice AI | ~$0.0001/embedding |
+| Gemini API | ~$0.0001/classification |
 | Claude API | ~$0.003/classification (fallback) |
 
 ## Support
@@ -267,4 +425,6 @@ For typical usage:
 - [Cloudflare Workers Docs](https://developers.cloudflare.com/workers/)
 - [Wrangler Docs](https://developers.cloudflare.com/workers/wrangler/)
 - [D1 Docs](https://developers.cloudflare.com/d1/)
+- [Qdrant Docs](https://qdrant.tech/documentation/)
+- [Venice AI Docs](https://docs.venice.ai/)
 - [Open an Issue](https://github.com/agent0lab/8004-backend/issues)

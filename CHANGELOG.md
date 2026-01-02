@@ -7,6 +7,147 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-01-02
+
+### Added
+
+- **Qdrant Vector Search**: Complete migration from Pinecone/search-service to Qdrant Cloud
+  - Native vector search with 27+ filters
+  - Venice AI embeddings (text-embedding-bge-m3, 1024 dimensions)
+  - Custom filter builder for complex Qdrant queries
+  - Payload indexing for efficient filtering
+
+- **MCP Server**: Model Context Protocol integration for AI assistants
+  - `/mcp` endpoint for MCP-compatible clients
+  - SSE transport for streaming responses
+  - Built-in rate limiting (60 req/min per IP)
+  - Public access without API key requirement
+
+- **Trust Graph with PageRank**: Agent trust scoring system
+  - Trust edges derived from feedback relationships
+  - Iterative PageRank algorithm (damping factor 0.85)
+  - `trust_score` field (0-100) in agent payload
+  - Wallet trust scores for weighted calculations
+
+- **Intent Templates**: Pre-defined multi-agent workflow templates
+  - 4 built-in templates: data-analysis-pipeline, content-creation, code-review-pipeline, customer-support
+  - Template matching with skill/domain requirements
+  - I/O compatibility validation between steps
+  - REST API at `/api/v1/intents`
+
+- **Reliability Index**: Agent reliability tracking
+  - MCP/A2A latency measurements
+  - Success rate tracking per protocol
+  - `minSuccessRate` and `maxLatency` filters
+
+- **I/O Graph Matching**: Agent compatibility discovery
+  - `GET /api/v1/agents/:agentId/compatible` endpoint
+  - Finds upstream agents (can send to source)
+  - Finds downstream agents (can receive from source)
+  - Mode intersection scoring
+
+- **SDK Fallback Search**: Graceful degradation when vector search fails
+  - Falls back to agent0-sdk with all filters applied
+  - Per-chain pagination to handle large datasets
+  - Automatic retry logic
+
+- **Enhanced Filtering**:
+  - `updatedAfter` / `updatedBefore` date range filters
+  - `hasInputMode` / `hasOutputMode` I/O mode filters
+  - `operator` / `walletAddress` / `owner` identity filters
+  - `trustModels` / `hasTrusts` trust model filters
+  - `minSuccessRate` / `maxLatency` reliability filters
+
+- **New Fields in Agent Payload**:
+  - `agent_uri` - IPFS or HTTP URI to agent metadata
+  - `updated_at` - ISO timestamp of last update
+  - `trust_score` - PageRank-derived trust score
+  - `mcp_latency_ms` / `a2a_latency_ms` - Protocol latencies
+  - `mcp_success_rate` / `a2a_success_rate` - Success rates
+
+- **Compose Endpoint**: Multi-agent workflow composition at `/api/v1/compose`
+
+- **Events Endpoint**: Agent lifecycle events at `/api/v1/events`
+
+- **Scripts Endpoint**: Embeddable JavaScript widgets at `/8004-chat.js`
+
+### Changed
+
+- **Vector Database**: Migrated from Pinecone to Qdrant Cloud
+  - Direct Qdrant integration instead of search-service proxy
+  - Native filtering instead of post-processing
+  - Faster queries with payload indexes
+
+- **Embedding Provider**: Migrated from OpenAI to Venice AI
+  - Using text-embedding-bge-m3 model (1024 dimensions)
+  - Cost-effective embedding generation
+
+- **Search Architecture**: Complete rewrite of search system
+  - `agents-qdrant.ts` and `search-qdrant.ts` replace SDK-based routes
+  - Unified filter builder for consistent behavior
+  - Hybrid search with LLM reranking (Gemini)
+
+- **Classifier Provider**: Multi-provider with fallback
+  - Primary: Gemini 2.0 Flash
+  - Fallback: Claude 3 Haiku
+  - Automatic retry on provider failure
+
+- **CI Pipeline Optimization**:
+  - Added vitest sharding for parallel test execution
+  - Shared setup and caching between jobs
+  - E2E tests run non-blocking
+
+### Fixed
+
+- Multi-chain pagination duplicates bug
+- `minRep`/`maxRep` filter accepting float values
+- SDK search pagination for old agents
+- Boolean filters (mcp/a2a/x402) passed correctly to SDK fallback
+- `active=false` treated as "no filter" in SDK fallback
+- Sorting and pagination for Qdrant routes
+
+### Removed
+
+- OAuth 2.1 for MCP (simplified to public access with rate limiting)
+- Direct dependency on agent0lab/search-service (replaced by Qdrant)
+
+### Security
+
+- Comprehensive codebase audit and hardening
+- SQL injection prevention in filter builder
+- Input sanitization for all user inputs
+- Rate limiting on MCP endpoints
+
+### Database Migrations
+
+- `0005_reliability.sql` - Agent reliability tracking
+- `0006_trust_graph.sql` - Trust edges and PageRank scores
+- `0007_intent_templates.sql` - Intent templates and steps
+
+---
+
+## [1.1.0] - 2025-12-15
+
+### Added
+
+- Multi-provider OASF classifier (Gemini primary, Claude fallback)
+- `searchMode` field in GET /agents?q= response
+- Semantic search via POST /api/v1/search
+- `matchReasons` in search results
+
+### Changed
+
+- Migrated search service to v1 API
+- Improved mock SDK for testing
+
+### Fixed
+
+- SDK search finds old agents via per-chain pagination
+- TypeScript and test schema errors
+- Lint issues from biome check
+
+---
+
 ## [1.0.0] - 2025-12-08
 
 ### Added
@@ -38,5 +179,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CORS configuration
 - Rate limiting protection
 
-[Unreleased]: https://github.com/agent0lab/8004-backend/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/agent0lab/8004-backend/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/agent0lab/8004-backend/compare/v1.1.0...v2.0.0
+[1.1.0]: https://github.com/agent0lab/8004-backend/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/agent0lab/8004-backend/releases/tag/v1.0.0

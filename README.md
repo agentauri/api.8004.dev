@@ -8,18 +8,23 @@ Backend service for [8004.dev](https://8004.dev) - the ERC-8004 Agent Explorer.
 
 ## Overview
 
-8004-backend provides a unified REST API that aggregates data from multiple sources:
+8004-backend provides a unified REST API for the ERC-8004 agent ecosystem:
 
-- **Agent Data**: On-chain agent data from ERC-8004 contracts via [agent0-sdk](https://github.com/agent0lab/agent0-ts)
-- **Semantic Search**: Natural language search via [search-service](https://github.com/agent0lab/search-service)
-- **OASF Classification**: AI-powered classification using [OASF taxonomy](https://docs.agntcy.org/oasf/)
+- **Agent Discovery**: Semantic search powered by Qdrant Cloud + Venice AI embeddings
+- **Agent Data**: On-chain data aggregated from multiple blockchains via [agent0-sdk](https://github.com/agent0lab/agent0-ts)
+- **OASF Classification**: AI-powered skill/domain classification using [OASF taxonomy](https://docs.agntcy.org/oasf/)
+- **Trust & Reputation**: Aggregated reputation from EAS attestations and on-chain feedback
+- **Multi-Agent Workflows**: Intent templates for orchestrating agent pipelines
 
 ## Features
 
 - RESTful API with OpenAPI specification
-- **MCP Server** for AI assistant integration (Claude, ChatGPT, etc.)
-- Semantic search for agents
+- **MCP Server** for AI assistant integration (Claude, Cursor, etc.)
+- Semantic search with 27+ native filters
 - OASF skill and domain classification
+- Trust Graph with PageRank scoring
+- Intent Templates for multi-agent orchestration
+- I/O compatibility matching for agent discovery
 - Multi-chain support (Ethereum Sepolia, Base Sepolia, Polygon Amoy)
 - Rate limiting and caching
 - 70% branch coverage minimum (enforced by CI)
@@ -61,25 +66,37 @@ pnpm run lint         # Lint
 | GET | `/api/v1/agents/:agentId` | Get agent details |
 | GET | `/api/v1/agents/:agentId/classify` | Get OASF classification |
 | POST | `/api/v1/agents/:agentId/classify` | Request classification |
+| GET | `/api/v1/agents/:agentId/compatible` | Find I/O compatible agents |
 | POST | `/api/v1/search` | Semantic search |
 | GET | `/api/v1/chains` | Chain statistics |
 | GET | `/api/v1/stats` | Platform statistics |
 | GET | `/api/v1/taxonomy` | OASF taxonomy tree |
+| GET | `/api/v1/intents` | List intent templates |
+| POST | `/api/v1/intents/:id/match` | Match agents to template |
+| GET | `/api/v1/events` | Agent lifecycle events |
+| GET | `/api/v1/compose` | Multi-agent workflow composition |
 | GET | `/api/v1/openapi` | OpenAPI specification |
 
 ### Example Requests
 
 ```bash
-# List agents
-curl https://api.8004.dev/api/v1/agents
+# List agents with filters
+curl "https://api.8004.dev/api/v1/agents?mcp=true&limit=10" \
+  -H "X-API-Key: your-key"
 
-# Search agents
+# Semantic search
 curl -X POST https://api.8004.dev/api/v1/search \
   -H "Content-Type: application/json" \
-  -d '{"query": "trading agent"}'
+  -H "X-API-Key: your-key" \
+  -d '{"query": "trading agent with data analysis"}'
 
 # Get agent details
-curl https://api.8004.dev/api/v1/agents/11155111:1
+curl "https://api.8004.dev/api/v1/agents/11155111:123" \
+  -H "X-API-Key: your-key"
+
+# Find compatible agents
+curl "https://api.8004.dev/api/v1/agents/11155111:123/compatible" \
+  -H "X-API-Key: your-key"
 ```
 
 ## MCP Server
@@ -120,11 +137,7 @@ The API also exposes an [MCP (Model Context Protocol)](https://modelcontextproto
 
 ### Connect with Claude Desktop
 
-We use [mcp-remote](https://github.com/geelen/mcp-remote) to bridge the remote MCP server with Claude Desktop. This is the recommended approach due to a [known issue](https://github.com/anthropics/claude-code/issues/11814) where Claude Desktop/Claude.ai struggle with OAuth-protected remote MCP servers.
-
-**Setup:**
-
-1. Add to your `claude_desktop_config.json`:
+Add to your `claude_desktop_config.json`:
 
 ```json
 {
@@ -137,28 +150,24 @@ We use [mcp-remote](https://github.com/geelen/mcp-remote) to bridge the remote M
 }
 ```
 
-2. Restart Claude Desktop
-3. On first use, mcp-remote will open a browser for OAuth authentication
-4. The 8004 Agent tools will then be available in Claude
-
-**Location of config file:**
+**Config file location:**
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 - Linux: `~/.config/Claude/claude_desktop_config.json`
 
-### Claude.ai Web Connectors
+### Connect with Claude Code CLI
 
-> **⚠️ Known Limitation**: Claude.ai web custom connectors currently have a [bug](https://github.com/anthropics/claude-code/issues/11814) with OAuth-protected MCP servers. The connection drops after ~1-2 seconds regardless of server response. We're monitoring this issue and will update when fixed.
-
-For now, use Claude Desktop with mcp-remote as described above.
+```bash
+claude mcp add --transport http --scope local 8004-agents https://api.8004.dev/sse
+```
 
 ### Example MCP Request
 
 ```bash
-# Initialize connection
+# List available tools
 curl -X POST https://api.8004.dev/mcp \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0.0"}}}'
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 
 # Search for agents
 curl -X POST https://api.8004.dev/mcp \
@@ -172,14 +181,20 @@ curl -X POST https://api.8004.dev/mcp \
 |-----------|------------|
 | Runtime | Cloudflare Workers |
 | Framework | Hono.js |
-| Database | Cloudflare D1 |
+| Vector DB | Qdrant Cloud |
+| Embeddings | Venice AI (text-embedding-bge-m3) |
+| Database | Cloudflare D1 (SQLite) |
 | Cache | Cloudflare KV |
 | Queue | Cloudflare Queues |
-| LLM | Gemini API (Google) + Claude API (Anthropic) |
+| LLM | Gemini API (primary) + Claude API (fallback) |
 
 ## Deployment
 
-See [DEPLOY.md](./DEPLOY.md) for detailed deployment instructions.
+See [DEPLOY.md](./DEPLOY.md) for detailed deployment instructions including:
+- Cloudflare Workers setup
+- Qdrant Cloud configuration
+- Venice AI setup
+- Database migrations
 
 ## Contributing
 
@@ -193,5 +208,4 @@ MIT License - see [LICENSE](./LICENSE) for details.
 
 - [8004.dev](https://github.com/agent0lab/8004.dev) - Frontend explorer
 - [agent0-ts](https://github.com/agent0lab/agent0-ts) - TypeScript SDK
-- [search-service](https://github.com/agent0lab/search-service) - Semantic search
 - [OASF](https://github.com/agntcy/oasf) - Open Agentic Schema Framework
