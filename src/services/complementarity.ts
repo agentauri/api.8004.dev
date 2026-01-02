@@ -305,7 +305,7 @@ export async function findComplementaryAgents(
   const searchService = createQdrantSearchService(env);
 
   // Parse source agent ID
-  const [chainIdStr, tokenId] = sourceAgentId.split(':');
+  const [chainIdStr, _tokenId] = sourceAgentId.split(':');
   const chainId = Number.parseInt(chainIdStr ?? '0', 10);
 
   // Search for agents with complementary skills
@@ -326,7 +326,7 @@ export async function findComplementaryAgents(
 
   // Get source agent details from the search
   const sourceAgent = sourceResult.results.find((r) => r.agentId === sourceAgentId);
-  if (sourceAgent && sourceAgent.metadata) {
+  if (sourceAgent?.metadata) {
     sourceSkills = sourceAgent.metadata.skills ?? [];
     sourceDomains = sourceAgent.metadata.domains ?? [];
     sourceHasMcp = sourceAgent.metadata.hasMcp ?? false;

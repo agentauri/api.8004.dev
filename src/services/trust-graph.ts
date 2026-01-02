@@ -310,7 +310,7 @@ export class TrustGraphService {
         if (!incomingEdges.has(edge.to_agent_id)) {
           incomingEdges.set(edge.to_agent_id, []);
         }
-        incomingEdges.get(edge.to_agent_id)!.push({
+        incomingEdges.get(edge.to_agent_id)?.push({
           from: edge.from_wallet,
           weight: edge.weight,
         });

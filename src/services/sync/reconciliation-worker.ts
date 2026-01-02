@@ -131,7 +131,7 @@ async function fetchAgentsByIds(agentIds: string[]): Promise<GraphAgent[]> {
     if (!byChain.has(chain)) {
       byChain.set(chain, []);
     }
-    byChain.get(chain)!.push(tokenId);
+    byChain.get(chain)?.push(tokenId);
   }
 
   // Fetch from each chain

@@ -237,7 +237,7 @@ export class SSEStreamWriter {
  */
 export function createSSEResponse(
   config: SSESubscriptionConfig,
-  env: Env
+  _env: Env
 ): { response: Response; writer: SSEStreamWriter } {
   const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
 

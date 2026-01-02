@@ -171,7 +171,7 @@ agents.get('/', async (c) => {
   // Note: Only fall back if user is NOT explicitly asking for hasRegistrationFile=false,
   // since SDK only returns agents WITH registration files
   const sdk = createSDKService(c.env, c.env.CACHE);
-  let usedSdkFallback = false;
+  let _usedSdkFallback = false;
 
   const shouldFallback =
     searchResult.results.length === 0 && !query.q && query.hasRegistrationFile !== false; // Don't fallback if user wants agents without reg files
@@ -191,7 +191,7 @@ agents.get('/', async (c) => {
 
       // Convert SDK results to search results format
       if (sdkResult.items.length > 0) {
-        usedSdkFallback = true;
+        _usedSdkFallback = true;
         const sdkAgents: AgentSummary[] = sdkResult.items.map((item) => ({
           id: item.id,
           chainId: Number(item.id.split(':')[0]),
