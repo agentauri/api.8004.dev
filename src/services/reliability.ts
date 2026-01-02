@@ -123,18 +123,7 @@ export class ReliabilityService {
              mcp_last_success_at = ?,
              updated_at = ?`
         )
-        .bind(
-          agentId,
-          chainId,
-          result.latencyMs,
-          now,
-          now,
-          now,
-          result.latencyMs,
-          now,
-          now,
-          now
-        )
+        .bind(agentId, chainId, result.latencyMs, now, now, now, result.latencyMs, now, now, now)
         .run();
     } else {
       await this.db
@@ -173,18 +162,7 @@ export class ReliabilityService {
              a2a_last_success_at = ?,
              updated_at = ?`
         )
-        .bind(
-          agentId,
-          chainId,
-          result.latencyMs,
-          now,
-          now,
-          now,
-          result.latencyMs,
-          now,
-          now,
-          now
-        )
+        .bind(agentId, chainId, result.latencyMs, now, now, now, result.latencyMs, now, now, now)
         .run();
     } else {
       await this.db
@@ -206,10 +184,7 @@ export class ReliabilityService {
    * @param minSuccessRate Minimum success rate (0-100)
    * @param maxLatencyMs Maximum latency in milliseconds
    */
-  async getReliableAgents(
-    minSuccessRate: number = 80,
-    maxLatencyMs: number = 5000
-  ): Promise<ReliabilityMetrics[]> {
+  async getReliableAgents(minSuccessRate = 80, maxLatencyMs = 5000): Promise<ReliabilityMetrics[]> {
     const { results } = await this.db
       .prepare(
         `SELECT * FROM agent_reliability

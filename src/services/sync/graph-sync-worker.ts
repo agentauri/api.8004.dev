@@ -139,7 +139,10 @@ async function fetchAgentsFromGraph(
     throw new Error(`Graph API error: ${response.status} - ${text}`);
   }
 
-  const data = (await response.json()) as { data?: { agents: GraphAgent[] }; errors?: Array<{ message: string }> };
+  const data = (await response.json()) as {
+    data?: { agents: GraphAgent[] };
+    errors?: Array<{ message: string }>;
+  };
 
   if (data.errors?.length) {
     throw new Error(`Graph query error: ${data.errors[0]?.message}`);
@@ -329,9 +332,7 @@ async function fetchReachabilityBatch(
   agents: GraphAgent[],
   reachabilityService: ReachabilityService
 ): Promise<Map<string, AgentReachability>> {
-  const agentIds = agents
-    .filter((a) => a.registrationFile)
-    .map((a) => `${a.chainId}:${a.agentId}`);
+  const agentIds = agents.filter((a) => a.registrationFile).map((a) => `${a.chainId}:${a.agentId}`);
 
   return reachabilityService.getAgentReachabilitiesBatch(agentIds);
 }

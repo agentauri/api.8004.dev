@@ -20,14 +20,16 @@
 
 import type { NewFeedback } from '@/db/schema';
 import { fetchWithTimeout } from '@/lib/utils/fetch';
+import type { D1Database } from '@cloudflare/workers-types';
 import type { ReputationService } from '../reputation';
 import { createReputationService } from '../reputation';
 
 /**
  * The Graph gateway endpoint for ERC-8004 Reputation Registry
+ * API key is passed via Authorization header, not in URL
  */
 const GRAPH_GATEWAY_URL =
-  'https://gateway.thegraph.com/api/REDACTED_GRAPH_API_KEY/subgraphs/id/6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT';
+  'https://gateway.thegraph.com/api/subgraphs/id/6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT';
 
 /**
  * Supported chain IDs
@@ -39,9 +41,7 @@ const GRAPH_GATEWAY_URL =
  * - 998: HyperEVM Testnet
  * - 1351057110: SKALE Base Sepolia
  */
-const SUPPORTED_CHAIN_IDS = [
-  11155111, 84532, 80002, 59141, 296, 998, 1351057110,
-] as const;
+const SUPPORTED_CHAIN_IDS = [11155111, 84532, 80002, 59141, 296, 998, 1351057110] as const;
 
 /**
  * Raw Feedback entity from The Graph
@@ -122,15 +122,21 @@ const FEEDBACK_QUERY = `
 async function fetchFeedbackFromGraph(
   first: number,
   skip: number,
-  createdAtGt: number
+  createdAtGt: number,
+  graphApiKey?: string
 ): Promise<GraphFeedback[]> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (graphApiKey) {
+    headers.Authorization = `Bearer ${graphApiKey}`;
+  }
+
   const response = await fetchWithTimeout(
     GRAPH_GATEWAY_URL,
     {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify({
         query: FEEDBACK_QUERY,
         variables: {
@@ -355,12 +361,12 @@ async function processBatch(
  * 5. Updates agent_reputation aggregates
  *
  * @param db - D1 database instance
- * @param _env - Environment variables (unused, kept for signature consistency)
+ * @param env - Environment variables containing optional GRAPH_API_KEY
  * @returns Sync result with counts and status
  */
 export async function syncFeedbackFromGraph(
   db: D1Database,
-  _env?: Record<string, unknown>
+  env?: { GRAPH_API_KEY?: string }
 ): Promise<GraphFeedbackSyncResult> {
   const reputationService = createReputationService(db);
 
@@ -388,7 +394,12 @@ export async function syncFeedbackFromGraph(
 
     while (hasMore) {
       // Fetch batch of feedback
-      const feedbackBatch = await fetchFeedbackFromGraph(first, skip, lastCreatedAt);
+      const feedbackBatch = await fetchFeedbackFromGraph(
+        first,
+        skip,
+        lastCreatedAt,
+        env?.GRAPH_API_KEY
+      );
 
       if (feedbackBatch.length === 0) {
         hasMore = false;

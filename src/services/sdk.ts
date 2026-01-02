@@ -655,9 +655,7 @@ export async function fetchAllAgentsFromSubgraph(
   const batchSize = Math.min(1000, limit); // Graph has 1000 limit per query
 
   // Build WHERE clause
-  const whereClause = withRegistrationFileOnly
-    ? 'where: { registrationFile_not: null }'
-    : ''; // No filter = all agents
+  const whereClause = withRegistrationFileOnly ? 'where: { registrationFile_not: null }' : ''; // No filter = all agents
 
   while (allAgents.length < limit) {
     const query = `{
@@ -731,7 +729,9 @@ export async function fetchAllAgentsFromSubgraph(
 
       // Safety limit to prevent infinite loops
       if (currentSkip > 20000) {
-        console.warn(`fetchAllAgentsFromSubgraph: hit safety limit at ${currentSkip} for chain ${chainId}`);
+        console.warn(
+          `fetchAllAgentsFromSubgraph: hit safety limit at ${currentSkip} for chain ${chainId}`
+        );
         break;
       }
     } catch (error) {

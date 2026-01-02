@@ -7,7 +7,7 @@
  */
 
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
-import { createSSEResponse, parseSSEFilters, type SSESubscriptionConfig } from '@/services/sse';
+import { type SSESubscriptionConfig, createSSEResponse, parseSSEFilters } from '@/services/sse';
 import type { Env, Variables } from '@/types';
 import { Hono } from 'hono';
 
@@ -136,8 +136,7 @@ events.get('/info', async (c) => {
       },
       example: {
         url: '/api/v1/events?chainIds=11155111&reputation=true&reachability=true',
-        description:
-          'Subscribe to reputation and reachability events on Sepolia chain',
+        description: 'Subscribe to reputation and reachability events on Sepolia chain',
       },
       notes: [
         'Connections automatically close after 1 hour (max duration)',

@@ -25,7 +25,19 @@ import {
 import { handleError } from '@/lib/utils/errors';
 import { parseAgentId } from '@/lib/utils/validation';
 import { createMcp8004Handler } from '@/mcp';
-import { agents, chains, compose, events, health, intents, openapi, scripts, search, stats, taxonomy } from '@/routes';
+import {
+  events,
+  agents,
+  chains,
+  compose,
+  health,
+  intents,
+  openapi,
+  scripts,
+  search,
+  stats,
+  taxonomy,
+} from '@/routes';
 import { createClassifierService } from '@/services/classifier';
 import { createEASIndexerService } from '@/services/eas-indexer';
 import { createSDKService } from '@/services/sdk';

@@ -17,7 +17,6 @@
  */
 
 import type { Env } from '../types';
-import type { AgentPayload } from '../lib/qdrant/types';
 import { createQdrantSearchService } from './qdrant-search';
 
 /**
@@ -221,10 +220,7 @@ function calculateProtocolComplementarity(
 /**
  * Calculate trust compatibility score
  */
-function calculateTrustCompatibility(
-  sourceTrusts: string[],
-  targetTrusts: string[]
-): number {
+function calculateTrustCompatibility(sourceTrusts: string[], targetTrusts: string[]): number {
   // Agents with compatible trust models work better together
   if (sourceTrusts.length === 0 && targetTrusts.length === 0) {
     return 0.5; // Unknown compatibility
@@ -277,7 +273,12 @@ function generateReasons(
 
   // Add skill reasons
   if (addedSkills.length > 0 && addedSkills.length <= 3) {
-    reasons.push(`Provides ${addedSkills.slice(0, 3).map((s) => s.replace(/_/g, ' ')).join(', ')}`);
+    reasons.push(
+      `Provides ${addedSkills
+        .slice(0, 3)
+        .map((s) => s.replace(/_/g, ' '))
+        .join(', ')}`
+    );
   } else if (addedSkills.length > 3) {
     reasons.push(`Provides ${addedSkills.length} additional capabilities`);
   }
@@ -296,7 +297,7 @@ function generateReasons(
 export async function findComplementaryAgents(
   env: Env,
   sourceAgentId: string,
-  limit: number = 10
+  limit = 10
 ): Promise<ComplementarityResult> {
   const startTime = Date.now();
 
@@ -321,7 +322,7 @@ export async function findComplementaryAgents(
   let sourceDomains: string[] = [];
   let sourceHasMcp = false;
   let sourceHasA2a = false;
-  let sourceTrusts: string[] = [];
+  const sourceTrusts: string[] = [];
 
   // Get source agent details from the search
   const sourceAgent = sourceResult.results.find((r) => r.agentId === sourceAgentId);
@@ -368,8 +369,7 @@ export async function findComplementaryAgents(
     const trustScore = calculateTrustCompatibility(sourceTrusts, targetTrusts);
 
     // Calculate overall score (weighted average)
-    const overall =
-      skillScore * 0.4 + domainScore * 0.25 + protocolScore * 0.2 + trustScore * 0.15;
+    const overall = skillScore * 0.4 + domainScore * 0.25 + protocolScore * 0.2 + trustScore * 0.15;
 
     const scores: ComplementarityScore = {
       overall,
@@ -486,7 +486,7 @@ function calculateIOScore(
 export async function findIOCompatibleAgents(
   env: Env,
   sourceAgentId: string,
-  limit: number = 10
+  limit = 10
 ): Promise<IOCompatibilityResult> {
   const startTime = Date.now();
 

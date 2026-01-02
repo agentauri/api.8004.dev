@@ -269,7 +269,10 @@ async function indexAgentsToQdrant(
       await qdrant.upsertAgent(agentId, vector, payload);
       indexed++;
     } catch (error) {
-      console.error(`Failed to index ${agentId}:`, error);
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to index ${agentId}:`, message);
+      // Note: This function doesn't have access to result.errors
+      // Caller should handle failures by checking indexed count
     }
   }
 

@@ -8,7 +8,7 @@
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import { CACHE_TTL, createCacheService } from '@/services/cache';
-import { composeTeam, type ComposeRequest } from '@/services/compose';
+import { type ComposeRequest, composeTeam } from '@/services/compose';
 import type { Env, Variables } from '@/types';
 import { Hono } from 'hono';
 import { z } from 'zod';

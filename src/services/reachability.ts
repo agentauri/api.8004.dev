@@ -134,9 +134,7 @@ export function createReachabilityService(db: D1Database): ReachabilityService {
       };
     },
 
-    async getAgentReachabilitiesBatch(
-      agentIds: string[]
-    ): Promise<Map<string, AgentReachability>> {
+    async getAgentReachabilitiesBatch(agentIds: string[]): Promise<Map<string, AgentReachability>> {
       const reachabilityMap = new Map<string, AgentReachability>();
 
       // Return empty map if no agent IDs provided

@@ -5,7 +5,7 @@
 
 import { createEASIndexerService } from '@/services/eas-indexer';
 import { createSearchService } from '@/services/search';
-import { syncFromGraph, syncFromSDK, syncD1ToQdrant } from '@/services/sync';
+import { syncD1ToQdrant, syncFromGraph, syncFromSDK } from '@/services/sync';
 import type { Env, HealthResponse, ServiceStatus, Variables } from '@/types';
 import { Hono } from 'hono';
 
@@ -144,7 +144,8 @@ health.post('/sync-qdrant', async (c) => {
     return c.json(
       {
         success: false,
-        error: 'Missing required environment variables: QDRANT_URL, QDRANT_API_KEY, or VENICE_API_KEY',
+        error:
+          'Missing required environment variables: QDRANT_URL, QDRANT_API_KEY, or VENICE_API_KEY',
       },
       500
     );
@@ -162,10 +163,17 @@ health.post('/sync-qdrant', async (c) => {
     // Use SDK sync if no Graph API key, otherwise use Graph sync
     const useSDK = !env.GRAPH_API_KEY;
 
-    let agentSyncResult: { newAgents: number; updatedAgents: number; errors: string[]; reembedded?: number };
+    let agentSyncResult: {
+      newAgents: number;
+      updatedAgents: number;
+      errors: string[];
+      reembedded?: number;
+    };
 
     if (useSDK) {
-      console.info(`Using SDK sync (limit: ${limit}, batchSize: ${batchSize}, includeAll: ${includeAll})`);
+      console.info(
+        `Using SDK sync (limit: ${limit}, batchSize: ${batchSize}, includeAll: ${includeAll})`
+      );
       agentSyncResult = await syncFromSDK(env, qdrantEnv, { limit, batchSize, includeAll });
     } else {
       console.info('Using Graph sync');
@@ -276,14 +284,11 @@ health.get('/qdrant', async (c) => {
 
   try {
     // Check collection info
-    const response = await fetch(
-      `${env.QDRANT_URL}/collections/${collection}`,
-      {
-        headers: {
-          'api-key': env.QDRANT_API_KEY,
-        },
-      }
-    );
+    const response = await fetch(`${env.QDRANT_URL}/collections/${collection}`, {
+      headers: {
+        'api-key': env.QDRANT_API_KEY,
+      },
+    });
 
     if (!response.ok) {
       return c.json({

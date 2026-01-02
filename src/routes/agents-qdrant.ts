@@ -4,7 +4,6 @@
  * @module routes/agents-qdrant
  */
 
-import { findComplementaryAgents, findIOCompatibleAgents } from '@/services/complementarity';
 import { enqueueClassificationsBatch, getClassification } from '@/db/queries';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
@@ -15,6 +14,7 @@ import {
   parseClassificationRow,
 } from '@/lib/utils/validation';
 import { CACHE_KEYS, CACHE_TTL, createCacheService } from '@/services/cache';
+import { findComplementaryAgents, findIOCompatibleAgents } from '@/services/complementarity';
 import { createIPFSService } from '@/services/ipfs';
 import { resolveClassification, toOASFClassification } from '@/services/oasf-resolver';
 import {
@@ -174,9 +174,7 @@ agents.get('/', async (c) => {
   let usedSdkFallback = false;
 
   const shouldFallback =
-    searchResult.results.length === 0 &&
-    !query.q &&
-    query.hasRegistrationFile !== false; // Don't fallback if user wants agents without reg files
+    searchResult.results.length === 0 && !query.q && query.hasRegistrationFile !== false; // Don't fallback if user wants agents without reg files
 
   if (shouldFallback) {
     console.info('Qdrant returned 0 results, falling back to SDK...');
@@ -248,7 +246,10 @@ agents.get('/', async (c) => {
         return c.json(fallbackResponse);
       }
     } catch (sdkError) {
-      console.error('SDK fallback failed:', sdkError instanceof Error ? sdkError.message : sdkError);
+      console.error(
+        'SDK fallback failed:',
+        sdkError instanceof Error ? sdkError.message : sdkError
+      );
       // Continue with empty Qdrant results if SDK also fails
     }
   }

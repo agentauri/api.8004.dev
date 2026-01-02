@@ -697,7 +697,10 @@ agents.get('/', async (c) => {
   // Fetch chain stats for accurate total count (from KV cache)
   // Use withRegistrationFileCount because this endpoint only returns agents with metadata
   const chainStats = await getCachedChainStats(c.env, sdk);
-  const totalAgentsFromStats = chainStats.reduce((sum, ch) => sum + ch.withRegistrationFileCount, 0);
+  const totalAgentsFromStats = chainStats.reduce(
+    (sum, ch) => sum + ch.withRegistrationFileCount,
+    0
+  );
 
   if (isOrMode) {
     // OR mode: run separate queries for each boolean filter and merge results

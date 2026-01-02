@@ -202,9 +202,10 @@ export class QdrantSearchService {
 
     if (isRelevanceSort) {
       // For reranking, fetch more results initially (reranker topK)
-      const fetchLimit = options.useReranker && this.reranker
-        ? Math.max(options.limit, this.reranker.getTopK())
-        : options.limit;
+      const fetchLimit =
+        options.useReranker && this.reranker
+          ? Math.max(options.limit, this.reranker.getTopK())
+          : options.limit;
 
       // Direct vector search with Qdrant's native sorting
       const result = await this.qdrant.search({
@@ -691,10 +692,7 @@ export function createQdrantSearchService(env: Env): QdrantSearchService {
   // Return mock for E2E testing
   // The mock is injected via the createMockQdrantSearchServiceInstance function
   // which is set by tests when MOCK_EXTERNAL_SERVICES=true
-  if (
-    env.MOCK_EXTERNAL_SERVICES === 'true' &&
-    _mockQdrantSearchServiceFactory !== null
-  ) {
+  if (env.MOCK_EXTERNAL_SERVICES === 'true' && _mockQdrantSearchServiceFactory !== null) {
     return _mockQdrantSearchServiceFactory() as unknown as QdrantSearchService;
   }
 

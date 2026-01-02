@@ -7,14 +7,10 @@
 
 import { formatAgentText } from '@/lib/ai/formatting';
 import type { AgentPayload } from '../../lib/qdrant/types';
+import type { Env } from '../../types';
 import { generateEmbedding } from '../embedding';
 import { createQdrantClient } from '../qdrant';
-import {
-  type SubgraphRawAgent,
-  createSDKService,
-  fetchAllAgentsFromSubgraph,
-} from '../sdk';
-import type { Env } from '../../types';
+import { type SubgraphRawAgent, createSDKService, fetchAllAgentsFromSubgraph } from '../sdk';
 
 // Supported chains for direct subgraph queries
 const SYNC_CHAINS = [11155111, 84532, 80002]; // Sepolia, Base Sepolia, Polygon Amoy
@@ -29,17 +25,21 @@ function agentIdToUUID(agentId: string): string {
   let hash = 0;
   for (let i = 0; i < agentId.length; i++) {
     const char = agentId.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
+    hash = (hash << 5) - hash + char;
     hash = hash & hash; // Convert to 32bit integer
   }
 
   // Create deterministic hex from agentId
   // We'll pad/repeat the agentId to get enough chars
   const base = agentId.replace(':', '').padEnd(32, '0');
-  const hex = base.split('').map((c, i) => {
-    const code = c.charCodeAt(0) + i + Math.abs(hash);
-    return (code % 16).toString(16);
-  }).join('').slice(0, 32);
+  const hex = base
+    .split('')
+    .map((c, i) => {
+      const code = c.charCodeAt(0) + i + Math.abs(hash);
+      return (code % 16).toString(16);
+    })
+    .join('')
+    .slice(0, 32);
 
   // Format as UUID: 8-4-4-4-12
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
@@ -192,7 +192,9 @@ export async function syncFromSDK(
     errors: [],
   };
 
-  console.info(`SDK sync: fetching up to ${limit} agents (batch size: ${batchSize}, includeAll: ${includeAll})...`);
+  console.info(
+    `SDK sync: fetching up to ${limit} agents (batch size: ${batchSize}, includeAll: ${includeAll})...`
+  );
 
   // Determine which approach to use:
   // - includeAll=true: Direct subgraph query (gets ALL agents including those without reg files)
@@ -273,7 +275,10 @@ export async function syncFromSDK(
       }
       console.info(`SDK sync: ${existingIds.size} existing agents in Qdrant`);
     } catch (error) {
-      console.warn('SDK sync: could not fetch existing IDs:', error);
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.warn('SDK sync: could not fetch existing IDs:', errMsg);
+      result.errors.push(`Failed to fetch existing Qdrant IDs: ${errMsg}`);
+      // Continue with empty set - all agents will be treated as new
     }
   }
 
@@ -289,7 +294,11 @@ export async function syncFromSDK(
 
         // Generate embedding text based on whether agent has registration file
         let text: string;
-        if (payload.has_registration_file && payload.name && payload.name !== `Agent ${payload.token_id}`) {
+        if (
+          payload.has_registration_file &&
+          payload.name &&
+          payload.name !== `Agent ${payload.token_id}`
+        ) {
           // Full text for agents with registration files
           text = formatAgentText({
             name: payload.name,
@@ -338,7 +347,9 @@ export async function syncFromSDK(
     if (points.length > 0) {
       try {
         await qdrant.upsert(points);
-        console.info(`SDK sync: upserted batch ${Math.floor(i / batchSize) + 1}, ${points.length} agents`);
+        console.info(
+          `SDK sync: upserted batch ${Math.floor(i / batchSize) + 1}, ${points.length} agents`
+        );
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : String(error);
         result.errors.push(`Batch upsert failed: ${errMsg}`);

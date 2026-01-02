@@ -13,7 +13,6 @@
  */
 
 import type { Env } from '../types';
-import type { AgentPayload } from '../lib/qdrant/types';
 import { createQdrantSearchService } from './qdrant-search';
 
 /**
@@ -181,10 +180,7 @@ function analyzeTaskKeywords(task: string): {
 
   // Check for workflow cluster matches
   for (const [cluster, clusterSkills] of Object.entries(SKILL_CLUSTERS)) {
-    if (
-      taskLower.includes(cluster) ||
-      taskLower.includes(cluster.replace('_', ' '))
-    ) {
+    if (taskLower.includes(cluster) || taskLower.includes(cluster.replace('_', ' '))) {
       for (const skill of clusterSkills.slice(0, 3)) {
         skills.push({
           skill,
@@ -293,8 +289,7 @@ function calculateAgentFitness(
   const matchedSkills = agentSkills.filter((s) => requiredSkills.includes(s));
   const matchedDomains = agentDomains.filter((d) => requiredDomains.includes(d));
 
-  const skillScore =
-    requiredSkills.length > 0 ? matchedSkills.length / requiredSkills.length : 0;
+  const skillScore = requiredSkills.length > 0 ? matchedSkills.length / requiredSkills.length : 0;
   const domainScore =
     requiredDomains.length > 0 ? matchedDomains.length / requiredDomains.length : 0;
 
@@ -351,10 +346,7 @@ function assignRole(skills: string[]): string {
 /**
  * Compose a team of agents for a given task
  */
-export async function composeTeam(
-  env: Env,
-  request: ComposeRequest
-): Promise<TeamComposition> {
+export async function composeTeam(env: Env, request: ComposeRequest): Promise<TeamComposition> {
   const startTime = Date.now();
 
   // Analyze task requirements
@@ -504,8 +496,7 @@ export async function composeTeam(
   const skillGaps = skillSlugs.filter((s) => !coveredSkills.has(s));
 
   // Calculate team fitness score
-  const coverageScore =
-    skillSlugs.length > 0 ? 1 - skillGaps.length / skillSlugs.length : 1;
+  const coverageScore = skillSlugs.length > 0 ? 1 - skillGaps.length / skillSlugs.length : 1;
   const avgFitness =
     team.length > 0 ? team.reduce((sum, m) => sum + m.fitnessScore, 0) / team.length : 0;
   const teamFitnessScore = coverageScore * 0.6 + avgFitness * 0.4;

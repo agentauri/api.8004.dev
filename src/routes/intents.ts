@@ -7,13 +7,13 @@
  * @module routes/intents
  */
 
-import { Hono } from 'hono';
-import { z } from 'zod';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
-import { createIntentService } from '@/services/intent';
 import { CACHE_TTL, createCacheService } from '@/services/cache';
+import { createIntentService } from '@/services/intent';
 import type { Env, Variables } from '@/types';
+import { Hono } from 'hono';
+import { z } from 'zod';
 
 const intents = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -156,8 +156,9 @@ intents.post('/:templateId/match', async (c) => {
       return errors.validationError(c, result.error.errors[0]?.message ?? 'Invalid request');
     }
     constraints = result.data;
-  } catch {
-    constraints = { limit: 5 };
+  } catch (error) {
+    console.error('Failed to parse match request body:', error);
+    return errors.validationError(c, 'Invalid request body format');
   }
 
   const intentService = createIntentService(c.env.DB, c.env);

@@ -187,7 +187,7 @@ export class TrustGraphService {
   /**
    * Get top trusted agents
    */
-  async getTopTrustedAgents(limit: number = 100): Promise<AgentTrustScore[]> {
+  async getTopTrustedAgents(limit = 100): Promise<AgentTrustScore[]> {
     const { results } = await this.db
       .prepare(
         `SELECT * FROM agent_trust_scores

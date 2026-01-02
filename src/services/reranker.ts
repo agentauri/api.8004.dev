@@ -50,6 +50,10 @@ export interface RerankResult {
   itemsReranked: number;
   /** Model used for reranking */
   modelUsed: string;
+  /** Whether reranking failed (results are in original order) */
+  rerankerFailed?: boolean;
+  /** Error message if reranking failed */
+  rerankerError?: string;
 }
 
 /**
@@ -105,7 +109,10 @@ export class RerankerService {
             originalScore: item.score,
           };
         })
-        .filter((item): item is SearchResultItem & { rerankerScore: number; originalScore: number } => item !== null);
+        .filter(
+          (item): item is SearchResultItem & { rerankerScore: number; originalScore: number } =>
+            item !== null
+        );
 
       // Append remaining items at the end
       const result = [...reranked, ...remainingItems];
@@ -117,13 +124,16 @@ export class RerankerService {
         modelUsed: this.modelName,
       };
     } catch (error) {
-      console.error('Reranking failed:', error);
-      // Return original order on error
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Reranking failed:', errorMessage, error);
+      // Return original order on error with failure indication
       return {
         items,
         rerankTimeMs: Date.now() - startTime,
         itemsReranked: 0,
         modelUsed: 'error',
+        rerankerFailed: true,
+        rerankerError: errorMessage,
       };
     }
   }

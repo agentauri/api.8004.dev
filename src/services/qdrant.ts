@@ -343,15 +343,11 @@ export class QdrantClient {
     fieldType: 'keyword' | 'integer' | 'float' | 'bool' | 'geo' | 'datetime' | 'text',
     wait = true
   ): Promise<void> {
-    await this.request<{ status: string }>(
-      'PUT',
-      `/collections/${this.collection}/index`,
-      {
-        field_name: fieldName,
-        field_schema: fieldType,
-        wait,
-      }
-    );
+    await this.request<{ status: string }>('PUT', `/collections/${this.collection}/index`, {
+      field_name: fieldName,
+      field_schema: fieldType,
+      wait,
+    });
   }
 
   /**

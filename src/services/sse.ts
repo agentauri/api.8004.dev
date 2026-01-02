@@ -290,7 +290,9 @@ export function createSSEResponse(
 /**
  * Parse SSE subscription query parameters
  */
-export function parseSSEFilters(params: Record<string, string | undefined>): SSESubscriptionFilters {
+export function parseSSEFilters(
+  params: Record<string, string | undefined>
+): SSESubscriptionFilters {
   const filters: SSESubscriptionFilters = {};
 
   if (params.agentIds) {

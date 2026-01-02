@@ -132,7 +132,8 @@ function parseJsonArray(value: string | null): string[] {
   try {
     const parsed = JSON.parse(value);
     return Array.isArray(parsed) ? parsed : [];
-  } catch {
+  } catch (error) {
+    console.error('Failed to parse JSON array value:', { value, error });
     return [];
   }
 }
@@ -149,11 +150,13 @@ export class IntentService {
   /**
    * Get all templates
    */
-  async getTemplates(options: {
-    category?: string;
-    featuredOnly?: boolean;
-    activeOnly?: boolean;
-  } = {}): Promise<IntentTemplate[]> {
+  async getTemplates(
+    options: {
+      category?: string;
+      featuredOnly?: boolean;
+      activeOnly?: boolean;
+    } = {}
+  ): Promise<IntentTemplate[]> {
     const { category, featuredOnly = false, activeOnly = true } = options;
 
     let query = 'SELECT * FROM intent_templates WHERE 1=1';
@@ -310,12 +313,8 @@ export class IntentService {
         const hasA2a = result.metadata?.hasA2a ?? false;
 
         // Calculate skill match
-        const matchedSkills = step.requiredSkills.filter((s) =>
-          agentSkills.includes(s)
-        );
-        const missingSkills = step.requiredSkills.filter(
-          (s) => !agentSkills.includes(s)
-        );
+        const matchedSkills = step.requiredSkills.filter((s) => agentSkills.includes(s));
+        const missingSkills = step.requiredSkills.filter((s) => !agentSkills.includes(s));
 
         // Skip if missing required skills (unless no skills required)
         if (step.requiredSkills.length > 0 && matchedSkills.length === 0) {
@@ -331,10 +330,7 @@ export class IntentService {
           step.requiredOutputModes.some((m) => agentOutputModes.includes(m));
 
         // Check reputation
-        const effectiveMinRep = Math.max(
-          step.minReputation,
-          minReputation ?? 0
-        );
+        const effectiveMinRep = Math.max(step.minReputation, minReputation ?? 0);
         const meetsReputation = agentReputation >= effectiveMinRep;
 
         // Check protocol requirements
@@ -409,8 +405,7 @@ export class IntentService {
       if (currentBest && nextBest) {
         // For now, assume compatible if both have required modes
         // In production, we'd check actual mode overlap
-        const ioCompatible =
-          currentBest.hasRequiredOutputModes && nextBest.hasRequiredInputModes;
+        const ioCompatible = currentBest.hasRequiredOutputModes && nextBest.hasRequiredInputModes;
 
         currentStep.ioCompatibleWithNext = ioCompatible;
         nextStep.ioCompatibleWithPrevious = ioCompatible;
@@ -420,14 +415,8 @@ export class IntentService {
     // Calculate overall status
     const isComplete = stepResults.every((s) => s.matchedAgents.length > 0);
     const canExecute =
-      isComplete &&
-      stepResults.every(
-        (s) => s.ioCompatibleWithPrevious && s.ioCompatibleWithNext
-      );
-    const totalAgentsMatched = stepResults.reduce(
-      (sum, s) => sum + s.matchedAgents.length,
-      0
-    );
+      isComplete && stepResults.every((s) => s.ioCompatibleWithPrevious && s.ioCompatibleWithNext);
+    const totalAgentsMatched = stepResults.reduce((sum, s) => sum + s.matchedAgents.length, 0);
 
     // Increment usage count
     await this.db
