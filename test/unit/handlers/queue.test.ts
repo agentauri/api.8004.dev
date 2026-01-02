@@ -204,8 +204,12 @@ describe('Scheduled handler', () => {
     const appModule = await import('@/index');
     const { ctx, waitUntilPromises } = createMockExecutionContext();
 
+    // Use a scheduledTime at minute 0 to trigger all hourly syncs (EAS, reconciliation)
+    const hourlyTime = new Date();
+    hourlyTime.setMinutes(0, 0, 0);
+
     await appModule.default.scheduled(
-      { scheduledTime: Date.now(), cron: '0 * * * *' } as ScheduledEvent,
+      { scheduledTime: hourlyTime.getTime(), cron: '0 * * * *' } as ScheduledEvent,
       testEnv(),
       ctx
     );
