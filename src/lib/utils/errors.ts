@@ -5,6 +5,7 @@
 
 import type { ErrorCode, ErrorResponse } from '@/types';
 import type { Context } from 'hono';
+import { z } from 'zod';
 
 /**
  * Application error class with code and status
@@ -109,9 +110,10 @@ export function handleError(error: Error, c: Context): Response {
   }
 
   // Handle Zod validation errors
-  if (error.name === 'ZodError') {
-    const zodError = error as { errors?: Array<{ message: string }> };
-    const message = zodError.errors?.[0]?.message ?? 'Validation failed';
+  // Support both actual z.ZodError instances and plain errors with name='ZodError'
+  if (error instanceof z.ZodError || error.name === 'ZodError') {
+    const zodError = error as z.ZodError | { errors?: Array<{ message: string }>; message: string };
+    const message = zodError.errors?.[0]?.message ?? zodError.message ?? 'Validation failed';
     return errorResponse(c, 400, 'VALIDATION_ERROR', message);
   }
 

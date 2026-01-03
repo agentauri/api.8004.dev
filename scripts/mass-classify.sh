@@ -2,7 +2,12 @@
 # Mass classification script - Uses same pagination logic as frontend
 # Properly URL-encodes cursor for API requests
 
-API_KEY="REDACTED_API_KEY"
+# Require API_KEY from environment
+if [ -z "$API_KEY" ]; then
+    echo "Error: API_KEY environment variable is required"
+    echo "Usage: API_KEY=your_key ./scripts/mass-classify.sh"
+    exit 1
+fi
 BASE_URL="https://api.8004.dev/api/v1"
 BATCH_SIZE=50
 DELAY_BETWEEN_REQUESTS=0.5  # 500ms between requests

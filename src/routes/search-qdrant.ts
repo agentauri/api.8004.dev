@@ -11,6 +11,7 @@ import { CACHE_TTL, createCacheService } from '@/services/cache';
 import { createQdrantSearchService, searchFiltersToAgentFilters } from '@/services/qdrant-search';
 import type { AgentSummary, Env, OASFSource, SearchResponse, Variables } from '@/types';
 import { Hono } from 'hono';
+import { z } from 'zod';
 
 const search = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -29,9 +30,8 @@ search.post('/', async (c) => {
     const rawBody = await c.req.json();
     body = searchRequestSchema.parse(rawBody);
   } catch (error) {
-    if (error instanceof Error && error.name === 'ZodError') {
-      const zodError = error as { errors?: Array<{ message: string }> };
-      return errors.validationError(c, zodError.errors?.[0]?.message ?? 'Invalid request body');
+    if (error instanceof z.ZodError) {
+      return errors.validationError(c, error.errors[0]?.message ?? 'Invalid request body');
     }
     return errors.badRequest(c, 'Invalid JSON body');
   }

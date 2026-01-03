@@ -12,6 +12,7 @@
 
 import { getClassificationsBatch } from '@/db/queries';
 import { errors } from '@/lib/utils/errors';
+import { applyFilters } from '@/lib/utils/filters';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import {
   type SearchRequestBody,
@@ -22,16 +23,10 @@ import {
 import { CACHE_TTL, createCacheService } from '@/services/cache';
 import { createSDKService } from '@/services/sdk';
 import { createSearchService } from '@/services/search';
-import type {
-  AgentDetail,
-  AgentSummary,
-  Env,
-  OASFSource,
-  TrustMethod,
-  Variables,
-} from '@/types';
+import type { AgentDetail, AgentSummary, Env, OASFSource, TrustMethod, Variables } from '@/types';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
+import { z } from 'zod';
 
 const searchStream = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -63,7 +58,10 @@ interface StreamSearchEvent {
 /**
  * Create a stream event
  */
-function createEvent(type: StreamSearchEventType, data: Record<string, unknown>): StreamSearchEvent {
+function createEvent(
+  type: StreamSearchEventType,
+  data: Record<string, unknown>
+): StreamSearchEvent {
   return {
     type,
     timestamp: new Date().toISOString(),
@@ -82,9 +80,8 @@ searchStream.post('/', async (c) => {
     const rawBody = await c.req.json();
     body = searchRequestSchema.parse(rawBody);
   } catch (error) {
-    if (error instanceof Error && error.name === 'ZodError') {
-      const zodError = error as { errors?: Array<{ message: string }> };
-      return errors.validationError(c, zodError.errors?.[0]?.message ?? 'Invalid request body');
+    if (error instanceof z.ZodError) {
+      return errors.validationError(c, error.errors[0]?.message ?? 'Invalid request body');
     }
     return errors.badRequest(c, 'Invalid JSON body');
   }
@@ -97,11 +94,13 @@ searchStream.post('/', async (c) => {
       // Emit search started event
       await stream.writeSSE({
         event: 'search_started',
-        data: JSON.stringify(createEvent('search_started', {
-          query: body.query,
-          limit: body.limit,
-          filters: body.filters,
-        })),
+        data: JSON.stringify(
+          createEvent('search_started', {
+            query: body.query,
+            limit: body.limit,
+            filters: body.filters,
+          })
+        ),
       });
 
       // Create search service
@@ -146,11 +145,13 @@ searchStream.post('/', async (c) => {
       // Emit vector results event
       await stream.writeSSE({
         event: 'vector_results',
-        data: JSON.stringify(createEvent('vector_results', {
-          count: searchResults.results.length,
-          total: searchResults.total,
-          hasMore: searchResults.hasMore,
-        })),
+        data: JSON.stringify(
+          createEvent('vector_results', {
+            count: searchResults.results.length,
+            total: searchResults.total,
+            hasMore: searchResults.hasMore,
+          })
+        ),
       });
 
       // Batch fetch classifications
@@ -160,10 +161,12 @@ searchStream.post('/', async (c) => {
       // Emit enrichment progress
       await stream.writeSSE({
         event: 'enrichment_progress',
-        data: JSON.stringify(createEvent('enrichment_progress', {
-          total: agentIds.length,
-          phase: 'classifications_loaded',
-        })),
+        data: JSON.stringify(
+          createEvent('enrichment_progress', {
+            total: agentIds.length,
+            phase: 'classifications_loaded',
+          })
+        ),
       });
 
       // Enrich with SDK data and stream individual agents
@@ -263,11 +266,13 @@ searchStream.post('/', async (c) => {
         // Stream each enriched agent
         await stream.writeSSE({
           event: 'agent_enriched',
-          data: JSON.stringify(createEvent('agent_enriched', {
-            index: i + 1,
-            total: searchResults.results.length,
-            agent,
-          })),
+          data: JSON.stringify(
+            createEvent('agent_enriched', {
+              index: i + 1,
+              total: searchResults.results.length,
+              agent,
+            })
+          ),
         });
       }
 
@@ -278,23 +283,29 @@ searchStream.post('/', async (c) => {
       // Emit completion event
       await stream.writeSSE({
         event: 'search_complete',
-        data: JSON.stringify(createEvent('search_complete', {
-          query: body.query,
-          total: filteredAgents.length,
-          returned: finalAgents.length,
-          hasMore: filteredAgents.length > body.limit,
-          nextCursor: searchResults.nextCursor,
-          byChain: searchResults.byChain,
-          agents: finalAgents,
-        })),
+        data: JSON.stringify(
+          createEvent('search_complete', {
+            query: body.query,
+            total: filteredAgents.length,
+            returned: finalAgents.length,
+            hasMore: filteredAgents.length > body.limit,
+            nextCursor: searchResults.nextCursor,
+            byChain: searchResults.byChain,
+            agents: finalAgents,
+          })
+        ),
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
+      const requestId = c.get('requestId');
       await stream.writeSSE({
         event: 'error',
-        data: JSON.stringify(createEvent('error', {
-          message,
-        })),
+        data: JSON.stringify(
+          createEvent('error', {
+            message,
+            requestId,
+          })
+        ),
       });
     }
   });
@@ -359,90 +370,11 @@ searchStream.get('/info', async (c) => {
       notes: [
         'Use EventSource API or SSE client library',
         'Each event contains timestamp and typed data',
-        'agent_enriched events stream individual results as they\'re processed',
+        "agent_enriched events stream individual results as they're processed",
         'search_complete contains the final aggregated results',
       ],
     },
   });
 });
-
-/**
- * Check if agent matches basic AND filters (active, chainIds)
- */
-function matchesBasicFilters(agent: AgentSummary, filters: SearchRequestBody['filters']): boolean {
-  if (!filters) return true;
-
-  if (filters.active !== undefined && agent.active !== filters.active) {
-    return false;
-  }
-
-  if (filters.chainIds?.length && !filters.chainIds.includes(agent.chainId)) {
-    return false;
-  }
-
-  return true;
-}
-
-/**
- * Check if agent matches OASF filters (skills, domains)
- */
-function matchesOASFFilters(agent: AgentSummary, filters: SearchRequestBody['filters']): boolean {
-  if (!filters) return true;
-
-  if (filters.skills?.length) {
-    const agentSkillSlugs = agent.oasf?.skills?.map((s) => s.slug) ?? [];
-    const hasMatchingSkill = filters.skills.some((reqSkill) => agentSkillSlugs.includes(reqSkill));
-    if (!hasMatchingSkill) return false;
-  }
-
-  if (filters.domains?.length) {
-    const agentDomainSlugs = agent.oasf?.domains?.map((d) => d.slug) ?? [];
-    const hasMatchingDomain = filters.domains.some((reqDomain) =>
-      agentDomainSlugs.includes(reqDomain)
-    );
-    if (!hasMatchingDomain) return false;
-  }
-
-  return true;
-}
-
-/**
- * Check if agent matches boolean filters (mcp, a2a, x402)
- */
-function matchesBooleanFilters(
-  agent: AgentSummary,
-  filters: SearchRequestBody['filters']
-): boolean {
-  if (!filters) return true;
-
-  const { mcp, a2a, x402, filterMode } = filters;
-  const isOrMode = filterMode === 'OR';
-
-  const booleanFilters: boolean[] = [];
-  if (mcp !== undefined) booleanFilters.push((agent.hasMcp ?? false) === mcp);
-  if (a2a !== undefined) booleanFilters.push((agent.hasA2a ?? false) === a2a);
-  if (x402 !== undefined) booleanFilters.push((agent.x402Support ?? false) === x402);
-
-  if (booleanFilters.length === 0) return true;
-
-  return isOrMode ? booleanFilters.some((b) => b) : booleanFilters.every((b) => b);
-}
-
-/**
- * Apply all filters to agents list
- */
-function applyFilters(
-  agents: AgentSummary[],
-  filters: SearchRequestBody['filters']
-): AgentSummary[] {
-  if (!filters) return agents;
-
-  return agents.filter(
-    (agent) =>
-      matchesBasicFilters(agent, filters) &&
-      matchesOASFFilters(agent, filters) &&
-      matchesBooleanFilters(agent, filters)
-  );
-}
 
 export { searchStream };

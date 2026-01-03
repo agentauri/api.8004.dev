@@ -26,11 +26,11 @@ import { handleError } from '@/lib/utils/errors';
 import { parseAgentId } from '@/lib/utils/validation';
 import { createMcp8004Handler } from '@/mcp';
 import {
+  events,
   agents,
   chains,
   compose,
   evaluate,
-  events,
   health,
   intents,
   openapi,

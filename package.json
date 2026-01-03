@@ -23,13 +23,7 @@
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs"
   },
-  "keywords": [
-    "erc-8004",
-    "agents",
-    "cloudflare-workers",
-    "hono",
-    "oasf"
-  ],
+  "keywords": ["erc-8004", "agents", "cloudflare-workers", "hono", "oasf"],
   "author": "Agent0 Lab",
   "license": "MIT",
   "repository": {

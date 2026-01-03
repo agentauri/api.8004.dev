@@ -2,7 +2,12 @@
 # Mass classification script - Process ALL agents (without hasRegistration filter)
 # This catches agents that were missed due to the pagination bug
 
-API_KEY="REDACTED_API_KEY"
+# Require API_KEY from environment
+if [ -z "$API_KEY" ]; then
+    echo "Error: API_KEY environment variable is required"
+    echo "Usage: API_KEY=your_key ./scripts/mass-classify-remaining.sh"
+    exit 1
+fi
 BASE_URL="https://api.8004.dev/api/v1"
 BATCH_SIZE=100
 DELAY_BETWEEN_REQUESTS=0.4

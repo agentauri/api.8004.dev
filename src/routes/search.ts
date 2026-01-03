@@ -5,6 +5,7 @@
 
 import { getClassificationsBatch } from '@/db/queries';
 import { errors } from '@/lib/utils/errors';
+import { applyFilters } from '@/lib/utils/filters';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import {
   type SearchRequestBody,
@@ -27,90 +28,12 @@ import type {
   Variables,
 } from '@/types';
 import { Hono } from 'hono';
+import { z } from 'zod';
 
 const search = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 // Apply rate limiting
 search.use('*', rateLimit(rateLimitConfigs.standard));
-
-/**
- * Check if agent matches basic AND filters (active, chainIds)
- */
-function matchesBasicFilters(agent: AgentSummary, filters: SearchRequestBody['filters']): boolean {
-  if (!filters) return true;
-
-  if (filters.active !== undefined && agent.active !== filters.active) {
-    return false;
-  }
-
-  if (filters.chainIds?.length && !filters.chainIds.includes(agent.chainId)) {
-    return false;
-  }
-
-  return true;
-}
-
-/**
- * Check if agent matches OASF filters (skills, domains)
- */
-function matchesOASFFilters(agent: AgentSummary, filters: SearchRequestBody['filters']): boolean {
-  if (!filters) return true;
-
-  if (filters.skills?.length) {
-    const agentSkillSlugs = agent.oasf?.skills?.map((s) => s.slug) ?? [];
-    const hasMatchingSkill = filters.skills.some((reqSkill) => agentSkillSlugs.includes(reqSkill));
-    if (!hasMatchingSkill) return false;
-  }
-
-  if (filters.domains?.length) {
-    const agentDomainSlugs = agent.oasf?.domains?.map((d) => d.slug) ?? [];
-    const hasMatchingDomain = filters.domains.some((reqDomain) =>
-      agentDomainSlugs.includes(reqDomain)
-    );
-    if (!hasMatchingDomain) return false;
-  }
-
-  return true;
-}
-
-/**
- * Check if agent matches boolean filters (mcp, a2a, x402)
- */
-function matchesBooleanFilters(
-  agent: AgentSummary,
-  filters: SearchRequestBody['filters']
-): boolean {
-  if (!filters) return true;
-
-  const { mcp, a2a, x402, filterMode } = filters;
-  const isOrMode = filterMode === 'OR';
-
-  const booleanFilters: boolean[] = [];
-  if (mcp !== undefined) booleanFilters.push((agent.hasMcp ?? false) === mcp);
-  if (a2a !== undefined) booleanFilters.push((agent.hasA2a ?? false) === a2a);
-  if (x402 !== undefined) booleanFilters.push((agent.x402Support ?? false) === x402);
-
-  if (booleanFilters.length === 0) return true;
-
-  return isOrMode ? booleanFilters.some((b) => b) : booleanFilters.every((b) => b);
-}
-
-/**
- * Apply all filters to agents list
- */
-function applyFilters(
-  agents: AgentSummary[],
-  filters: SearchRequestBody['filters']
-): AgentSummary[] {
-  if (!filters) return agents;
-
-  return agents.filter(
-    (agent) =>
-      matchesBasicFilters(agent, filters) &&
-      matchesOASFFilters(agent, filters) &&
-      matchesBooleanFilters(agent, filters)
-  );
-}
 
 /**
  * Perform SDK-based name substring search
@@ -188,9 +111,8 @@ search.post('/', async (c) => {
     const rawBody = await c.req.json();
     body = searchRequestSchema.parse(rawBody);
   } catch (error) {
-    if (error instanceof Error && error.name === 'ZodError') {
-      const zodError = error as { errors?: Array<{ message: string }> };
-      return errors.validationError(c, zodError.errors?.[0]?.message ?? 'Invalid request body');
+    if (error instanceof z.ZodError) {
+      return errors.validationError(c, error.errors[0]?.message ?? 'Invalid request body');
     }
     return errors.badRequest(c, 'Invalid JSON body');
   }

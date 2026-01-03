@@ -9,6 +9,83 @@
 export const DEFAULT_TIMEOUT_MS = 10_000;
 
 /**
+ * Error class for SSRF protection
+ */
+export class SSRFProtectionError extends Error {
+  constructor(url: string, reason: string) {
+    super(`SSRF protection blocked request to ${url}: ${reason}`);
+    this.name = 'SSRFProtectionError';
+  }
+}
+
+/**
+ * Private/internal IP ranges that should be blocked for SSRF protection
+ */
+const BLOCKED_IP_PATTERNS = [
+  /^127\./, // 127.0.0.0/8 (localhost)
+  /^10\./, // 10.0.0.0/8 (private)
+  /^172\.(1[6-9]|2[0-9]|3[0-1])\./, // 172.16.0.0/12 (private)
+  /^192\.168\./, // 192.168.0.0/16 (private)
+  /^169\.254\./, // 169.254.0.0/16 (link-local)
+  /^0\./, // 0.0.0.0/8
+  /^224\./, // 224.0.0.0/4 (multicast)
+  /^240\./, // 240.0.0.0/4 (reserved)
+  /^::1$/, // IPv6 localhost
+  /^fc00:/i, // IPv6 unique local
+  /^fe80:/i, // IPv6 link-local
+];
+
+/**
+ * Blocked hostnames for SSRF protection
+ */
+const BLOCKED_HOSTNAMES = [
+  'localhost',
+  'localhost.localdomain',
+  'metadata.google.internal',
+  '169.254.169.254', // AWS/GCP metadata
+  'metadata.google',
+  'metadata',
+];
+
+/**
+ * Validate URL for SSRF protection
+ * @param url URL to validate
+ * @throws SSRFProtectionError if URL is potentially dangerous
+ */
+export function validateUrlForSSRF(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new SSRFProtectionError(url, 'Invalid URL');
+  }
+
+  // Only allow HTTPS (block HTTP)
+  if (parsed.protocol !== 'https:') {
+    throw new SSRFProtectionError(url, 'Only HTTPS URLs are allowed');
+  }
+
+  // Block localhost and internal hostnames
+  const hostname = parsed.hostname.toLowerCase();
+  if (BLOCKED_HOSTNAMES.includes(hostname)) {
+    throw new SSRFProtectionError(url, 'Blocked hostname');
+  }
+
+  // Block private/internal IP addresses
+  for (const pattern of BLOCKED_IP_PATTERNS) {
+    if (pattern.test(hostname)) {
+      throw new SSRFProtectionError(url, 'Blocked IP range');
+    }
+  }
+
+  // Block suspicious ports (only allow 443 for HTTPS or default)
+  const port = parsed.port;
+  if (port && port !== '443') {
+    throw new SSRFProtectionError(url, 'Non-standard port not allowed');
+  }
+}
+
+/**
  * Error class for fetch timeout
  */
 export class FetchTimeoutError extends Error {

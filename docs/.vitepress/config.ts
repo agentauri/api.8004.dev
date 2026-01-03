@@ -18,7 +18,13 @@ export default defineConfig({
     ['meta', { name: 'theme-color', content: '#5f6bff' }],
     ['meta', { property: 'og:type', content: 'website' }],
     ['meta', { property: 'og:title', content: '8004 API Documentation' }],
-    ['meta', { property: 'og:description', content: 'AI Agent Registry API - Discover, evaluate, and compose AI agents on blockchain' }],
+    [
+      'meta',
+      {
+        property: 'og:description',
+        content: 'AI Agent Registry API - Discover, evaluate, and compose AI agents on blockchain',
+      },
+    ],
   ],
 
   themeConfig: {
@@ -61,9 +67,7 @@ export default defineConfig({
       '/api/': [
         {
           text: 'API Reference',
-          items: [
-            { text: 'Overview', link: '/api/' },
-          ],
+          items: [{ text: 'Overview', link: '/api/' }],
         },
         {
           text: 'Agent Discovery',
@@ -132,9 +136,7 @@ export default defineConfig({
       ],
     },
 
-    socialLinks: [
-      { icon: 'github', link: 'https://github.com/agentauri/api.8004.dev' },
-    ],
+    socialLinks: [{ icon: 'github', link: 'https://github.com/agentauri/api.8004.dev' }],
 
     footer: {
       message: 'Released under the MIT License.',
