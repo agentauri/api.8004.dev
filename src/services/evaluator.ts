@@ -239,6 +239,59 @@ interface A2ATaskResponse {
 }
 
 /**
+ * Helper: Calculate overall evaluation score from test results
+ */
+function calculateOverallScore(tests: TestResult[]): number {
+  const capabilityTests = tests.filter((t) => t.type === 'capability');
+  const safetyTests = tests.filter((t) => t.type === 'safety');
+
+  if (capabilityTests.length === 0 && safetyTests.length === 0) {
+    return 0;
+  }
+
+  const capabilityScore =
+    capabilityTests.length > 0
+      ? capabilityTests.reduce((sum, t) => sum + t.score, 0) / capabilityTests.length
+      : 0;
+
+  const safetyScore =
+    safetyTests.length > 0
+      ? safetyTests.reduce((sum, t) => sum + t.score, 0) / safetyTests.length
+      : 100;
+
+  // Weight: 70% capability, 30% safety
+  return Math.round(capabilityScore * 0.7 + safetyScore * 0.3);
+}
+
+/**
+ * Helper: Calculate average latency from tests
+ */
+function calculateAvgLatency(tests: TestResult[], totalLatency: number): number {
+  const testsWithLatency = tests.filter((t) => t.latencyMs > 0);
+  return testsWithLatency.length > 0 ? Math.round(totalLatency / testsWithLatency.length) : 0;
+}
+
+/**
+ * Helper: Process skill test results to determine verified/failed skills
+ */
+function processSkillResults(
+  tests: TestResult[],
+  skill: string,
+  verifiedSkills: string[],
+  failedSkills: string[]
+): void {
+  const skillTests = tests.filter(
+    (t) => BENCHMARK_TESTS.find((b) => b.id === t.testId)?.skill === skill
+  );
+  const anyPassed = skillTests.some((t) => t.passed);
+  if (anyPassed && !verifiedSkills.includes(skill)) {
+    verifiedSkills.push(skill);
+  } else if (!anyPassed && !failedSkills.includes(skill)) {
+    failedSkills.push(skill);
+  }
+}
+
+/**
  * Create an evaluator service instance
  */
 export function createEvaluatorService(config: EvaluatorConfig): EvaluatorService {
@@ -261,16 +314,13 @@ export function createEvaluatorService(config: EvaluatorConfig): EvaluatorServic
       const tests: TestResult[] = [];
       const verifiedSkills: string[] = [];
       const failedSkills: string[] = [];
-      let isReachable = false;
       let totalLatency = 0;
 
       // Step 1: Reachability test
       const reachabilityResult = await testReachability(a2aEndpoint, mcpEndpoint, requestTimeout);
       tests.push(reachabilityResult);
-      isReachable = reachabilityResult.passed;
 
-      if (!isReachable) {
-        // If not reachable, skip capability tests
+      if (!reachabilityResult.passed) {
         return {
           agentId,
           chainId,
@@ -284,93 +334,38 @@ export function createEvaluatorService(config: EvaluatorConfig): EvaluatorServic
         };
       }
 
-      // Step 2: Run capability tests for claimed skills
+      // Step 2: Run capability and safety tests
       const endpoint = a2aEndpoint || mcpEndpoint;
       if (endpoint) {
+        // Run capability tests for each skill
         for (const skill of claimedSkills) {
-          const relevantTests = BENCHMARK_TESTS.filter(
-            (t) => t.skill === skill && t.type === 'capability'
-          );
-
-          for (const test of relevantTests) {
-            const result = await runCapabilityTest(
-              endpoint,
-              test,
-              genAI,
-              gradingModel,
-              requestTimeout,
-              maxResponseLength
-            );
+          const skillTests = BENCHMARK_TESTS.filter((t) => t.skill === skill && t.type === 'capability');
+          for (const test of skillTests) {
+            const result = await runCapabilityTest(endpoint, test, genAI, gradingModel, requestTimeout, maxResponseLength);
             tests.push(result);
             totalLatency += result.latencyMs;
-
-            if (result.passed) {
-              if (!verifiedSkills.includes(skill)) {
-                verifiedSkills.push(skill);
-              }
-            }
           }
-
-          // If no tests passed for this skill, mark as failed
-          const skillTests = tests.filter(
-            (t) => BENCHMARK_TESTS.find((b) => b.id === t.testId)?.skill === skill
-          );
-          const anyPassed = skillTests.some((t) => t.passed);
-          if (!anyPassed && !failedSkills.includes(skill)) {
-            failedSkills.push(skill);
-          }
+          processSkillResults(tests, skill, verifiedSkills, failedSkills);
         }
 
-        // Step 3: Run safety tests
-        const safetyTests = BENCHMARK_TESTS.filter((t) => t.type === 'safety');
-        for (const test of safetyTests) {
-          const result = await runCapabilityTest(
-            endpoint,
-            test,
-            genAI,
-            gradingModel,
-            requestTimeout,
-            maxResponseLength
-          );
+        // Run safety tests
+        for (const test of BENCHMARK_TESTS.filter((t) => t.type === 'safety')) {
+          const result = await runCapabilityTest(endpoint, test, genAI, gradingModel, requestTimeout, maxResponseLength);
           tests.push(result);
           totalLatency += result.latencyMs;
         }
       }
 
-      // Calculate overall score
-      const capabilityTests = tests.filter((t) => t.type === 'capability');
-      const safetyTestResults = tests.filter((t) => t.type === 'safety');
-
-      let overallScore = 0;
-      if (capabilityTests.length > 0 || safetyTestResults.length > 0) {
-        const capabilityScore =
-          capabilityTests.length > 0
-            ? capabilityTests.reduce((sum, t) => sum + t.score, 0) / capabilityTests.length
-            : 0;
-
-        const safetyScore =
-          safetyTestResults.length > 0
-            ? safetyTestResults.reduce((sum, t) => sum + t.score, 0) / safetyTestResults.length
-            : 100;
-
-        // Weight: 70% capability, 30% safety
-        overallScore = Math.round(capabilityScore * 0.7 + safetyScore * 0.3);
-      }
-
-      const testsWithLatency = tests.filter((t) => t.latencyMs > 0);
-      const avgLatencyMs =
-        testsWithLatency.length > 0 ? Math.round(totalLatency / testsWithLatency.length) : 0;
-
       return {
         agentId,
         chainId,
         evaluatedAt: new Date().toISOString(),
-        overallScore,
+        overallScore: calculateOverallScore(tests),
         tests,
         verifiedSkills: verifiedSkills.map((s) => SKILL_TO_OASF[s] ?? s),
         failedSkills: failedSkills.map((s) => SKILL_TO_OASF[s] ?? s),
-        isReachable,
-        avgLatencyMs,
+        isReachable: true,
+        avgLatencyMs: calculateAvgLatency(tests, totalLatency),
       };
     },
 
@@ -408,6 +403,49 @@ export interface EvaluatorService {
 }
 
 /**
+ * Try to reach an A2A endpoint
+ */
+async function tryA2AReachability(
+  endpoint: string,
+  timeout: number
+): Promise<{ ok: true; agentName: string } | { ok: false }> {
+  try {
+    const agentCardUrl = `${endpoint.replace(/\/$/, '')}/.well-known/agent.json`;
+    validateUrlForSSRF(agentCardUrl);
+    const response = await fetchWithTimeout(agentCardUrl, { method: 'GET' }, timeout);
+    if (response.ok) {
+      const card = (await response.json()) as A2AAgentCard;
+      return { ok: true, agentName: card.name };
+    }
+  } catch (error) {
+    console.warn('A2A reachability check failed:', error instanceof Error ? error.message : 'Unknown error');
+  }
+  return { ok: false };
+}
+
+/**
+ * Try to reach an MCP endpoint
+ */
+async function tryMCPReachability(endpoint: string, timeout: number): Promise<boolean> {
+  try {
+    validateUrlForSSRF(endpoint);
+    const response = await fetchWithTimeout(
+      endpoint,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/list', params: {}, id: '1' }),
+      },
+      timeout
+    );
+    return response.ok;
+  } catch (error) {
+    console.warn('MCP reachability check failed:', error instanceof Error ? error.message : 'Unknown error');
+  }
+  return false;
+}
+
+/**
  * Test agent endpoint reachability
  */
 async function testReachability(
@@ -420,72 +458,31 @@ async function testReachability(
 
   // Try A2A first (preferred)
   if (a2aEndpoint) {
-    try {
-      const agentCardUrl = a2aEndpoint.replace(/\/$/, '') + '/.well-known/agent.json';
-      // SSRF protection: validate URL before making request
-      validateUrlForSSRF(agentCardUrl);
-      const response = await fetchWithTimeout(agentCardUrl, { method: 'GET' }, timeout);
-
-      if (response.ok) {
-        const card = (await response.json()) as A2AAgentCard;
-        return {
-          testId,
-          type: 'reachability',
-          passed: true,
-          score: 100,
-          latencyMs: Date.now() - startTime,
-          prompt: 'GET /.well-known/agent.json',
-          response: `Agent: ${card.name}`,
-        };
-      }
-    } catch (error) {
-      // Log error and fall through to MCP check
-      console.warn(
-        'A2A reachability check failed:',
-        error instanceof Error ? error.message : 'Unknown error'
-      );
+    const result = await tryA2AReachability(a2aEndpoint, timeout);
+    if (result.ok) {
+      return {
+        testId,
+        type: 'reachability',
+        passed: true,
+        score: 100,
+        latencyMs: Date.now() - startTime,
+        prompt: 'GET /.well-known/agent.json',
+        response: `Agent: ${result.agentName}`,
+      };
     }
   }
 
   // Try MCP endpoint
-  if (mcpEndpoint) {
-    try {
-      // SSRF protection: validate URL before making request
-      validateUrlForSSRF(mcpEndpoint);
-      // MCP uses JSON-RPC, try a simple ping/list request
-      const response = await fetchWithTimeout(
-        mcpEndpoint,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'tools/list',
-            params: {},
-            id: '1',
-          }),
-        },
-        timeout
-      );
-
-      if (response.ok) {
-        return {
-          testId,
-          type: 'reachability',
-          passed: true,
-          score: 100,
-          latencyMs: Date.now() - startTime,
-          prompt: 'tools/list',
-          response: 'MCP endpoint responded',
-        };
-      }
-    } catch (error) {
-      // Log error and fall through to failure
-      console.warn(
-        'MCP reachability check failed:',
-        error instanceof Error ? error.message : 'Unknown error'
-      );
-    }
+  if (mcpEndpoint && (await tryMCPReachability(mcpEndpoint, timeout))) {
+    return {
+      testId,
+      type: 'reachability',
+      passed: true,
+      score: 100,
+      latencyMs: Date.now() - startTime,
+      prompt: 'tools/list',
+      response: 'MCP endpoint responded',
+    };
   }
 
   return {
@@ -584,7 +581,7 @@ async function runCapabilityTest(
     // Truncate response
     const truncatedResponse =
       responseText.length > maxResponseLength
-        ? responseText.substring(0, maxResponseLength) + '...'
+        ? `${responseText.substring(0, maxResponseLength)}...`
         : responseText;
 
     // Grade the response using LLM
@@ -620,11 +617,12 @@ async function runCapabilityTest(
 function sanitizeForPrompt(input: string, maxLength = 2000): string {
   // Truncate first to avoid processing excessive data
   const truncated =
-    input.length > maxLength ? input.substring(0, maxLength) + '...[truncated]' : input;
+    input.length > maxLength ? `${input.substring(0, maxLength)}...[truncated]` : input;
 
   // Replace common prompt injection patterns
   const sanitized = truncated
     // Remove null bytes and other control characters (except newlines/tabs)
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: Intentional - sanitizing control chars for security
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
     // Escape markdown-style formatting that could be used for injection
     .replace(/```/g, "'''")
@@ -710,7 +708,7 @@ Respond in JSON format:
     return {
       passed: false,
       score: 0,
-      reasoning: 'Grading error: ' + (error instanceof Error ? error.message : 'Unknown'),
+      reasoning: `Grading error: ${error instanceof Error ? error.message : 'Unknown'}`,
     };
   }
 }

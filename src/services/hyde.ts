@@ -93,6 +93,7 @@ function sanitizeQueryForPrompt(query: string, maxLength = 500): string {
   // Remove control characters and potential injection patterns
   const sanitized = truncated
     // Remove null bytes and control characters
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: Intentional - sanitizing control chars for security
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
     // Remove attempts to break out of quoted context
     .replace(/"/g, "'")
