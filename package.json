@@ -41,7 +41,7 @@
     "agent0-sdk": "^0.31.0",
     "hono": "^4.11.3",
     "viem": "^2.43.5",
-    "zod": "^3.23.8"
+    "zod": "^4.3.4"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
