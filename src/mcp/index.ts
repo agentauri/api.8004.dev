@@ -229,7 +229,7 @@ const PROMPTS: PromptDefinition[] = [
 async function toolSearchAgents(args: Record<string, unknown>, env: Env): Promise<unknown> {
   const queryResult = querySchema.safeParse(args.query);
   if (!queryResult.success) {
-    throw new Error(`Invalid query: ${queryResult.error.errors[0]?.message}`);
+    throw new Error(`Invalid query: ${queryResult.error.issues[0]?.message}`);
   }
   const query = queryResult.data;
   const limit = limitSchema.parse(args.limit ?? 10);

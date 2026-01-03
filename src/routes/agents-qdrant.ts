@@ -100,7 +100,7 @@ agents.get('/', async (c) => {
 
   const queryResult = listAgentsQuerySchema.safeParse(rawQuery);
   if (!queryResult.success) {
-    return errors.validationError(c, queryResult.error.errors[0]?.message ?? 'Invalid query');
+    return errors.validationError(c, queryResult.error.issues[0]?.message ?? 'Invalid query');
   }
 
   const query = queryResult.data;

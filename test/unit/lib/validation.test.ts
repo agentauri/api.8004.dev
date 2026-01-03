@@ -193,8 +193,8 @@ describe('listAgentsQuerySchema', () => {
   });
 
   it('accepts searchMode parameter', () => {
-    // When not provided, searchMode is undefined (default handled at route level)
-    expect(listAgentsQuerySchema.parse({}).searchMode).toBeUndefined();
+    // When not provided, searchMode defaults to 'auto' (Zod 4 applies .default())
+    expect(listAgentsQuerySchema.parse({}).searchMode).toBe('auto');
 
     // Explicit modes
     expect(listAgentsQuerySchema.parse({ searchMode: 'semantic' }).searchMode).toBe('semantic');
@@ -247,8 +247,8 @@ describe('searchRequestSchema', () => {
   });
 
   it('accepts searchMode parameter', () => {
-    // When not provided, searchMode is undefined (default handled at route level)
-    expect(searchRequestSchema.parse({ query: 'test' }).searchMode).toBeUndefined();
+    // When not provided, searchMode defaults to 'auto' (Zod 4 applies .default())
+    expect(searchRequestSchema.parse({ query: 'test' }).searchMode).toBe('auto');
 
     // Explicit modes
     expect(searchRequestSchema.parse({ query: 'test', searchMode: 'semantic' }).searchMode).toBe(

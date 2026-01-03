@@ -50,7 +50,7 @@ const matchTemplateSchema = z.object({
 intents.get('/', async (c) => {
   const queryResult = listTemplatesSchema.safeParse(c.req.query());
   if (!queryResult.success) {
-    return errors.validationError(c, queryResult.error.errors[0]?.message ?? 'Invalid query');
+    return errors.validationError(c, queryResult.error.issues[0]?.message ?? 'Invalid query');
   }
 
   const { category, featured } = queryResult.data;
@@ -153,7 +153,7 @@ intents.post('/:templateId/match', async (c) => {
     const merged = { ...query, ...body };
     const result = matchTemplateSchema.safeParse(merged);
     if (!result.success) {
-      return errors.validationError(c, result.error.errors[0]?.message ?? 'Invalid request');
+      return errors.validationError(c, result.error.issues[0]?.message ?? 'Invalid request');
     }
     constraints = result.data;
   } catch (error) {
@@ -210,7 +210,7 @@ intents.get('/:templateId/match', async (c) => {
 
   const queryResult = matchTemplateSchema.safeParse(c.req.query());
   if (!queryResult.success) {
-    return errors.validationError(c, queryResult.error.errors[0]?.message ?? 'Invalid query');
+    return errors.validationError(c, queryResult.error.issues[0]?.message ?? 'Invalid query');
   }
 
   const { chainIds, minReputation, limit } = queryResult.data;

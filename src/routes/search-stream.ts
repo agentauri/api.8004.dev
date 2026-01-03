@@ -81,7 +81,7 @@ searchStream.post('/', async (c) => {
     body = searchRequestSchema.parse(rawBody);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return errors.validationError(c, error.errors[0]?.message ?? 'Invalid request body');
+      return errors.validationError(c, error.issues[0]?.message ?? 'Invalid request body');
     }
     return errors.badRequest(c, 'Invalid JSON body');
   }

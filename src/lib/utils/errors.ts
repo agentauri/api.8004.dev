@@ -110,10 +110,10 @@ export function handleError(error: Error, c: Context): Response {
   }
 
   // Handle Zod validation errors
-  // Support both actual z.ZodError instances and plain errors with name='ZodError'
+  // Zod 4 uses .issues for error details
   if (error instanceof z.ZodError || error.name === 'ZodError') {
-    const zodError = error as z.ZodError | { errors?: Array<{ message: string }>; message: string };
-    const message = zodError.errors?.[0]?.message ?? zodError.message ?? 'Validation failed';
+    const zodError = error as z.ZodError;
+    const message = zodError.issues?.[0]?.message ?? zodError.message ?? 'Validation failed';
     return errorResponse(c, 400, 'VALIDATION_ERROR', message);
   }
 

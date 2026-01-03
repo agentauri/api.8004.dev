@@ -73,7 +73,7 @@ compose.post('/', async (c) => {
 
   const result = composeRequestSchema.safeParse(body);
   if (!result.success) {
-    return errors.validationError(c, result.error.errors[0]?.message ?? 'Invalid request');
+    return errors.validationError(c, result.error.issues[0]?.message ?? 'Invalid request');
   }
 
   const request: ComposeRequest = result.data;
