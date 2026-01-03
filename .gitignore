@@ -39,3 +39,7 @@ test-results/
 # Temporary files
 tmp/
 temp/
+
+# VitePress
+docs/.vitepress/cache/
+docs/.vitepress/dist/

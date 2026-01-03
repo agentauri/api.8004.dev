@@ -18,9 +18,18 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "db:migrate": "wrangler d1 execute 8004-backend-db --file=./migrations/0001_init.sql",
-    "db:migrate:local": "wrangler d1 execute 8004-backend-db --local --file=./migrations/0001_init.sql"
+    "db:migrate:local": "wrangler d1 execute 8004-backend-db --local --file=./migrations/0001_init.sql",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
   },
-  "keywords": ["erc-8004", "agents", "cloudflare-workers", "hono", "oasf"],
+  "keywords": [
+    "erc-8004",
+    "agents",
+    "cloudflare-workers",
+    "hono",
+    "oasf"
+  ],
   "author": "Agent0 Lab",
   "license": "MIT",
   "repository": {
@@ -49,6 +58,7 @@
     "dotenv": "^17.2.3",
     "tsx": "^4.21.0",
     "typescript": "^5.7.2",
+    "vitepress": "^1.6.4",
     "vitest": "^2.1.8",
     "wrangler": "^3.93.0"
   },
