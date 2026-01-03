@@ -11,6 +11,7 @@ import type { Env, Variables } from '@/types';
 // Mock the SDK module
 vi.mock('@/services/sdk', () => ({
   fetchValidationsFromSubgraph: vi.fn(),
+  buildSubgraphUrls: vi.fn().mockReturnValue({ 11155111: 'https://mock-subgraph-url' }),
 }));
 
 // Import after mocking
@@ -94,8 +95,9 @@ describe('Validations Route', () => {
       const res = await app.request('/api/v1/agents/11155111:1/validations?limit=5', {}, env);
 
       expect(res.status).toBe(200);
-      // Verify limit was passed to SDK
-      expect(mockFetchValidations).toHaveBeenCalledWith(11155111, '11155111:1', 5);
+      // Verify limit was passed to SDK (with subgraphUrls parameter)
+      // Note: subgraphUrls is empty because GRAPH_API_KEY is not set in test env
+      expect(mockFetchValidations).toHaveBeenCalledWith(11155111, '11155111:1', {}, 5);
     });
 
     it('clamps limit to valid range', async () => {
@@ -105,11 +107,11 @@ describe('Validations Route', () => {
 
       // Test max limit clamping
       await app.request('/api/v1/agents/11155111:1/validations?limit=5000', {}, env);
-      expect(mockFetchValidations).toHaveBeenCalledWith(11155111, '11155111:1', 1000);
+      expect(mockFetchValidations).toHaveBeenCalledWith(11155111, '11155111:1', {}, 1000);
 
       // Test min limit clamping
       await app.request('/api/v1/agents/11155111:1/validations?limit=0', {}, env);
-      expect(mockFetchValidations).toHaveBeenCalledWith(11155111, '11155111:1', 1);
+      expect(mockFetchValidations).toHaveBeenCalledWith(11155111, '11155111:1', {}, 1);
     });
 
     it('rejects invalid agent ID format', async () => {

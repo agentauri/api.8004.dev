@@ -8,7 +8,11 @@
 import { Hono } from 'hono';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
-import { fetchValidationsFromSubgraph, type SubgraphValidation } from '@/services/sdk';
+import {
+  buildSubgraphUrls,
+  fetchValidationsFromSubgraph,
+  type SubgraphValidation,
+} from '@/services/sdk';
 import type { Env, Variables } from '@/types';
 
 const validations = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -81,7 +85,13 @@ validations.get('/', async (c) => {
   const { chainId } = parsed;
 
   // Fetch validations from subgraph
-  const subgraphValidations = await fetchValidationsFromSubgraph(chainId, agentId, validLimit);
+  const subgraphUrls = c.env.GRAPH_API_KEY ? buildSubgraphUrls(c.env.GRAPH_API_KEY) : {};
+  const subgraphValidations = await fetchValidationsFromSubgraph(
+    chainId,
+    agentId,
+    subgraphUrls,
+    validLimit
+  );
 
   if (subgraphValidations.length === 0) {
     return c.json({
@@ -133,7 +143,13 @@ validations.get('/summary', async (c) => {
   const { chainId } = parsed;
 
   // Fetch all validations to get summary
-  const subgraphValidations = await fetchValidationsFromSubgraph(chainId, agentId, 1000);
+  const subgraphUrls = c.env.GRAPH_API_KEY ? buildSubgraphUrls(c.env.GRAPH_API_KEY) : {};
+  const subgraphValidations = await fetchValidationsFromSubgraph(
+    chainId,
+    agentId,
+    subgraphUrls,
+    1000
+  );
 
   const completedCount = subgraphValidations.filter((v) => v.status === 'COMPLETED').length;
   const pendingCount = subgraphValidations.filter((v) => v.status === 'PENDING').length;

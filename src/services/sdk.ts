@@ -337,30 +337,38 @@ function generateMatchReasons(
 let pendingChainStatsPromise: Promise<ChainStats[]> | null = null;
 
 /**
- * Subgraph URLs for direct queries (used by getChainStats for accurate count)
- * All subgraphs are deployed on The Graph Network
+ * Subgraph IDs for each chain (The Graph Network)
  */
-const SUBGRAPH_URLS: Record<number, string> = {
-  // Ethereum Sepolia
-  11155111:
-    'https://gateway.thegraph.com/api/REDACTED_GRAPH_API_KEY/subgraphs/id/6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT',
-  // Base Sepolia
-  84532:
-    'https://gateway.thegraph.com/api/REDACTED_GRAPH_API_KEY/subgraphs/id/GjQEDgEKqoh5Yc8MUgxoQoRATEJdEiH7HbocfR1aFiHa',
-  // Polygon Amoy
-  80002:
-    'https://gateway.thegraph.com/api/REDACTED_GRAPH_API_KEY/subgraphs/id/2A1JB18r1mF2VNP4QBH4mmxd74kbHoM6xLXC8ABAKf7j',
-  // Linea Sepolia
-  59141:
-    'https://gateway.thegraph.com/api/REDACTED_GRAPH_API_KEY/subgraphs/id/7GyxsUkWZ5aDNEqZQhFnMQk8CDxCDgT9WZKqFkNJ7YPx',
-  // Hedera Testnet
-  296: 'https://gateway.thegraph.com/api/REDACTED_GRAPH_API_KEY/subgraphs/id/5GwJ2UKQK3WQhJNqvCqV9EFKBYD6wPYJvFqEPmBKcFsP',
-  // HyperEVM Testnet
-  998: 'https://gateway.thegraph.com/api/REDACTED_GRAPH_API_KEY/subgraphs/id/3L8DKCwQwpLEYF7m3mE8PCvr8qJcJBvXTk3a9f9sLQrP',
-  // SKALE Base Sepolia
-  1351057110:
-    'https://gateway.thegraph.com/api/REDACTED_GRAPH_API_KEY/subgraphs/id/HvYWvsPKqWrSzV8VT4mjLGwPNMgVFgRiNMZFdJUg8BPf',
+const SUBGRAPH_IDS: Record<number, string> = {
+  11155111: '6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT', // Ethereum Sepolia
+  84532: 'GjQEDgEKqoh5Yc8MUgxoQoRATEJdEiH7HbocfR1aFiHa', // Base Sepolia
+  80002: '2A1JB18r1mF2VNP4QBH4mmxd74kbHoM6xLXC8ABAKf7j', // Polygon Amoy
+  59141: '7GyxsUkWZ5aDNEqZQhFnMQk8CDxCDgT9WZKqFkNJ7YPx', // Linea Sepolia
+  296: '5GwJ2UKQK3WQhJNqvCqV9EFKBYD6wPYJvFqEPmBKcFsP', // Hedera Testnet
+  998: '3L8DKCwQwpLEYF7m3mE8PCvr8qJcJBvXTk3a9f9sLQrP', // HyperEVM Testnet
+  1351057110: 'HvYWvsPKqWrSzV8VT4mjLGwPNMgVFgRiNMZFdJUg8BPf', // SKALE Base Sepolia
 };
+
+/**
+ * Build subgraph URL for a chain using the Graph API key
+ */
+function buildSubgraphUrl(chainId: number, graphApiKey: string): string | undefined {
+  const subgraphId = SUBGRAPH_IDS[chainId];
+  if (!subgraphId) return undefined;
+  return `https://gateway.thegraph.com/api/${graphApiKey}/subgraphs/id/${subgraphId}`;
+}
+
+/**
+ * Build all subgraph URLs using the Graph API key
+ */
+export function buildSubgraphUrls(graphApiKey: string): Record<number, string> {
+  const urls: Record<number, string> = {};
+  for (const chainId of Object.keys(SUBGRAPH_IDS)) {
+    const url = buildSubgraphUrl(Number(chainId), graphApiKey);
+    if (url) urls[Number(chainId)] = url;
+  }
+  return urls;
+}
 
 /**
  * Subgraph extra fields not exposed by SDK's AgentSummary
@@ -384,9 +392,10 @@ interface SubgraphAgentExtras {
  */
 async function fetchAgentExtrasFromSubgraph(
   chainId: number,
-  agentId: string
+  agentId: string,
+  subgraphUrls: Record<number, string>
 ): Promise<SubgraphAgentExtras> {
-  const url = SUBGRAPH_URLS[chainId];
+  const url = subgraphUrls[chainId];
   if (!url) return {};
 
   try {
@@ -484,9 +493,10 @@ export interface SubgraphValidation {
 export async function fetchFeedbacksFromSubgraph(
   chainId: number,
   agentId: string,
+  subgraphUrls: Record<number, string>,
   limit = 100
 ): Promise<SubgraphFeedback[]> {
-  const url = SUBGRAPH_URLS[chainId];
+  const url = subgraphUrls[chainId];
   if (!url) return [];
 
   try {
@@ -542,9 +552,10 @@ export async function fetchFeedbacksFromSubgraph(
 export async function fetchValidationsFromSubgraph(
   chainId: number,
   agentId: string,
+  subgraphUrls: Record<number, string>,
   limit = 100
 ): Promise<SubgraphValidation[]> {
-  const url = SUBGRAPH_URLS[chainId];
+  const url = subgraphUrls[chainId];
   if (!url) return [];
 
   try {
@@ -637,6 +648,7 @@ export interface SubgraphRawAgent {
  */
 export async function fetchAllAgentsFromSubgraph(
   chainId: number,
+  subgraphUrls: Record<number, string>,
   options: {
     /** Include only agents WITH registration files (default: false = include ALL) */
     withRegistrationFileOnly?: boolean;
@@ -647,7 +659,7 @@ export async function fetchAllAgentsFromSubgraph(
   } = {}
 ): Promise<SubgraphRawAgent[]> {
   const { withRegistrationFileOnly = false, limit = 5000, skip = 0 } = options;
-  const url = SUBGRAPH_URLS[chainId];
+  const url = subgraphUrls[chainId];
   if (!url) return [];
 
   const allAgents: SubgraphRawAgent[] = [];
@@ -1033,6 +1045,13 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
     return createMockSDKService();
   }
 
+  // Build subgraph URLs using the Graph API key
+  const graphApiKey = env.GRAPH_API_KEY;
+  if (!graphApiKey) {
+    console.warn('GRAPH_API_KEY not configured - subgraph queries will fail');
+  }
+  const subgraphUrls = graphApiKey ? buildSubgraphUrls(graphApiKey) : {};
+
   // Cache SDK instances per chain
   const sdkInstances = new Map<number, SDK>();
 
@@ -1044,7 +1063,7 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
     if (!config) throw new Error(`Unsupported chain: ${chainId}`);
     const rpcUrl = env[config.rpcEnvKey];
     // Pass subgraphOverrides for multi-chain query support
-    const sdk = new SDK({ chainId, rpcUrl, subgraphOverrides: SUBGRAPH_URLS });
+    const sdk = new SDK({ chainId, rpcUrl, subgraphOverrides: subgraphUrls });
     sdkInstances.set(chainId, sdk);
     return sdk;
   }
@@ -1316,7 +1335,7 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
         // Fetch SDK data and subgraph extras in parallel
         const [agent, extras] = await Promise.all([
           sdk.getAgent(agentId),
-          fetchAgentExtrasFromSubgraph(chainId, agentId),
+          fetchAgentExtrasFromSubgraph(chainId, agentId, subgraphUrls),
         ]);
 
         if (!agent) return null;
@@ -1416,7 +1435,7 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
       // Helper to count agents via direct subgraph query (without registrationFile filter)
       // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Pagination loop with safety limits requires multiple exit conditions
       async function countAllAgentsDirectly(chainId: number): Promise<number> {
-        const url = SUBGRAPH_URLS[chainId];
+        const url = subgraphUrls[chainId];
         if (!url) return 0;
 
         let total = 0;

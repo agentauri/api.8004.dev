@@ -10,7 +10,12 @@ import type { AgentPayload } from '../../lib/qdrant/types';
 import type { Env } from '../../types';
 import { generateEmbedding } from '../embedding';
 import { createQdrantClient } from '../qdrant';
-import { createSDKService, fetchAllAgentsFromSubgraph, type SubgraphRawAgent } from '../sdk';
+import {
+  buildSubgraphUrls,
+  createSDKService,
+  fetchAllAgentsFromSubgraph,
+  type SubgraphRawAgent,
+} from '../sdk';
 
 // Supported chains for direct subgraph queries
 const SYNC_CHAINS = [11155111, 84532, 80002]; // Sepolia, Base Sepolia, Polygon Amoy
@@ -206,11 +211,12 @@ export async function syncFromSDK(
     // Use direct subgraph queries to get ALL agents
     console.info('SDK sync: using direct subgraph queries (includeAll=true)');
 
+    const subgraphUrls = env.GRAPH_API_KEY ? buildSubgraphUrls(env.GRAPH_API_KEY) : {};
     const perChainLimit = Math.ceil(limit / SYNC_CHAINS.length);
 
     for (const chainId of SYNC_CHAINS) {
       try {
-        const chainAgents = await fetchAllAgentsFromSubgraph(chainId, {
+        const chainAgents = await fetchAllAgentsFromSubgraph(chainId, subgraphUrls, {
           withRegistrationFileOnly: false, // Get ALL agents
           limit: perChainLimit,
         });
