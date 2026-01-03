@@ -4,9 +4,9 @@
  */
 
 import { env } from 'cloudflare:test';
-import { createEASIndexerService, decodeAttestationData } from '@/services/eas-indexer';
 import { encodeAbiParameters } from 'viem';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createEASIndexerService, decodeAttestationData } from '@/services/eas-indexer';
 
 // Mock fetch
 const mockFetch = vi.fn();

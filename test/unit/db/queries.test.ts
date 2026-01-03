@@ -4,6 +4,7 @@
  */
 
 import { env } from 'cloudflare:test';
+import { describe, expect, it } from 'vitest';
 import {
   cleanupOldJobs,
   deleteClassification,
@@ -32,7 +33,6 @@ import {
   upsertClassification,
   upsertReputation,
 } from '@/db/queries';
-import { describe, expect, it } from 'vitest';
 import { insertMockClassification, insertMockFeedback, insertMockReputation } from '../../setup';
 
 describe('Classification queries', () => {

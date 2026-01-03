@@ -8,7 +8,7 @@ import type { AgentPayload } from '../lib/qdrant/types';
 import type { AgentSummary, Env } from '../types';
 import { type EmbeddingService, formatAgentText } from './embedding';
 import type { QdrantClient } from './qdrant';
-import { type SDKService, SUPPORTED_CHAINS, createSDKService } from './sdk';
+import { createSDKService, type SDKService, SUPPORTED_CHAINS } from './sdk';
 
 /**
  * Indexer configuration

@@ -5,13 +5,13 @@
  * POST /api/v1/compose - Build a team of complementary agents for a task
  */
 
+import { Hono } from 'hono';
+import { z } from 'zod';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import { CACHE_TTL, createCacheService } from '@/services/cache';
 import { type ComposeRequest, composeTeam } from '@/services/compose';
 import type { Env, Variables } from '@/types';
-import { Hono } from 'hono';
-import { z } from 'zod';
 
 const compose = new Hono<{ Bindings: Env; Variables: Variables }>();
 

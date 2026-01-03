@@ -3,8 +3,8 @@
  * @module lib/middleware/api-key
  */
 
-import type { Env, Variables } from '@/types';
 import type { MiddlewareHandler } from 'hono';
+import type { Env, Variables } from '@/types';
 
 /**
  * Extended variables with API key info

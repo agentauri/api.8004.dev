@@ -3,8 +3,8 @@
  * @module lib/middleware/body-limit
  */
 
-import type { Env, Variables } from '@/types';
 import type { MiddlewareHandler } from 'hono';
+import type { Env, Variables } from '@/types';
 import { errors } from '../utils/errors';
 
 /** Default max body size: 100KB */

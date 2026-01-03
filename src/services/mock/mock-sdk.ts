@@ -18,11 +18,11 @@ import type {
 } from '@/services/sdk';
 import type { AgentDetail, AgentSummary, ChainStats } from '@/types';
 import {
-  MOCK_AGENTS_SUMMARY,
+  getMockAgentByChainAndToken,
   MOCK_AGENT_REPUTATION,
+  MOCK_AGENTS_SUMMARY,
   MOCK_CHAIN_STATS,
   MOCK_CLASSIFICATIONS,
-  getMockAgentByChainAndToken,
 } from './fixtures';
 
 /**

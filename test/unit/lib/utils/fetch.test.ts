@@ -3,8 +3,8 @@
  * @module test/unit/lib/utils/fetch
  */
 
-import { DEFAULT_TIMEOUT_MS, FetchTimeoutError, fetchWithTimeout } from '@/lib/utils/fetch';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_TIMEOUT_MS, FetchTimeoutError, fetchWithTimeout } from '@/lib/utils/fetch';
 
 // Mock fetch
 const mockFetch = vi.fn();

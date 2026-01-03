@@ -3,6 +3,7 @@
  * @module routes/classify
  */
 
+import { Hono } from 'hono';
 import { enqueueClassification, getClassification, getQueueStatus } from '@/db/queries';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
@@ -15,7 +16,6 @@ import type {
   Env,
   Variables,
 } from '@/types';
-import { Hono } from 'hono';
 
 const classify = new Hono<{ Bindings: Env; Variables: Variables }>();
 

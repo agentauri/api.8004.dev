@@ -3,11 +3,11 @@
  * @module routes/reputation
  */
 
+import { Hono } from 'hono';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import { createReputationService } from '@/services/reputation';
 import type { Env, ReputationResponse, Variables } from '@/types';
-import { Hono } from 'hono';
 
 const reputation = new Hono<{ Bindings: Env; Variables: Variables }>();
 

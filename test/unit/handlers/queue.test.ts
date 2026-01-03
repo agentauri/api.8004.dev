@@ -4,9 +4,9 @@
  */
 
 import { env } from 'cloudflare:test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { enqueueClassification } from '@/db/queries';
 import type { ClassificationJob, Env } from '@/types';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createMockClassifierService,
   createMockEASIndexerService,

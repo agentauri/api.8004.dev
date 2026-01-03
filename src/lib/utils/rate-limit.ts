@@ -3,8 +3,8 @@
  * @module lib/utils/rate-limit
  */
 
-import type { Env, Variables } from '@/types';
 import type { Context, MiddlewareHandler } from 'hono';
+import type { Env, Variables } from '@/types';
 import { errors } from './errors';
 
 /**

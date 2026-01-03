@@ -3,10 +3,10 @@
  * @module test/unit/lib/middleware/request-id
  */
 
-import { requestId } from '@/lib/middleware/request-id';
-import type { Env, Variables } from '@/types';
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
+import { requestId } from '@/lib/middleware/request-id';
+import type { Env, Variables } from '@/types';
 
 describe('requestId middleware', () => {
   it('generates request ID when not provided', async () => {

@@ -3,6 +3,7 @@
  * @module test/unit/services/oasf-resolver
  */
 
+import { describe, expect, it } from 'vitest';
 import type { ParsedClassification } from '@/lib/utils/validation';
 import {
   hasCreatorDefinedOasf,
@@ -10,7 +11,6 @@ import {
   toOASFClassification,
 } from '@/services/oasf-resolver';
 import type { IPFSMetadata } from '@/types/ipfs';
-import { describe, expect, it } from 'vitest';
 
 describe('hasCreatorDefinedOasf', () => {
   it('returns false for null metadata', () => {

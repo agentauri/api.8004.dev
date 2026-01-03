@@ -4,8 +4,8 @@
  */
 
 import { env } from 'cloudflare:test';
-import { createReputationService } from '@/services/reputation';
 import { describe, expect, it } from 'vitest';
+import { createReputationService } from '@/services/reputation';
 import { insertMockFeedback, insertMockReputation } from '../../setup';
 
 describe('ReputationService', () => {

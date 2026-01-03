@@ -4,13 +4,13 @@
  */
 
 import { env } from 'cloudflare:test';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
-  type MCPSessionService,
-  MCP_SESSION_TTL,
   createMCPSessionService,
+  MCP_SESSION_TTL,
+  type MCPSessionService,
 } from '@/services/mcp-session';
 import type { CreateSessionData } from '@/types/mcp-session';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 describe('createMCPSessionService', () => {
   let service: MCPSessionService;

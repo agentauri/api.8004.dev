@@ -4,9 +4,9 @@
  */
 
 import { createExecutionContext, env, waitOnExecutionContext } from 'cloudflare:test';
-import app from '@/index';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { TEST_API_KEY, createMockEnv } from '../setup';
+import app from '@/index';
+import { createMockEnv, TEST_API_KEY } from '../setup';
 
 // Mock fetch for search service
 const mockFetch = vi.fn();

@@ -4,15 +4,15 @@
  */
 
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
+import { beforeEach, describe, expect, it } from 'vitest';
 import app from '@/index';
 import type { Env } from '@/types';
-import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  TEST_OAUTH_TOKEN,
   createMockEnv,
   createMockOAuthToken,
   insertMockClassification,
   setupMockFetch,
+  TEST_OAUTH_TOKEN,
 } from '../../setup';
 
 const mockFetch = setupMockFetch();

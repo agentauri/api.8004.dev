@@ -4,16 +4,16 @@
  */
 
 import { env } from 'cloudflare:test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createCacheService } from '@/services/cache';
 import {
-  DEFAULT_IPFS_GATEWAY,
-  DEFAULT_IPFS_TIMEOUT_MS,
   convertIpfsUri,
   createIPFSService,
+  DEFAULT_IPFS_GATEWAY,
+  DEFAULT_IPFS_TIMEOUT_MS,
   extractOasfEndpoint,
 } from '@/services/ipfs';
 import type { IPFSEndpoint } from '@/types/ipfs';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 describe('convertIpfsUri', () => {
   it('converts ipfs:// URI to HTTP gateway URL', () => {

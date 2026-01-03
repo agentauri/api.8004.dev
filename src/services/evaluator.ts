@@ -13,9 +13,9 @@
  * - Latency: How fast does the agent respond?
  */
 
-import { fetchWithTimeout, validateUrlForSSRF } from '@/lib/utils/fetch';
 import type { D1Database } from '@cloudflare/workers-types';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { fetchWithTimeout, validateUrlForSSRF } from '@/lib/utils/fetch';
 
 /**
  * Evaluation test types

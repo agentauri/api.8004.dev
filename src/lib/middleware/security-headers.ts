@@ -3,8 +3,8 @@
  * @module lib/middleware/security-headers
  */
 
-import type { Env, Variables } from '@/types';
 import type { MiddlewareHandler } from 'hono';
+import type { Env, Variables } from '@/types';
 
 /**
  * Security headers middleware

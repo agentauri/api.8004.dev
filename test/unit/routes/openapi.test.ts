@@ -4,10 +4,10 @@
  */
 
 import { env } from 'cloudflare:test';
-import { openapi } from '@/routes/openapi';
-import type { Env, Variables } from '@/types';
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
+import { openapi } from '@/routes/openapi';
+import type { Env, Variables } from '@/types';
 
 function createTestApp() {
   const app = new Hono<{ Bindings: Env; Variables: Variables }>();

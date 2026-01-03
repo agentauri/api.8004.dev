@@ -5,13 +5,12 @@
  * Centralized export for all mock services
  */
 
-export { createMockSDKService, filterBySkills, filterByDomains } from './mock-sdk';
-export { createMockSearchService } from './mock-search';
+// Re-export fixtures
+export * from './fixtures';
 export {
   createMockQdrantSearchService,
   MockQdrantSearchService,
   mockQdrantConfig,
 } from './mock-qdrant-search';
-
-// Re-export fixtures
-export * from './fixtures';
+export { createMockSDKService, filterByDomains, filterBySkills } from './mock-sdk';
+export { createMockSearchService } from './mock-search';

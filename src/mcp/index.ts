@@ -5,16 +5,16 @@
  * @module mcp
  */
 
+import { z } from 'zod';
 import { getClassification, getClassificationsBatch } from '@/db/queries';
 import { getTaxonomy } from '@/lib/oasf/taxonomy';
 import { agentIdSchema, parseAgentId, parseClassificationRow } from '@/lib/utils/validation';
 import { CACHE_TTL, createCacheService } from '@/services/cache';
-import { type MCPSessionService, createMCPSessionService } from '@/services/mcp-session';
+import { createMCPSessionService, type MCPSessionService } from '@/services/mcp-session';
 import { createReputationService } from '@/services/reputation';
 import { createSDKService } from '@/services/sdk';
 import { createSearchService } from '@/services/search';
 import type { Env, TaxonomyType } from '@/types';
-import { z } from 'zod';
 
 /**
  * Validation schemas for MCP inputs

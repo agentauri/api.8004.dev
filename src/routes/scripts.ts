@@ -3,8 +3,8 @@
  * @module routes/scripts
  */
 
-import type { Env, Variables } from '@/types';
 import { Hono } from 'hono';
+import type { Env, Variables } from '@/types';
 
 const scripts = new Hono<{ Bindings: Env; Variables: Variables }>();
 

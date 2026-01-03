@@ -6,8 +6,8 @@
  * and multi-provider fallback logic.
  */
 
-import { calculateOverallConfidence, parseClassificationResponse } from '@/services/classifier';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { calculateOverallConfidence, parseClassificationResponse } from '@/services/classifier';
 import { mockClassificationResponse } from '../../mocks/anthropic';
 
 describe('parseClassificationResponse', () => {

@@ -10,7 +10,7 @@ import type { AgentPayload } from '../../lib/qdrant/types';
 import type { Env } from '../../types';
 import { generateEmbedding } from '../embedding';
 import { createQdrantClient } from '../qdrant';
-import { type SubgraphRawAgent, createSDKService, fetchAllAgentsFromSubgraph } from '../sdk';
+import { createSDKService, fetchAllAgentsFromSubgraph, type SubgraphRawAgent } from '../sdk';
 
 // Supported chains for direct subgraph queries
 const SYNC_CHAINS = [11155111, 84532, 80002]; // Sepolia, Base Sepolia, Polygon Amoy

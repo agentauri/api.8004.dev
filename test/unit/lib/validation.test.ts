@@ -3,19 +3,19 @@
  * @module test/unit/lib/validation
  */
 
+import { describe, expect, it } from 'vitest';
 import {
-  SUPPORTED_CHAIN_IDS,
   agentIdSchema,
   chainIdSchema,
   classifyRequestSchema,
   listAgentsQuerySchema,
   parseAgentId,
   parseClassificationRow,
+  SUPPORTED_CHAIN_IDS,
   searchModeInputSchema,
   searchRequestSchema,
   taxonomyQuerySchema,
 } from '@/lib/utils/validation';
-import { describe, expect, it } from 'vitest';
 
 describe('chainIdSchema', () => {
   it('accepts valid chain IDs', () => {

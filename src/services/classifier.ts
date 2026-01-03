@@ -6,6 +6,8 @@
  * Fallback provider: Claude (reliable backup)
  */
 
+import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { buildClassificationPrompt } from '@/lib/oasf/prompt';
 import { validateDomainSlug, validateSkillSlug } from '@/lib/oasf/taxonomy';
 import type {
@@ -14,8 +16,6 @@ import type {
   DomainClassification,
   SkillClassification,
 } from '@/types';
-import Anthropic from '@anthropic-ai/sdk';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 
 /**
  * Classification result with provider info

@@ -4,8 +4,8 @@
  */
 
 import { env } from 'cloudflare:test';
-import { CACHE_KEYS, CACHE_TTL, createCacheService } from '@/services/cache';
 import { describe, expect, it, vi } from 'vitest';
+import { CACHE_KEYS, CACHE_TTL, createCacheService } from '@/services/cache';
 
 describe('createCacheService', () => {
   it('creates cache service instance', () => {

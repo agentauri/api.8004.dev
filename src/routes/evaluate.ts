@@ -6,6 +6,8 @@
  * Uses "Mystery Shopper" testing with benchmark prompts.
  */
 
+import { Hono } from 'hono';
+import { z } from 'zod';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit } from '@/lib/utils/rate-limit';
 import { parseAgentId } from '@/lib/utils/validation';
@@ -16,8 +18,6 @@ import {
 } from '@/services/evaluator';
 import { createSDKService } from '@/services/sdk';
 import type { Env, Variables } from '@/types';
-import { Hono } from 'hono';
-import { z } from 'zod';
 
 const evaluate = new Hono<{ Bindings: Env; Variables: Variables }>();
 

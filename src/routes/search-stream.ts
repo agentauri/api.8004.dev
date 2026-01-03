@@ -10,23 +10,23 @@
  * 4. Final completion event
  */
 
+import { Hono } from 'hono';
+import { streamSSE } from 'hono/streaming';
+import { z } from 'zod';
 import { getClassificationsBatch } from '@/db/queries';
 import { errors } from '@/lib/utils/errors';
 import { applyFilters } from '@/lib/utils/filters';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import {
-  type SearchRequestBody,
   parseAgentId,
   parseClassificationRow,
+  type SearchRequestBody,
   searchRequestSchema,
 } from '@/lib/utils/validation';
 import { CACHE_TTL, createCacheService } from '@/services/cache';
 import { createSDKService } from '@/services/sdk';
 import { createSearchService } from '@/services/search';
 import type { AgentDetail, AgentSummary, Env, OASFSource, TrustMethod, Variables } from '@/types';
-import { Hono } from 'hono';
-import { streamSSE } from 'hono/streaming';
-import { z } from 'zod';
 
 const searchStream = new Hono<{ Bindings: Env; Variables: Variables }>();
 

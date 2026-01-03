@@ -6,10 +6,10 @@
  * - /api/v1/events - Main SSE stream endpoint
  */
 
-import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
-import { type SSESubscriptionConfig, createSSEResponse, parseSSEFilters } from '@/services/sse';
-import type { Env, Variables } from '@/types';
 import { Hono } from 'hono';
+import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
+import { createSSEResponse, parseSSEFilters, type SSESubscriptionConfig } from '@/services/sse';
+import type { Env, Variables } from '@/types';
 
 const events = new Hono<{ Bindings: Env; Variables: Variables }>();
 

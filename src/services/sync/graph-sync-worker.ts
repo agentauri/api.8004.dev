@@ -7,16 +7,16 @@
  * Includes reachability status derived from feedback data.
  */
 
-import { type EmbedFields, formatAgentText } from '@/lib/ai/formatting';
 import type { D1Database } from '@cloudflare/workers-types';
+import { type EmbedFields, formatAgentText } from '@/lib/ai/formatting';
 import type { AgentPayload } from '../../lib/qdrant/types';
-import { type A2AClient, type ExtractedIOModes, createA2AClient } from '../a2a-client';
+import { type A2AClient, createA2AClient, type ExtractedIOModes } from '../a2a-client';
 import { generateEmbedding } from '../embedding';
-import { type QdrantClient, createQdrantClient } from '../qdrant';
+import { createQdrantClient, type QdrantClient } from '../qdrant';
 import {
   type AgentReachability,
-  type ReachabilityService,
   createReachabilityService,
+  type ReachabilityService,
 } from '../reachability';
 import { type ContentFields, computeContentHash, computeEmbedHash } from './content-hash';
 

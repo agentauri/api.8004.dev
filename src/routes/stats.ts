@@ -3,11 +3,11 @@
  * @module routes/stats
  */
 
+import { Hono } from 'hono';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import { CACHE_KEYS, CACHE_TTL, createCacheService } from '@/services/cache';
 import { createSDKService } from '@/services/sdk';
 import type { Env, PlatformStatsResponse, Variables } from '@/types';
-import { Hono } from 'hono';
 
 const stats = new Hono<{ Bindings: Env; Variables: Variables }>();
 

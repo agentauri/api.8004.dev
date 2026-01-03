@@ -3,9 +3,9 @@
  * @module test/unit/lib/oasf/prompt
  */
 
+import { describe, expect, it } from 'vitest';
 import { buildClassificationPrompt } from '@/lib/oasf/prompt';
 import { OASF_VERSION } from '@/lib/oasf/taxonomy';
-import { describe, expect, it } from 'vitest';
 
 describe('buildClassificationPrompt', () => {
   it('includes agent name and description', () => {

@@ -3,9 +3,9 @@
  * @module test/unit/lib/middleware/cors
  */
 
-import { cors } from '@/lib/middleware/cors';
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
+import { cors } from '@/lib/middleware/cors';
 
 describe('cors middleware', () => {
   it('allows requests from 8004.dev', async () => {

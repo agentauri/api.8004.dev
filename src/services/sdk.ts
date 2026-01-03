@@ -3,6 +3,8 @@
  * @module services/sdk
  */
 
+import type { SearchParams } from 'agent0-sdk';
+import { SDK } from 'agent0-sdk';
 import { SDKError } from '@/lib/utils/errors';
 import type {
   AgentDetail,
@@ -15,20 +17,18 @@ import type {
   SupportedChainId,
   TrustMethod,
 } from '@/types';
-import { SDK } from 'agent0-sdk';
-import type { SearchParams } from 'agent0-sdk';
 import { CACHE_TTL, hashQueryParams } from './cache';
 import { createMockSDKService } from './mock/mock-sdk';
 import {
   type AgentSortField,
   type CachedPaginationSet,
-  type SortOrder,
   decodeOffset,
   deduplicateAgents,
   generatePaginationCacheKey,
   getCachedPaginationSet,
   getPaginatedSlice,
   interleaveChainResults,
+  type SortOrder,
   setCachedPaginationSet,
 } from './pagination-cache';
 

@@ -413,24 +413,24 @@ export function matchExcept(values: (string | number)[]): { except: (string | nu
 /**
  * Create a range condition
  */
-export function range(options: {
+export function range(options: { lt?: number; lte?: number; gt?: number; gte?: number }): {
   lt?: number;
   lte?: number;
   gt?: number;
   gte?: number;
-}): { lt?: number; lte?: number; gt?: number; gte?: number } {
+} {
   return options;
 }
 
 /**
  * Create a values_count condition for array length filtering
  */
-export function valuesCount(options: {
+export function valuesCount(options: { lt?: number; lte?: number; gt?: number; gte?: number }): {
   lt?: number;
   lte?: number;
   gt?: number;
   gte?: number;
-}): { lt?: number; lte?: number; gt?: number; gte?: number } {
+} {
   return options;
 }
 

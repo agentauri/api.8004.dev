@@ -3,11 +3,11 @@
  * @module services/eas-indexer
  */
 
+import { decodeAbiParameters } from 'viem';
 import { getEasSyncState, updateEasSyncState } from '@/db/queries';
 import type { NewFeedback } from '@/db/schema';
 import { fetchWithTimeout } from '@/lib/utils/fetch';
 import { normalizeEASScore } from '@/lib/utils/score';
-import { decodeAbiParameters } from 'viem';
 import { createReputationService } from './reputation';
 
 /**

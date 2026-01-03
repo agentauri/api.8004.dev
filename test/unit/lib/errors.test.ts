@@ -3,9 +3,9 @@
  * @module test/unit/lib/errors
  */
 
-import { AppError, SDKError, createErrorResponse, errors, handleError } from '@/lib/utils/errors';
 import { Hono } from 'hono';
 import { describe, expect, it, vi } from 'vitest';
+import { AppError, createErrorResponse, errors, handleError, SDKError } from '@/lib/utils/errors';
 
 describe('AppError', () => {
   it('creates error with correct properties', () => {

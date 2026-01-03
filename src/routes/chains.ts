@@ -3,11 +3,11 @@
  * @module routes/chains
  */
 
+import { Hono } from 'hono';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import { CACHE_KEYS, CACHE_TTL, createCacheService } from '@/services/cache';
 import { createSDKService } from '@/services/sdk';
 import type { ChainStats, ChainStatsResponse, Env, Variables } from '@/types';
-import { Hono } from 'hono';
 
 /** Extended TTL for fallback cache (1 hour) - used when SDK fails */
 const FALLBACK_CACHE_TTL = 3600;

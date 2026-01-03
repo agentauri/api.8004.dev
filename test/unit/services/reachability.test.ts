@@ -2,8 +2,8 @@
  * Reachability service unit tests
  */
 
-import { createReachabilityService } from '@/services/reachability';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createReachabilityService } from '@/services/reachability';
 
 describe('ReachabilityService', () => {
   let mockDb: D1Database;

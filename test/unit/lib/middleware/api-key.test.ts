@@ -3,9 +3,9 @@
  * @module test/unit/lib/middleware/api-key
  */
 
-import { apiKeyAuth, requireApiKey } from '@/lib/middleware/api-key';
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
+import { apiKeyAuth, requireApiKey } from '@/lib/middleware/api-key';
 
 describe('apiKeyAuth middleware', () => {
   it('sets anonymous tier when no API key provided', async () => {

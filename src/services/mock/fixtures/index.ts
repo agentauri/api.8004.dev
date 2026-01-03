@@ -7,29 +7,27 @@
 
 // Agent fixtures
 export {
-  MOCK_AGENTS_SUMMARY,
-  MOCK_AGENTS_DETAIL,
-  MOCK_AGENT_REPUTATION,
-  getMockAgentSummary,
-  getMockAgentDetail,
   getMockAgentByChainAndToken,
   getMockAgentCountByChain,
+  getMockAgentDetail,
+  getMockAgentSummary,
+  MOCK_AGENT_REPUTATION,
+  MOCK_AGENTS_DETAIL,
+  MOCK_AGENTS_SUMMARY,
 } from './agents';
-
-// Classification fixtures
-export {
-  MOCK_CLASSIFICATIONS,
-  MOCK_SKILL_SLUGS,
-  MOCK_DOMAIN_SLUGS,
-  getMockClassification,
-  getAgentsBySkill,
-  getAgentsByDomain,
-} from './classifications';
-
 // Chain stats fixtures
 export {
-  MOCK_CHAIN_STATS,
   getMockChainStats,
-  getMockTotalAgentCount,
   getMockTotalActiveCount,
+  getMockTotalAgentCount,
+  MOCK_CHAIN_STATS,
 } from './chain-stats';
+// Classification fixtures
+export {
+  getAgentsByDomain,
+  getAgentsBySkill,
+  getMockClassification,
+  MOCK_CLASSIFICATIONS,
+  MOCK_DOMAIN_SLUGS,
+  MOCK_SKILL_SLUGS,
+} from './classifications';

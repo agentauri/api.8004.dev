@@ -3,8 +3,8 @@
  * @module test/unit/services/search
  */
 
-import { createSearchService } from '@/services/search';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createSearchService } from '@/services/search';
 
 // Mock fetch
 const mockFetch = vi.fn();

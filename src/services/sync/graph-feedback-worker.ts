@@ -18,9 +18,9 @@
  * @module services/sync/graph-feedback-worker
  */
 
+import type { D1Database } from '@cloudflare/workers-types';
 import type { NewFeedback } from '@/db/schema';
 import { fetchWithTimeout } from '@/lib/utils/fetch';
-import type { D1Database } from '@cloudflare/workers-types';
 import type { ReputationService } from '../reputation';
 import { createReputationService } from '../reputation';
 

@@ -3,9 +3,9 @@
  * @module lib/utils/errors
  */
 
-import type { ErrorCode, ErrorResponse } from '@/types';
 import type { Context } from 'hono';
 import { z } from 'zod';
+import type { ErrorCode, ErrorResponse } from '@/types';
 
 /**
  * Application error class with code and status

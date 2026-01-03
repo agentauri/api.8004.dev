@@ -3,13 +3,13 @@
  * @module routes/taxonomy
  */
 
+import { Hono } from 'hono';
 import { getTaxonomy } from '@/lib/oasf/taxonomy';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import { taxonomyQuerySchema } from '@/lib/utils/validation';
 import { CACHE_KEYS, CACHE_TTL, createCacheService } from '@/services/cache';
 import type { Env, TaxonomyResponse, Variables } from '@/types';
-import { Hono } from 'hono';
 
 const taxonomy = new Hono<{ Bindings: Env; Variables: Variables }>();
 

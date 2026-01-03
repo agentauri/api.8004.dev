@@ -4,6 +4,7 @@
  */
 
 import { createExecutionContext, env, waitOnExecutionContext } from 'cloudflare:test';
+import { vi } from 'vitest';
 import app from '@/index';
 import {
   createMockQdrantSearchService,
@@ -11,7 +12,6 @@ import {
 } from '@/services/mock/mock-qdrant-search';
 import { setMockQdrantSearchServiceFactory } from '@/services/qdrant-search';
 import type { Env } from '@/types';
-import { vi } from 'vitest';
 import { mockConfig } from './mocks/agent0-sdk';
 
 // Inject mock Qdrant search service factory for tests

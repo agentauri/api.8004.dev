@@ -3,9 +3,9 @@
  * @module test/unit/lib/middleware/body-limit
  */
 
-import { bodyLimit } from '@/lib/middleware/body-limit';
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
+import { bodyLimit } from '@/lib/middleware/body-limit';
 
 describe('bodyLimit middleware', () => {
   it('allows requests under the limit', async () => {

@@ -3,8 +3,8 @@
  * @module lib/middleware/request-id
  */
 
-import type { Env, Variables } from '@/types';
 import type { MiddlewareHandler } from 'hono';
+import type { Env, Variables } from '@/types';
 
 /**
  * Generate a UUID v4

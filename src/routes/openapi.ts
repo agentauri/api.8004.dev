@@ -3,10 +3,10 @@
  * @module routes/openapi
  */
 
+import { Hono } from 'hono';
 import { OASF_VERSION } from '@/lib/oasf/taxonomy';
 import { SUPPORTED_CHAIN_IDS } from '@/lib/utils/validation';
 import type { Env, Variables } from '@/types';
-import { Hono } from 'hono';
 
 /**
  * OpenAPI 3.1.0 specification for 8004 Backend API

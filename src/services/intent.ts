@@ -151,11 +151,7 @@ export class IntentService {
    * Get all templates
    */
   async getTemplates(
-    options: {
-      category?: string;
-      featuredOnly?: boolean;
-      activeOnly?: boolean;
-    } = {}
+    options: { category?: string; featuredOnly?: boolean; activeOnly?: boolean } = {}
   ): Promise<IntentTemplate[]> {
     const { category, featuredOnly = false, activeOnly = true } = options;
 

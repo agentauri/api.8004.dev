@@ -3,11 +3,12 @@
  * @module index
  */
 
+import { Hono } from 'hono';
 import {
   enqueueClassificationsBatch,
   getClassifiedAgentIds,
-  getQueueStatus,
   getQueuedAgentIds,
+  getQueueStatus,
   incrementJobAttempts,
   markJobProcessing,
   resetFailedJobs,
@@ -26,11 +27,11 @@ import { handleError } from '@/lib/utils/errors';
 import { parseAgentId } from '@/lib/utils/validation';
 import { createMcp8004Handler } from '@/mcp';
 import {
-  events,
   agents,
   chains,
   compose,
   evaluate,
+  events,
   health,
   intents,
   openapi,
@@ -45,7 +46,6 @@ import { createEASIndexerService } from '@/services/eas-indexer';
 import { createSDKService } from '@/services/sdk';
 import { runReconciliation, syncD1ToQdrant, syncFromGraph } from '@/services/sync';
 import type { ClassificationJob, Env, Variables } from '@/types';
-import { Hono } from 'hono';
 
 /**
  * Required environment variables that must be set in production

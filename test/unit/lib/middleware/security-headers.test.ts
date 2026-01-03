@@ -3,9 +3,9 @@
  * @module test/unit/lib/middleware/security-headers
  */
 
-import { securityHeaders } from '@/lib/middleware/security-headers';
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
+import { securityHeaders } from '@/lib/middleware/security-headers';
 
 describe('securityHeaders middleware', () => {
   it('sets X-Content-Type-Options header', async () => {

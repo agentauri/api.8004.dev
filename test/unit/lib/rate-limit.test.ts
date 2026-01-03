@@ -3,9 +3,9 @@
  * @module test/unit/lib/rate-limit
  */
 
-import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 
 // Create a mock KV store
 function createMockKV() {

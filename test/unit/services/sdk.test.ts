@@ -3,14 +3,14 @@
  * @module test/unit/services/sdk
  */
 
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SDKError } from '@/lib/utils/errors';
 import {
-  SUPPORTED_CHAINS,
   calculateBasicScore,
   createSDKService,
   getChainConfig,
+  SUPPORTED_CHAINS,
 } from '@/services/sdk';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mockConfig } from '../../mocks/agent0-sdk';
 import { createMockEnv } from '../../setup';
 

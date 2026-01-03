@@ -14,10 +14,10 @@ import type {
   SearchServiceResult,
 } from '../types';
 import type { OASFClassification } from '../types/classification';
-import { type EmbeddingService, createEmbeddingService } from './embedding';
-import { type HyDEService, createHyDEService } from './hyde';
-import { type QdrantClient, createQdrantClient, decodeCursor, encodeCursor } from './qdrant';
-import { type RerankerService, createRerankerService } from './reranker';
+import { createEmbeddingService, type EmbeddingService } from './embedding';
+import { createHyDEService, type HyDEService } from './hyde';
+import { createQdrantClient, decodeCursor, encodeCursor, type QdrantClient } from './qdrant';
+import { createRerankerService, type RerankerService } from './reranker';
 
 /**
  * Search parameters for Qdrant search

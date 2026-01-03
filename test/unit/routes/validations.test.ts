@@ -4,9 +4,9 @@
  */
 
 import { env } from 'cloudflare:test';
-import type { Env, Variables } from '@/types';
 import { Hono } from 'hono';
 import { describe, expect, it, vi } from 'vitest';
+import type { Env, Variables } from '@/types';
 
 // Mock the SDK module
 vi.mock('@/services/sdk', () => ({

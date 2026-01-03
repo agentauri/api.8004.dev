@@ -2,8 +2,8 @@
  * Tests for score normalization utilities
  */
 
-import { clampScore, isLegacyEASScore, normalizeEASScore, toStarRating } from '@/lib/utils/score';
 import { describe, expect, it } from 'vitest';
+import { clampScore, isLegacyEASScore, normalizeEASScore, toStarRating } from '@/lib/utils/score';
 
 describe('Score utilities', () => {
   describe('normalizeEASScore', () => {

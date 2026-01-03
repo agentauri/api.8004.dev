@@ -3,9 +3,9 @@
  * @module test/unit/routes/agents-helpers
  */
 
+import { describe, expect, it } from 'vitest';
 import { filterByReputation, sortAgents } from '@/routes/agents';
 import type { AgentSummary } from '@/types';
-import { describe, expect, it } from 'vitest';
 
 /**
  * Create a mock agent summary with specified properties

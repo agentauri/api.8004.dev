@@ -3,17 +3,17 @@
  * @module test/unit/lib/oasf/taxonomy
  */
 
+import { describe, expect, it } from 'vitest';
 import {
   DOMAIN_TAXONOMY,
-  OASF_VERSION,
-  SKILL_TAXONOMY,
   getAllDomainSlugs,
   getAllSkillSlugs,
   getTaxonomy,
+  OASF_VERSION,
+  SKILL_TAXONOMY,
   validateDomainSlug,
   validateSkillSlug,
 } from '@/lib/oasf/taxonomy';
-import { describe, expect, it } from 'vitest';
 
 describe('OASF constants', () => {
   it('has correct version', () => {

@@ -4,6 +4,7 @@
  * @module routes/agents-qdrant
  */
 
+import { Hono } from 'hono';
 import { enqueueClassificationsBatch, getClassification } from '@/db/queries';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
@@ -33,7 +34,6 @@ import type {
   OASFSource,
   Variables,
 } from '@/types';
-import { Hono } from 'hono';
 import { classify } from './classify';
 import { reputation } from './reputation';
 

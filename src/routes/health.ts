@@ -3,11 +3,11 @@
  * @module routes/health
  */
 
+import { Hono } from 'hono';
 import { createEASIndexerService } from '@/services/eas-indexer';
 import { createSearchService } from '@/services/search';
 import { syncD1ToQdrant, syncFromGraph, syncFromSDK } from '@/services/sync';
 import type { Env, HealthResponse, ServiceStatus, Variables } from '@/types';
-import { Hono } from 'hono';
 
 const health = new Hono<{ Bindings: Env; Variables: Variables }>();
 

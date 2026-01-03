@@ -8,8 +8,8 @@
  * Run hourly as a backstop for the 15-minute delta sync.
  */
 
-import { formatAgentText } from '@/lib/ai/formatting';
 import type { D1Database } from '@cloudflare/workers-types';
+import { formatAgentText } from '@/lib/ai/formatting';
 import type { AgentPayload } from '../../lib/qdrant/types';
 import { generateEmbedding } from '../embedding';
 import { createQdrantClient } from '../qdrant';

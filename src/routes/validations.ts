@@ -5,11 +5,11 @@
  * Fetches validation data from the subgraph
  */
 
+import { Hono } from 'hono';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
-import { type SubgraphValidation, fetchValidationsFromSubgraph } from '@/services/sdk';
+import { fetchValidationsFromSubgraph, type SubgraphValidation } from '@/services/sdk';
 import type { Env, Variables } from '@/types';
-import { Hono } from 'hono';
 
 const validations = new Hono<{ Bindings: Env; Variables: Variables }>();
 

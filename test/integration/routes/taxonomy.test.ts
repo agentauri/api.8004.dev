@@ -3,8 +3,8 @@
  * @module test/integration/routes/taxonomy
  */
 
-import { OASF_VERSION } from '@/lib/oasf/taxonomy';
 import { describe, expect, it } from 'vitest';
+import { OASF_VERSION } from '@/lib/oasf/taxonomy';
 import { testRoute } from '../../setup';
 
 describe('GET /api/v1/taxonomy', () => {
