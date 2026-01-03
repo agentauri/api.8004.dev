@@ -33,7 +33,7 @@ jobs:
 
       - name: Get latest release
         id: latest
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             try {
@@ -54,7 +54,7 @@ jobs:
 
       - name: Compare versions and create issue
         if: steps.latest.outputs.version != '0.0.0'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const currentVersion = '${{ steps.current.outputs.version }}';
@@ -129,7 +129,7 @@ jobs:
 
       - name: Get latest release
         id: latest
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             try {
@@ -150,7 +150,7 @@ jobs:
 
       - name: Compare versions and create issue
         if: steps.latest.outputs.version != '0.0.0'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const currentVersion = '${{ steps.current.outputs.version }}';
