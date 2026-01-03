@@ -26,15 +26,17 @@ import { handleError } from '@/lib/utils/errors';
 import { parseAgentId } from '@/lib/utils/validation';
 import { createMcp8004Handler } from '@/mcp';
 import {
-  events,
   agents,
   chains,
   compose,
+  evaluate,
+  events,
   health,
   intents,
   openapi,
   scripts,
   search,
+  searchStream,
   stats,
   taxonomy,
 } from '@/routes';
@@ -107,18 +109,22 @@ app.use('/api/v1/events', requireApiKey());
 app.use('/api/v1/events/*', requireApiKey());
 app.use('/api/v1/compose', requireApiKey());
 app.use('/api/v1/compose/*', requireApiKey());
+app.use('/api/v1/evaluate', requireApiKey());
+app.use('/api/v1/evaluate/*', requireApiKey());
 
 // Mount routes
 app.route('/api/v1/health', health);
 app.route('/api/v1/openapi', openapi);
 app.route('/api/v1/agents', agents);
 app.route('/api/v1/search', search);
+app.route('/api/v1/search/stream', searchStream);
 app.route('/api/v1/chains', chains);
 app.route('/api/v1/stats', stats);
 app.route('/api/v1/taxonomy', taxonomy);
 app.route('/api/v1/events', events);
 app.route('/api/v1/compose', compose);
 app.route('/api/v1/intents', intents);
+app.route('/api/v1/evaluate', evaluate);
 
 // Scripts routes (public, no auth required)
 app.route('', scripts);

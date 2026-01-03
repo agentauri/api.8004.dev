@@ -6,10 +6,12 @@
 // Use Qdrant-based implementations for agents and search
 export { agents } from './agents-qdrant';
 export { search } from './search-qdrant';
+export { searchStream } from './search-stream';
 
 export { chains } from './chains';
 export { classify } from './classify';
 export { compose } from './compose';
+export { evaluate } from './evaluate';
 export { events } from './events';
 export { health } from './health';
 export { intents } from './intents';

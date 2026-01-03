@@ -8,6 +8,9 @@
  * Instead of embedding the user's query directly, we generate
  * a hypothetical "ideal" agent description and embed that.
  *
+ * **Structured HyDE Enhancement**: Also extracts structured filters
+ * from the query to enable strict filtering alongside semantic matching.
+ *
  * Reference: https://arxiv.org/abs/2212.10496
  */
 
@@ -29,6 +32,29 @@ export interface HyDEConfig {
 }
 
 /**
+ * Structured filters extracted from query
+ * Used for strict filtering alongside semantic search
+ */
+export interface HyDEFilters {
+  /** Specific chain ID mentioned */
+  chainId?: number;
+  /** Must have MCP support */
+  hasMcp?: boolean;
+  /** Must have A2A support */
+  hasA2a?: boolean;
+  /** Must have x402 support */
+  hasX402?: boolean;
+  /** Inferred skills from query */
+  skills?: string[];
+  /** Inferred domains from query */
+  domains?: string[];
+  /** Minimum reputation score */
+  minRep?: number;
+  /** Active status */
+  active?: boolean;
+}
+
+/**
  * HyDE generation result
  */
 export interface HyDEResult {
@@ -36,6 +62,8 @@ export interface HyDEResult {
   originalQuery: string;
   /** Generated hypothetical agent description */
   hypotheticalDescription: string;
+  /** Extracted structured filters for strict matching */
+  filters: HyDEFilters;
   /** Time taken to generate (ms) */
   generationTimeMs: number;
   /** Whether result was from cache */
@@ -45,12 +73,41 @@ export interface HyDEResult {
 }
 
 /**
+ * Internal cache entry with filters
+ */
+interface HyDECacheEntry {
+  description: string;
+  filters: HyDEFilters;
+}
+
+/**
+ * Chain name to ID mapping
+ */
+const CHAIN_NAME_TO_ID: Record<string, number> = {
+  sepolia: 11155111,
+  'ethereum sepolia': 11155111,
+  base: 84532,
+  'base sepolia': 84532,
+  polygon: 80002,
+  'polygon amoy': 80002,
+  amoy: 80002,
+  linea: 59141,
+  'linea sepolia': 59141,
+  hedera: 296,
+  'hedera testnet': 296,
+  hyperevm: 998,
+  'hyperevm testnet': 998,
+  skale: 1351057110,
+  'skale base sepolia': 1351057110,
+};
+
+/**
  * HyDE Service for query expansion
  */
 export class HyDEService {
   private readonly genAI: GoogleGenerativeAI;
   private readonly modelName: string;
-  private readonly cache: Map<string, string>;
+  private readonly cache: Map<string, HyDECacheEntry>;
   private readonly enableCache: boolean;
   private readonly maxCacheSize: number;
 
@@ -63,7 +120,7 @@ export class HyDEService {
   }
 
   /**
-   * Generate a hypothetical agent description for a search query
+   * Generate a hypothetical agent description with structured filters
    */
   async generateHypotheticalAgent(query: string): Promise<HyDEResult> {
     const startTime = Date.now();
@@ -71,9 +128,11 @@ export class HyDEService {
     // Check cache first
     const cacheKey = query.toLowerCase().trim();
     if (this.enableCache && this.cache.has(cacheKey)) {
+      const cached = this.cache.get(cacheKey)!;
       return {
         originalQuery: query,
-        hypotheticalDescription: this.cache.get(cacheKey)!,
+        hypotheticalDescription: cached.description,
+        filters: cached.filters,
         generationTimeMs: Date.now() - startTime,
         cached: true,
         modelUsed: this.modelName,
@@ -85,6 +144,7 @@ export class HyDEService {
       return {
         originalQuery: query,
         hypotheticalDescription: this.fallbackEnhancement(query),
+        filters: {},
         generationTimeMs: Date.now() - startTime,
         cached: false,
         modelUsed: 'fallback',
@@ -93,19 +153,19 @@ export class HyDEService {
 
     const model = this.genAI.getGenerativeModel({ model: this.modelName });
 
-    const prompt = this.buildPrompt(query);
+    const prompt = this.buildStructuredPrompt(query);
 
     try {
       const result = await model.generateContent(prompt);
       const response = result.response;
       const text = response.text();
 
-      // Extract the description from the response
-      const description = this.parseResponse(text);
+      // Parse structured response (JSON + description)
+      const { description, filters } = this.parseStructuredResponse(text, query);
 
       // Cache the result
       if (this.enableCache) {
-        this.cache.set(cacheKey, description);
+        this.cache.set(cacheKey, { description, filters });
         // Limit cache size using FIFO eviction
         if (this.cache.size > this.maxCacheSize) {
           const firstKey = this.cache.keys().next().value;
@@ -116,16 +176,18 @@ export class HyDEService {
       return {
         originalQuery: query,
         hypotheticalDescription: description,
+        filters,
         generationTimeMs: Date.now() - startTime,
         cached: false,
         modelUsed: this.modelName,
       };
     } catch (error) {
-      // Fallback: return enhanced query if LLM fails
+      // Fallback: return enhanced query with heuristic filters if LLM fails
       console.error('HyDE generation failed:', error);
       return {
         originalQuery: query,
         hypotheticalDescription: this.fallbackEnhancement(query),
+        filters: this.extractHeuristicFilters(query),
         generationTimeMs: Date.now() - startTime,
         cached: false,
         modelUsed: 'fallback',
@@ -134,36 +196,222 @@ export class HyDEService {
   }
 
   /**
-   * Build the prompt for hypothetical agent generation
+   * Build the structured prompt for hypothetical agent generation
+   * Returns JSON filters + description
    */
-  private buildPrompt(query: string): string {
+  private buildStructuredPrompt(query: string): string {
     return `You are helping improve search for an AI agent registry (ERC-8004).
 
-Given a user's search query, generate a detailed description of an IDEAL AI agent that would perfectly match what the user is looking for.
+Given a user's search query, generate TWO things:
+1. A JSON object with structured filters extracted from the query
+2. A hypothetical agent description for semantic matching
 
-The description should include:
-- A descriptive name for the agent
-- What the agent does (capabilities)
-- What skills it has (e.g., data analysis, code generation, natural language processing)
-- What domains it operates in (e.g., finance, healthcare, technology)
-- What protocols it supports (MCP for tool use, A2A for agent-to-agent communication)
-- Example use cases
+## Structured Filters (JSON)
+Extract any specific requirements from the query:
+- chainId: number (11155111=Sepolia, 84532=Base, 80002=Polygon, 59141=Linea, 296=Hedera, 998=HyperEVM, 1351057110=SKALE)
+- hasMcp: boolean (true if user wants MCP/tool support)
+- hasA2a: boolean (true if user wants A2A/agent-to-agent support)
+- hasX402: boolean (true if user wants x402/payment support)
+- skills: string[] (OASF skills like "code_generation", "data_analysis", "natural_language_processing")
+- domains: string[] (OASF domains like "finance", "healthcare", "technology")
+- minRep: number (minimum reputation score 0-100 if mentioned)
+- active: boolean (true if user wants active agents only)
+
+Only include filters that are EXPLICITLY mentioned or strongly implied.
+
+## Hypothetical Agent Description
+A detailed description of an ideal agent matching the query (200-300 words).
 
 User query: "${query}"
 
-Generate ONLY the hypothetical agent description, no explanations or preamble.
-Be specific and detailed but concise (200-300 words max).
-Write in a natural descriptive style, as if you're describing an actual agent profile.
+Respond in this EXACT format:
+\`\`\`json
+{
+  // only include filters that apply
+}
+\`\`\`
 
-Hypothetical Agent:`;
+DESCRIPTION:
+[Your hypothetical agent description here]`;
   }
 
   /**
-   * Parse the LLM response to extract the description
+   * Parse the structured LLM response
    */
-  private parseResponse(response: string): string {
-    // Clean up the response
-    let description = response.trim();
+  private parseStructuredResponse(
+    response: string,
+    originalQuery: string
+  ): { description: string; filters: HyDEFilters } {
+    let filters: HyDEFilters = {};
+    let description = '';
+
+    try {
+      // Extract JSON block
+      const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/);
+      if (jsonMatch?.[1]) {
+        const jsonStr = jsonMatch[1].trim();
+        // Remove comments from JSON
+        const cleanJson = jsonStr.replace(/\/\/.*$/gm, '').trim();
+        if (cleanJson && cleanJson !== '{}') {
+          const parsed = JSON.parse(cleanJson);
+          filters = this.validateFilters(parsed);
+        }
+      }
+
+      // Extract description after DESCRIPTION: marker
+      const descMatch = response.match(/DESCRIPTION:\s*([\s\S]+)$/i);
+      if (descMatch?.[1]) {
+        description = this.cleanDescription(descMatch[1]);
+      } else {
+        // Fallback: use everything after the JSON block
+        const afterJson = response.replace(/```json[\s\S]*?```/, '').trim();
+        description = this.cleanDescription(afterJson);
+      }
+    } catch (parseError) {
+      console.warn('Failed to parse structured HyDE response:', parseError);
+      // Fallback to heuristic extraction
+      filters = this.extractHeuristicFilters(originalQuery);
+      description = this.cleanDescription(response);
+    }
+
+    // If no description, use fallback
+    if (!description || description.length < 20) {
+      description = this.fallbackEnhancement(originalQuery);
+    }
+
+    return { description, filters };
+  }
+
+  /**
+   * Validate and sanitize extracted filters
+   */
+  private validateFilters(raw: Record<string, unknown>): HyDEFilters {
+    const filters: HyDEFilters = {};
+
+    if (typeof raw.chainId === 'number' && raw.chainId > 0) {
+      filters.chainId = raw.chainId;
+    }
+
+    if (typeof raw.hasMcp === 'boolean') {
+      filters.hasMcp = raw.hasMcp;
+    }
+
+    if (typeof raw.hasA2a === 'boolean') {
+      filters.hasA2a = raw.hasA2a;
+    }
+
+    if (typeof raw.hasX402 === 'boolean') {
+      filters.hasX402 = raw.hasX402;
+    }
+
+    if (Array.isArray(raw.skills) && raw.skills.length > 0) {
+      filters.skills = raw.skills.filter((s): s is string => typeof s === 'string').slice(0, 10);
+    }
+
+    if (Array.isArray(raw.domains) && raw.domains.length > 0) {
+      filters.domains = raw.domains.filter((d): d is string => typeof d === 'string').slice(0, 10);
+    }
+
+    if (typeof raw.minRep === 'number' && raw.minRep >= 0 && raw.minRep <= 100) {
+      filters.minRep = raw.minRep;
+    }
+
+    if (typeof raw.active === 'boolean') {
+      filters.active = raw.active;
+    }
+
+    return filters;
+  }
+
+  /**
+   * Extract filters using heuristics (fallback when LLM fails)
+   */
+  private extractHeuristicFilters(query: string): HyDEFilters {
+    const filters: HyDEFilters = {};
+    const lowerQuery = query.toLowerCase();
+
+    // Extract chain from query
+    for (const [name, id] of Object.entries(CHAIN_NAME_TO_ID)) {
+      if (lowerQuery.includes(name)) {
+        filters.chainId = id;
+        break;
+      }
+    }
+
+    // Extract protocol requirements
+    if (/\bmcp\b|tools?|functions?/i.test(query)) {
+      filters.hasMcp = true;
+    }
+    if (/\ba2a\b|agent.?to.?agent|multi.?agent|orchestrat/i.test(query)) {
+      filters.hasA2a = true;
+    }
+    if (/\bx402\b|payment|pay|monetiz/i.test(query)) {
+      filters.hasX402 = true;
+    }
+
+    // Extract common skill keywords
+    const skillKeywords: Record<string, string> = {
+      'code|coding|programming|develop': 'code_generation',
+      'data|analytic|analysis': 'data_analysis',
+      'nlp|language|text|chat': 'natural_language_processing',
+      'image|vision|visual': 'image_processing',
+      'search|retriev|rag': 'information_retrieval',
+      'web|scrape|browse': 'web_browsing',
+      'sql|database|query': 'database_operations',
+      'api|integration': 'api_integration',
+    };
+
+    const matchedSkills: string[] = [];
+    for (const [pattern, skill] of Object.entries(skillKeywords)) {
+      if (new RegExp(pattern, 'i').test(query)) {
+        matchedSkills.push(skill);
+      }
+    }
+    if (matchedSkills.length > 0) {
+      filters.skills = matchedSkills;
+    }
+
+    // Extract common domain keywords
+    const domainKeywords: Record<string, string> = {
+      'finance|trading|crypto|defi': 'finance',
+      'health|medical|clinical': 'healthcare',
+      'tech|software|engineer': 'technology',
+      'legal|law|compliance': 'legal',
+      'education|learn|teach': 'education',
+      'e-commerce|shopping|retail': 'retail',
+      'marketing|seo|ads': 'marketing',
+    };
+
+    const matchedDomains: string[] = [];
+    for (const [pattern, domain] of Object.entries(domainKeywords)) {
+      if (new RegExp(pattern, 'i').test(query)) {
+        matchedDomains.push(domain);
+      }
+    }
+    if (matchedDomains.length > 0) {
+      filters.domains = matchedDomains;
+    }
+
+    // Extract reputation requirement
+    const repMatch = query.match(/reputation\s*[>:=]+\s*(\d+)|(\d+)\+?\s*rep/i);
+    if (repMatch) {
+      const repStr = repMatch[1] ?? repMatch[2];
+      if (repStr) {
+        const repValue = Number.parseInt(repStr, 10);
+        if (repValue >= 0 && repValue <= 100) {
+          filters.minRep = repValue;
+        }
+      }
+    }
+
+    return filters;
+  }
+
+  /**
+   * Clean up description text
+   */
+  private cleanDescription(text: string): string {
+    let description = text.trim();
 
     // Remove any markdown formatting
     description = description.replace(/^#+\s*/gm, '');
