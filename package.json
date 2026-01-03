@@ -37,7 +37,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
     "@google/generative-ai": "^0.24.1",
-    "@modelcontextprotocol/sdk": "^1.23.0",
+    "@modelcontextprotocol/sdk": "^1.25.1",
     "agent0-sdk": "^0.31.0",
     "hono": "^4.6.12",
     "viem": "^2.43.5",
