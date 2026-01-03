@@ -177,7 +177,6 @@ function normalizeA2AEndpoint(endpoint: string): string[] {
 /**
  * Parse A2A AgentCard response
  */
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: A2A AgentCard parsing requires extensive null checks and type validation
 function parseAgentCard(data: unknown): A2AAgentCard | null {
   if (!data || typeof data !== 'object') {
     return null;

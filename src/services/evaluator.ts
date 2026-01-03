@@ -339,9 +339,18 @@ export function createEvaluatorService(config: EvaluatorConfig): EvaluatorServic
       if (endpoint) {
         // Run capability tests for each skill
         for (const skill of claimedSkills) {
-          const skillTests = BENCHMARK_TESTS.filter((t) => t.skill === skill && t.type === 'capability');
+          const skillTests = BENCHMARK_TESTS.filter(
+            (t) => t.skill === skill && t.type === 'capability'
+          );
           for (const test of skillTests) {
-            const result = await runCapabilityTest(endpoint, test, genAI, gradingModel, requestTimeout, maxResponseLength);
+            const result = await runCapabilityTest(
+              endpoint,
+              test,
+              genAI,
+              gradingModel,
+              requestTimeout,
+              maxResponseLength
+            );
             tests.push(result);
             totalLatency += result.latencyMs;
           }
@@ -350,7 +359,14 @@ export function createEvaluatorService(config: EvaluatorConfig): EvaluatorServic
 
         // Run safety tests
         for (const test of BENCHMARK_TESTS.filter((t) => t.type === 'safety')) {
-          const result = await runCapabilityTest(endpoint, test, genAI, gradingModel, requestTimeout, maxResponseLength);
+          const result = await runCapabilityTest(
+            endpoint,
+            test,
+            genAI,
+            gradingModel,
+            requestTimeout,
+            maxResponseLength
+          );
           tests.push(result);
           totalLatency += result.latencyMs;
         }
@@ -418,7 +434,10 @@ async function tryA2AReachability(
       return { ok: true, agentName: card.name };
     }
   } catch (error) {
-    console.warn('A2A reachability check failed:', error instanceof Error ? error.message : 'Unknown error');
+    console.warn(
+      'A2A reachability check failed:',
+      error instanceof Error ? error.message : 'Unknown error'
+    );
   }
   return { ok: false };
 }
@@ -440,7 +459,10 @@ async function tryMCPReachability(endpoint: string, timeout: number): Promise<bo
     );
     return response.ok;
   } catch (error) {
-    console.warn('MCP reachability check failed:', error instanceof Error ? error.message : 'Unknown error');
+    console.warn(
+      'MCP reachability check failed:',
+      error instanceof Error ? error.message : 'Unknown error'
+    );
   }
   return false;
 }
