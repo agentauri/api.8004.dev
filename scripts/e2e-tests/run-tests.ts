@@ -29,6 +29,14 @@ import { registerAgentsPaginationTests } from './tests/agents-pagination';
 import { registerAgentsReputationTests } from './tests/agents-reputation';
 import { registerAgentsSortingTests } from './tests/agents-sorting';
 import { registerConsistencyTests } from './tests/consistency';
+// Data consistency test suites
+import {
+  registerApiConsistencyTests,
+  registerFilterCombinationsTests,
+  registerPaginationConsistencyTests,
+  registerSearchFiltersTests,
+  registerSdkFiltersTests,
+} from './tests/data-consistency';
 import { registerErrorHandlingTests } from './tests/error-handling';
 // Import test registration functions
 import { registerHealthTests } from './tests/health';
@@ -108,6 +116,19 @@ const testSuites: Record<string, () => void> = {
   mcp: registerMcpTests,
   'mcp-consistency': registerMcpConsistencyTests,
   source: registerSourceVerificationTests,
+  // Data consistency suites
+  'data-consistency': () => {
+    registerSdkFiltersTests();
+    registerSearchFiltersTests();
+    registerApiConsistencyTests();
+    registerPaginationConsistencyTests();
+    registerFilterCombinationsTests();
+  },
+  'sdk-filters': registerSdkFiltersTests,
+  'search-filters': registerSearchFiltersTests,
+  'api-consistency': registerApiConsistencyTests,
+  'pagination-consistency': registerPaginationConsistencyTests,
+  'filter-combinations': registerFilterCombinationsTests,
 };
 
 /**
