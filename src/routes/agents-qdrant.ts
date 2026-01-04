@@ -15,6 +15,7 @@ import {
   parseClassificationRow,
 } from '@/lib/utils/validation';
 import { CACHE_KEYS, CACHE_TTL, createCacheService } from '@/services/cache';
+import { sortAgents } from '@/services/pagination-cache';
 import { findComplementaryAgents, findIOCompatibleAgents } from '@/services/complementarity';
 import { createIPFSService } from '@/services/ipfs';
 import { resolveClassification, toOASFClassification } from '@/services/oasf-resolver';
@@ -120,8 +121,24 @@ agents.get('/', async (c) => {
     query.chains ??
     (query.chainId ? [query.chainId] : undefined);
 
-  // Convert page to offset
-  const offset = query.page ? (query.page - 1) * query.limit : undefined;
+  // Calculate offset from page, offset param, or cursor
+  // Priority: page > offset > cursor
+  let offset: number | undefined;
+  if (query.page) {
+    offset = (query.page - 1) * query.limit;
+  } else if (query.offset !== undefined) {
+    offset = query.offset;
+  } else if (query.cursor) {
+    // Decode cursor to extract offset
+    try {
+      const decoded = Buffer.from(query.cursor, 'base64').toString('utf-8');
+      const cursorData = JSON.parse(decoded) as { _global_offset?: number };
+      offset = cursorData._global_offset ?? 0;
+    } catch {
+      // Invalid cursor, start from beginning
+      offset = undefined;
+    }
+  }
 
   // Create Qdrant search service
   const searchService = createQdrantSearchService(c.env);
@@ -179,20 +196,32 @@ agents.get('/', async (c) => {
   if (shouldFallback) {
     console.info('Qdrant returned 0 results, falling back to SDK...');
     try {
+      const effectiveOffset = offset ?? 0;
+
+      // For sorted pagination, we need to fetch ALL matching items to ensure correct global order
+      // Since SDK doesn't support server-side sorting by name, we must fetch, sort, then slice
+      // When sorting is requested (non-relevance), fetch a large window to ensure correct ordering
+      const needsClientSort = query.sort && query.sort !== 'relevance';
+      const fetchLimit = needsClientSort
+        ? Math.max(500, effectiveOffset + query.limit + 1) // Fetch at least 500 items for sorted queries
+        : effectiveOffset + query.limit + 1;
+
+      // Note: We don't pass cursor to SDK since we handle pagination via offset
+      // The SDK has its own cursor format that's incompatible with our offset-based cursors
       const sdkResult = await sdk.getAgents({
-        limit: query.limit,
+        limit: fetchLimit,
         hasRegistrationFile: query.hasRegistrationFile ?? true,
         chainIds,
         active: query.active,
         hasMcp: query.mcp,
         hasA2a: query.a2a,
-        cursor: query.cursor,
+        hasX402: query.x402,
       });
 
       // Convert SDK results to search results format
       if (sdkResult.items.length > 0) {
         _usedSdkFallback = true;
-        const sdkAgents: AgentSummary[] = sdkResult.items.map((item) => ({
+        const allSdkAgents: AgentSummary[] = sdkResult.items.map((item) => ({
           id: item.id,
           chainId: Number(item.id.split(':')[0]),
           tokenId: item.id.split(':')[1] ?? '0',
@@ -214,6 +243,16 @@ agents.get('/', async (c) => {
           reputationScore: undefined,
         }));
 
+        // Apply sorting to SDK fallback results if requested
+        let sortedSdkAgents = allSdkAgents;
+        if (query.sort && query.sort !== 'relevance') {
+          sortedSdkAgents = sortAgents(allSdkAgents, query.sort, query.order ?? 'desc');
+        }
+
+        // Apply offset pagination - slice from offset to offset + limit
+        const paginatedAgents = sortedSdkAgents.slice(effectiveOffset, effectiveOffset + query.limit);
+        const hasMore = sortedSdkAgents.length > effectiveOffset + query.limit;
+
         // Get chain stats for totals
         const chainStats = await getCachedChainStats(c.env, sdk);
         const stats = {
@@ -229,13 +268,19 @@ agents.get('/', async (c) => {
           })),
         };
 
+        // Generate cursor for next page based on offset
+        const nextOffset = effectiveOffset + query.limit;
+        const nextCursor = hasMore
+          ? Buffer.from(JSON.stringify({ _global_offset: nextOffset })).toString('base64')
+          : undefined;
+
         const fallbackResponse: AgentListResponse = {
           success: true,
-          data: sdkAgents,
+          data: paginatedAgents,
           meta: {
-            total: sdkResult.total ?? sdkAgents.length,
-            hasMore: !!sdkResult.nextCursor,
-            nextCursor: sdkResult.nextCursor,
+            total: sdkResult.total ?? allSdkAgents.length,
+            hasMore,
+            nextCursor,
             stats,
             searchMode: 'fallback',
           },
@@ -300,6 +345,11 @@ agents.get('/', async (c) => {
       if (query.maxRep !== undefined && score > query.maxRep) return false;
       return true;
     });
+  }
+
+  // Apply custom sorting if requested (Qdrant returns by score, we need to re-sort for name/createdAt)
+  if (query.sort && query.sort !== 'relevance') {
+    agents = sortAgents(agents, query.sort, query.order ?? 'desc');
   }
 
   // Get chain stats for totals (SDK already created above for fallback)

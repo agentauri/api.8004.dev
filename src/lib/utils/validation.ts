@@ -120,6 +120,29 @@ export const sortOrderSchema = z.enum(['asc', 'desc']).default('desc');
 export const searchModeInputSchema = z.enum(['semantic', 'name', 'auto']).default('auto');
 
 /**
+ * Limit schema with clamping behavior
+ * - Minimum: 1 (still errors if < 1)
+ * - Maximum: 100 (clamps to 100 instead of erroring)
+ * - Default: 20
+ */
+const limitSchema = z.coerce
+  .number()
+  .int()
+  .min(1)
+  .transform((val) => Math.min(val, 100))
+  .default(20);
+
+/**
+ * Limit schema for JSON body (no coercion needed)
+ */
+const limitBodySchema = z
+  .number()
+  .int()
+  .min(1)
+  .transform((val) => Math.min(val, 100))
+  .default(20);
+
+/**
  * List agents query parameters schema
  */
 export const listAgentsQuerySchema = z.object({
@@ -174,8 +197,10 @@ export const listAgentsQuerySchema = z.object({
   updatedBefore: z.string().datetime({ offset: true }).optional(),
   sort: sortFieldSchema.optional(),
   order: sortOrderSchema.optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  limit: limitSchema,
   cursor: z.string().optional(),
+  /** Offset-based pagination: skip N items before returning results */
+  offset: z.coerce.number().int().min(0).optional(),
   /** Offset-based pagination: page number (1-indexed) */
   page: z.coerce.number().int().min(1).optional(),
   /** Search mode: semantic (vector search), name (substring), or auto (semantic with name fallback) */
@@ -213,7 +238,7 @@ export const searchRequestSchema = z.object({
     })
     .optional(),
   minScore: z.number().min(0).max(1).default(0.3),
-  limit: z.number().int().min(1).max(100).default(20),
+  limit: limitBodySchema,
   cursor: z.string().optional(),
   offset: z.number().int().min(0).optional(),
   /** Search mode: semantic (vector search), name (substring), or auto (semantic with name fallback) */
