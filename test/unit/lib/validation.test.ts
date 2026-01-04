@@ -146,10 +146,16 @@ describe('listAgentsQuerySchema', () => {
   });
 
   it('enforces limit constraints', () => {
+    // Valid limits
     expect(listAgentsQuerySchema.parse({ limit: '1' }).limit).toBe(1);
     expect(listAgentsQuerySchema.parse({ limit: '100' }).limit).toBe(100);
+
+    // Limit below minimum should throw
     expect(() => listAgentsQuerySchema.parse({ limit: '0' })).toThrow();
-    expect(() => listAgentsQuerySchema.parse({ limit: '101' })).toThrow();
+
+    // Limit above maximum should be clamped to 100 (not throw)
+    expect(listAgentsQuerySchema.parse({ limit: '101' }).limit).toBe(100);
+    expect(listAgentsQuerySchema.parse({ limit: '1000' }).limit).toBe(100);
   });
 
   it('accepts minRep and maxRep parameters', () => {
@@ -244,6 +250,16 @@ describe('searchRequestSchema', () => {
     const result = searchRequestSchema.parse({ query: 'test' });
     expect(result.minScore).toBe(0.3);
     expect(result.limit).toBe(20);
+  });
+
+  it('clamps limit above maximum to 100', () => {
+    const result = searchRequestSchema.parse({ query: 'test', limit: 500 });
+    expect(result.limit).toBe(100);
+  });
+
+  it('rejects limit below minimum', () => {
+    expect(() => searchRequestSchema.parse({ query: 'test', limit: 0 })).toThrow();
+    expect(() => searchRequestSchema.parse({ query: 'test', limit: -1 })).toThrow();
   });
 
   it('accepts searchMode parameter', () => {

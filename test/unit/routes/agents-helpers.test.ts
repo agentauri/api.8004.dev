@@ -249,6 +249,36 @@ describe('sortAgents', () => {
     expect(descResult.map((a) => a.name)).toEqual(['Charlie', 'Bob', 'Alice']);
   });
 
+  it('sorts by name case-insensitively', () => {
+    const agents = [
+      createMockAgent({ id: '11155111:1', name: 'banana' }),
+      createMockAgent({ id: '11155111:2', name: 'Apple' }),
+      createMockAgent({ id: '11155111:3', name: 'cherry' }),
+      createMockAgent({ id: '11155111:4', name: 'APRICOT' }),
+    ];
+
+    // Case-insensitive ascending: Apple, APRICOT, banana, cherry
+    const ascResult = sortAgents(agents, 'name', 'asc');
+    expect(ascResult.map((a) => a.name)).toEqual(['Apple', 'APRICOT', 'banana', 'cherry']);
+
+    // Case-insensitive descending: cherry, banana, APRICOT, Apple
+    const descResult = sortAgents(agents, 'name', 'desc');
+    expect(descResult.map((a) => a.name)).toEqual(['cherry', 'banana', 'APRICOT', 'Apple']);
+  });
+
+  it('sorts by name correctly with mixed case names', () => {
+    const agents = [
+      createMockAgent({ id: '11155111:1', name: 'zebra' }),
+      createMockAgent({ id: '11155111:2', name: 'Alpha' }),
+      createMockAgent({ id: '11155111:3', name: 'BETA' }),
+      createMockAgent({ id: '11155111:4', name: 'gamma' }),
+    ];
+
+    const ascResult = sortAgents(agents, 'name', 'asc');
+    // Alpha, BETA, gamma, zebra (case-insensitive alphabetical)
+    expect(ascResult.map((a) => a.name)).toEqual(['Alpha', 'BETA', 'gamma', 'zebra']);
+  });
+
   it('sorts by createdAt (tokenId)', () => {
     const agents = [
       createMockAgent({ id: '11155111:100', tokenId: '100' }),

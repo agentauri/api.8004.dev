@@ -691,12 +691,13 @@ describe('Filter validation errors', () => {
     expect(body.code).toBe('VALIDATION_ERROR');
   });
 
-  it('returns validation error for limit exceeding max', async () => {
+  it('clamps limit exceeding max to 100 instead of error', async () => {
+    // limit > 100 should be clamped to 100, not return an error
     const res = await testRoute('/api/v1/agents?limit=1000');
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.success).toBe(false);
-    expect(body.code).toBe('VALIDATION_ERROR');
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
   });
 });
 

@@ -125,8 +125,11 @@ function sortAgents(
         const scoreB = b.searchScore ?? 0;
         return (scoreA - scoreB) * multiplier;
       }
-      case 'name':
-        return a.name.localeCompare(b.name) * multiplier;
+      case 'name': {
+        const nameA = a.name.toLowerCase();
+        const nameB = b.name.toLowerCase();
+        return nameA.localeCompare(nameB) * multiplier;
+      }
       case 'createdAt': {
         // Sort by tokenId as proxy for creation order (lower tokenId = older)
         const tokenA = Number.parseInt(a.tokenId, 10) || 0;
@@ -207,17 +210,21 @@ async function getCachedChainStats(
 /**
  * Perform SDK-based name substring search
  * Used when searchMode='name' or as fallback when vector search returns 0 results
+ * @param offset - Starting offset for pagination (0-indexed)
  */
 async function performNameSearch(
   c: { env: Env; executionCtx: ExecutionContext },
   sdk: ReturnType<typeof createSDKService>,
   query: ListAgentsQuery,
   chainIds: number[] | undefined,
-  searchModeLabel: SearchMode
+  searchModeLabel: SearchMode,
+  offset: number = 0
 ): Promise<AgentListResponse> {
   // Use SDK search with substring matching
   // DON'T pass mcp/a2a/x402 to SDK - the external SDK doesn't handle false values correctly
   // We'll apply all boolean filters ourselves after getting results
+  // Over-fetch to account for post-filtering AND pagination offset
+  const fetchLimit = Math.min((offset + query.limit) * 3, 300);
   const sdkSearchResult = await sdk.search({
     query: query.q ?? '',
     chainIds,
@@ -226,7 +233,7 @@ async function performNameSearch(
     // mcpTools and a2aSkills are passed to SDK for native filtering
     mcpTools: query.mcpTools,
     a2aSkills: query.a2aSkills,
-    limit: query.limit * 3, // Over-fetch for post-filtering
+    limit: fetchLimit,
     cursor: query.cursor,
   });
 
@@ -299,14 +306,22 @@ async function performNameSearch(
     });
   }
 
-  // Apply limit after post-filtering
-  const limitedAgents = postFilteredAgents.slice(0, query.limit);
+  // Apply reputation filtering BEFORE pagination
+  const reputationFilteredAgents = filterByReputation(
+    postFilteredAgents,
+    query.minRep,
+    query.maxRep
+  );
 
-  // Apply reputation filtering
-  const filteredAgents = filterByReputation(limitedAgents, query.minRep, query.maxRep);
+  // Apply sorting BEFORE pagination for consistent ordering
+  const sortedAgents = sortAgents(reputationFilteredAgents, query.sort, query.order);
 
-  // Apply sorting
-  const sortedAgents = sortAgents(filteredAgents, query.sort, query.order);
+  // Calculate total from filtered results (before pagination)
+  const totalFiltered = sortedAgents.length;
+
+  // Apply pagination offset and limit
+  // If offset is beyond available data, return empty array
+  const paginatedAgents = sortedAgents.slice(offset, offset + query.limit);
 
   // Fetch chain stats for totals (from KV cache)
   const chainStats = await getCachedChainStats(c.env, sdk);
@@ -323,20 +338,23 @@ async function performNameSearch(
     })),
   };
 
+  // Calculate hasMore based on whether there are more items after this page
+  const hasMore = offset + query.limit < totalFiltered;
+
   const response: AgentListResponse = {
     success: true,
-    data: sortedAgents,
+    data: paginatedAgents,
     meta: {
-      total: postFilteredAgents.length,
-      hasMore: postFilteredAgents.length > query.limit,
-      nextCursor: sdkSearchResult.nextCursor,
+      total: totalFiltered,
+      hasMore,
+      nextCursor: hasMore ? sdkSearchResult.nextCursor : undefined,
       stats,
       searchMode: searchModeLabel,
     },
   };
 
   // Trigger background classification for unclassified agents (non-blocking)
-  const unclassifiedIds = sortedAgents
+  const unclassifiedIds = paginatedAgents
     .filter((a) => !a.oasf)
     .slice(0, 10)
     .map((a) => a.id);
@@ -401,7 +419,8 @@ agents.get('/', async (c) => {
     (query.chainId ? [query.chainId] : undefined);
 
   // Convert page to offset for pagination (page is 1-indexed)
-  const offset = query.page ? (query.page - 1) * query.limit : undefined;
+  // Default to 0 to ensure consistent pagination behavior
+  const offset = query.page ? (query.page - 1) * query.limit : 0;
 
   // Get search mode (default to 'auto' for backward compatibility)
   const searchModeInput: SearchModeInput = query.searchMode ?? 'auto';
@@ -416,7 +435,8 @@ agents.get('/', async (c) => {
           sdk,
           query,
           chainIds,
-          'name'
+          'name',
+          offset
         );
         await cache.set(cacheKey, response, CACHE_TTL.AGENTS);
         return c.json(response);
@@ -438,12 +458,13 @@ agents.get('/', async (c) => {
         (query.skills && query.skills.length > 0) || (query.domains && query.domains.length > 0);
 
       // Over-fetch when filtering to ensure enough results after post-filtering
+      // Also account for pagination offset
       // Use 10x for OASF filters (sparse data), 3x for boolean filters
-      let fetchLimit = query.limit;
+      let fetchLimit = offset + query.limit;
       if (hasOASFFilters) {
-        fetchLimit = Math.min(query.limit * 10, 100);
+        fetchLimit = Math.min((offset + query.limit) * 10, 100);
       } else if (hasBooleanFilters) {
-        fetchLimit = Math.min(query.limit * 3, 100);
+        fetchLimit = Math.min((offset + query.limit) * 3, 100);
       }
 
       const searchResults = await searchService.search({
@@ -597,14 +618,22 @@ agents.get('/', async (c) => {
         });
       }
 
-      // Apply limit after post-filtering
-      const limitedAgents = postFilteredAgents.slice(0, query.limit);
+      // Apply reputation filtering BEFORE pagination
+      const reputationFilteredAgents = filterByReputation(
+        postFilteredAgents,
+        query.minRep,
+        query.maxRep
+      );
 
-      // Apply reputation filtering
-      const filteredAgents = filterByReputation(limitedAgents, query.minRep, query.maxRep);
+      // Apply sorting BEFORE pagination for consistent ordering
+      const sortedAgents = sortAgents(reputationFilteredAgents, query.sort, query.order);
 
-      // Apply sorting
-      const sortedAgents = sortAgents(filteredAgents, query.sort, query.order);
+      // Calculate total from filtered results (before pagination)
+      const totalFiltered = sortedAgents.length;
+
+      // Apply pagination offset and limit
+      // If offset is beyond available data, return empty array
+      const paginatedAgents = sortedAgents.slice(offset, offset + query.limit);
 
       // Fetch chain stats for totals (from KV cache)
       const chainStats = await getCachedChainStats(c.env, sdk);
@@ -623,17 +652,19 @@ agents.get('/', async (c) => {
 
       // Use post-filtered count when filters are applied, otherwise use search service total
       const filteredTotal =
-        hasBooleanFilters || hasOASFFilters ? postFilteredAgents.length : searchResults.total;
+        hasBooleanFilters || hasOASFFilters ? totalFiltered : searchResults.total;
+
+      // Calculate hasMore based on whether there are more items after this page
+      const hasMore =
+        offset + query.limit < totalFiltered ||
+        (!(hasBooleanFilters || hasOASFFilters) && searchResults.hasMore);
 
       const response: AgentListResponse = {
         success: true,
-        data: sortedAgents,
+        data: paginatedAgents,
         meta: {
           total: filteredTotal,
-          hasMore:
-            hasBooleanFilters || hasOASFFilters
-              ? postFilteredAgents.length > query.limit
-              : searchResults.hasMore,
+          hasMore,
           nextCursor: hasBooleanFilters || hasOASFFilters ? undefined : searchResults.nextCursor,
           stats,
           searchMode: 'vector',
@@ -641,7 +672,7 @@ agents.get('/', async (c) => {
       };
 
       // Trigger background classification for unclassified agents (non-blocking)
-      const unclassifiedIds = sortedAgents
+      const unclassifiedIds = paginatedAgents
         .filter((a) => !a.oasf)
         .slice(0, 10) // Limit to 10 per request to avoid spam
         .map((a) => a.id);
@@ -671,7 +702,8 @@ agents.get('/', async (c) => {
           sdk,
           query,
           chainIds,
-          'fallback'
+          'fallback',
+          offset
         );
         await cache.set(cacheKey, response, CACHE_TTL.AGENTS);
         return c.json(response);
@@ -706,7 +738,7 @@ agents.get('/', async (c) => {
     // OR mode: run separate queries for each boolean filter and merge results
     // Check if cursor is a cached OR mode cursor for pagination
     const orModeCache = createCacheService(c.env.CACHE, CACHE_TTL.OR_MODE_AGENTS);
-    let startOffset = offset ?? 0; // Use page-based offset if provided
+    let startOffset = offset; // Use page-based offset
 
     if (query.cursor) {
       const cachedCursor = decodeOrModeCursor(query.cursor);
@@ -714,14 +746,22 @@ agents.get('/', async (c) => {
         // Paginate from cached results
         const cachedData = await orModeCache.get<OrModeCachedData>(cachedCursor.k);
         if (cachedData) {
-          const pageItems = cachedData.items.slice(cachedCursor.o, cachedCursor.o + query.limit);
-          const hasMore = cachedCursor.o + query.limit < cachedData.total;
-          agentsResult = {
-            items: pageItems,
-            nextCursor: hasMore
-              ? encodeOrModeCursor(cachedCursor.k, cachedCursor.o + query.limit)
-              : undefined,
-          };
+          // Check if offset is beyond available data - return empty
+          if (cachedCursor.o >= cachedData.total) {
+            agentsResult = {
+              items: [],
+              nextCursor: undefined,
+            };
+          } else {
+            const pageItems = cachedData.items.slice(cachedCursor.o, cachedCursor.o + query.limit);
+            const hasMore = cachedCursor.o + query.limit < cachedData.total;
+            agentsResult = {
+              items: pageItems,
+              nextCursor: hasMore
+                ? encodeOrModeCursor(cachedCursor.k, cachedCursor.o + query.limit)
+                : undefined,
+            };
+          }
           // Skip to enrichment with already-paginated results
         } else {
           // Cache expired, use offset as fallback for fresh query
@@ -782,21 +822,37 @@ agents.get('/', async (c) => {
         };
         await orModeCache.set(orCacheKey, cacheData, CACHE_TTL.OR_MODE_AGENTS);
 
-        // Return paginated slice with cursor
-        const pageItems = mergedItems.slice(startOffset, startOffset + query.limit);
-        const hasMore = startOffset + query.limit < totalMerged;
-        agentsResult = {
-          items: pageItems,
-          nextCursor: hasMore
-            ? encodeOrModeCursor(orCacheKey, startOffset + query.limit)
-            : undefined,
-        };
+        // Check if offset is beyond available data - return empty
+        if (startOffset >= totalMerged) {
+          agentsResult = {
+            items: [],
+            nextCursor: undefined,
+          };
+        } else {
+          // Return paginated slice with cursor
+          const pageItems = mergedItems.slice(startOffset, startOffset + query.limit);
+          const hasMore = startOffset + query.limit < totalMerged;
+          agentsResult = {
+            items: pageItems,
+            nextCursor: hasMore
+              ? encodeOrModeCursor(orCacheKey, startOffset + query.limit)
+              : undefined,
+          };
+        }
       } else {
-        // No caching needed, return all results
-        agentsResult = {
-          items: mergedItems.slice(startOffset, startOffset + query.limit),
-          nextCursor: undefined,
-        };
+        // Check if offset is beyond available data - return empty
+        if (startOffset >= totalMerged) {
+          agentsResult = {
+            items: [],
+            nextCursor: undefined,
+          };
+        } else {
+          // No caching needed, return paginated slice
+          agentsResult = {
+            items: mergedItems.slice(startOffset, startOffset + query.limit),
+            nextCursor: undefined,
+          };
+        }
       }
     }
   } else {
