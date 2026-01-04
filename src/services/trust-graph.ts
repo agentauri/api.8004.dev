@@ -163,22 +163,30 @@ export class TrustGraphService {
   async getTrustScoresBatch(agentIds: string[]): Promise<Map<string, AgentTrustScore>> {
     if (agentIds.length === 0) return new Map();
 
-    const placeholders = agentIds.map(() => '?').join(',');
-    const { results } = await this.db
-      .prepare(`SELECT * FROM agent_trust_scores WHERE agent_id IN (${placeholders})`)
-      .bind(...agentIds)
-      .all<ScoreRow>();
-
     const scores = new Map<string, AgentTrustScore>();
-    for (const row of results) {
-      scores.set(row.agent_id, {
-        agentId: row.agent_id,
-        chainId: row.chain_id,
-        trustScore: row.trust_score,
-        rawPagerank: row.raw_pagerank,
-        inDegree: row.in_degree,
-        computedAt: row.computed_at,
-      });
+
+    // D1 has a limit of 100 bound parameters per query
+    const BATCH_SIZE = 95;
+
+    for (let i = 0; i < agentIds.length; i += BATCH_SIZE) {
+      const batch = agentIds.slice(i, i + BATCH_SIZE);
+      const placeholders = batch.map(() => '?').join(',');
+
+      const { results } = await this.db
+        .prepare(`SELECT * FROM agent_trust_scores WHERE agent_id IN (${placeholders})`)
+        .bind(...batch)
+        .all<ScoreRow>();
+
+      for (const row of results) {
+        scores.set(row.agent_id, {
+          agentId: row.agent_id,
+          chainId: row.chain_id,
+          trustScore: row.trust_score,
+          rawPagerank: row.raw_pagerank,
+          inDegree: row.in_degree,
+          computedAt: row.computed_at,
+        });
+      }
     }
 
     return scores;

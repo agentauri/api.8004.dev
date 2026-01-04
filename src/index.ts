@@ -465,6 +465,7 @@ export default {
                 QDRANT_API_KEY: qdrantApiKey,
                 QDRANT_COLLECTION: qdrantCollection,
                 VENICE_API_KEY: veniceApiKey,
+                GRAPH_API_KEY: graphApiKey,
               });
               console.info(
                 `Reconciliation: ${reconResult.orphansDeleted} orphans deleted, ` +

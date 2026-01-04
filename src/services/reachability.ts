@@ -149,33 +149,39 @@ export function createReachabilityService(db: D1Database): ReachabilityService {
 
       const cutoff = getRecentCutoff();
 
-      // Build the IN clause with placeholders
-      const placeholders = agentIds.map(() => '?').join(', ');
-
-      // Query recent feedback for all agents with reachability tags
-      // Note: D1 doesn't support array binding, so we need to pass each ID individually
-      const query = `
-        SELECT agent_id, score, tags, submitted_at
-        FROM agent_feedback
-        WHERE agent_id IN (${placeholders})
-          AND submitted_at >= ?
-          AND (tags LIKE ? OR tags LIKE ?)
-        ORDER BY agent_id, submitted_at DESC
-      `;
-
-      const results = await db
-        .prepare(query)
-        .bind(...agentIds, cutoff, `%${REACHABILITY_TAG_A2A}%`, `%${REACHABILITY_TAG_MCP}%`)
-        .all<FeedbackRow>();
-
-      const feedback = results.results ?? [];
-
-      // Group feedback by agent_id
+      // D1 has a limit of 100 bound parameters per query
+      // Each query uses batch.length + 3 variables (batch + cutoff + 2 LIKE patterns)
+      // Use batch size of 95 to stay safely under the 100 limit
+      const BATCH_SIZE = 95;
       const feedbackByAgent = new Map<string, FeedbackRow[]>();
-      for (const row of feedback) {
-        const existing = feedbackByAgent.get(row.agent_id) ?? [];
-        existing.push(row);
-        feedbackByAgent.set(row.agent_id, existing);
+
+      for (let i = 0; i < agentIds.length; i += BATCH_SIZE) {
+        const batch = agentIds.slice(i, i + BATCH_SIZE);
+        const placeholders = batch.map(() => '?').join(', ');
+
+        // Query recent feedback for this batch with reachability tags
+        const query = `
+          SELECT agent_id, score, tags, submitted_at
+          FROM agent_feedback
+          WHERE agent_id IN (${placeholders})
+            AND submitted_at >= ?
+            AND (tags LIKE ? OR tags LIKE ?)
+          ORDER BY agent_id, submitted_at DESC
+        `;
+
+        const results = await db
+          .prepare(query)
+          .bind(...batch, cutoff, `%${REACHABILITY_TAG_A2A}%`, `%${REACHABILITY_TAG_MCP}%`)
+          .all<FeedbackRow>();
+
+        const feedback = results.results ?? [];
+
+        // Group feedback by agent_id
+        for (const row of feedback) {
+          const existing = feedbackByAgent.get(row.agent_id) ?? [];
+          existing.push(row);
+          feedbackByAgent.set(row.agent_id, existing);
+        }
       }
 
       // Determine reachability for each agent

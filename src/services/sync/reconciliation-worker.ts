@@ -14,11 +14,15 @@ import type { AgentPayload } from '../../lib/qdrant/types';
 import { generateEmbedding } from '../embedding';
 import { createQdrantClient } from '../qdrant';
 
-// Graph endpoints per chain
+// Graph endpoints per chain (using gateway.thegraph.com with subgraph IDs)
+// Must match graph-sync-worker.ts endpoints
 const GRAPH_ENDPOINTS: Record<number, string> = {
-  11155111: 'https://api.studio.thegraph.com/query/67879/agent0-mainnet-sepolia/version/latest',
-  84532: 'https://api.studio.thegraph.com/query/67879/agent0-base-sepolia/version/latest',
-  80002: 'https://api.studio.thegraph.com/query/67879/agent0-polygon-amoy/version/latest',
+  11155111:
+    'https://gateway.thegraph.com/api/subgraphs/id/6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT',
+  84532:
+    'https://gateway.thegraph.com/api/subgraphs/id/GjQEDgEKqoh5Yc8MUgxoQoRATEJdEiH7HbocfR1aFiHa',
+  80002:
+    'https://gateway.thegraph.com/api/subgraphs/id/2A1JB18r1mF2VNP4QBH4mmxd74kbHoM6xLXC8ABAKf7j',
 };
 
 interface GraphAgent {
@@ -54,13 +58,18 @@ export interface ReconciliationResult {
 /**
  * Fetch all agent IDs from a single chain
  */
-async function fetchAgentIdsFromChain(chainId: number): Promise<string[]> {
+async function fetchAgentIdsFromChain(chainId: number, graphApiKey?: string): Promise<string[]> {
   const endpoint = GRAPH_ENDPOINTS[chainId];
   if (!endpoint) return [];
 
   const ids: string[] = [];
   let skip = 0;
   const first = 1000;
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (graphApiKey) {
+    headers.Authorization = `Bearer ${graphApiKey}`;
+  }
 
   while (true) {
     const query = `
@@ -74,7 +83,7 @@ async function fetchAgentIdsFromChain(chainId: number): Promise<string[]> {
 
     const response = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ query, variables: { first, skip } }),
     });
 
@@ -101,11 +110,11 @@ async function fetchAgentIdsFromChain(chainId: number): Promise<string[]> {
 /**
  * Fetch all agent IDs from all chains
  */
-async function fetchAllAgentIdsFromGraph(): Promise<Set<string>> {
+async function fetchAllAgentIdsFromGraph(graphApiKey?: string): Promise<Set<string>> {
   const allIds = new Set<string>();
 
   for (const chainId of Object.keys(GRAPH_ENDPOINTS)) {
-    const ids = await fetchAgentIdsFromChain(Number(chainId));
+    const ids = await fetchAgentIdsFromChain(Number(chainId), graphApiKey);
     for (const id of ids) {
       allIds.add(id);
     }
@@ -117,7 +126,7 @@ async function fetchAllAgentIdsFromGraph(): Promise<Set<string>> {
 /**
  * Fetch agents by IDs from Graph (for indexing missing ones)
  */
-async function fetchAgentsByIds(agentIds: string[]): Promise<GraphAgent[]> {
+async function fetchAgentsByIds(agentIds: string[], graphApiKey?: string): Promise<GraphAgent[]> {
   const agents: GraphAgent[] = [];
 
   // Group by chain
@@ -138,6 +147,11 @@ async function fetchAgentsByIds(agentIds: string[]): Promise<GraphAgent[]> {
   for (const [chainId, tokenIds] of byChain) {
     const endpoint = GRAPH_ENDPOINTS[chainId];
     if (!endpoint) continue;
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (graphApiKey) {
+      headers.Authorization = `Bearer ${graphApiKey}`;
+    }
 
     const query = `
       query GetAgentsByIds($ids: [String!]!) {
@@ -169,7 +183,7 @@ async function fetchAgentsByIds(agentIds: string[]): Promise<GraphAgent[]> {
 
     const response = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ query, variables: { ids: tokenIds } }),
     });
 
@@ -289,6 +303,7 @@ export async function runReconciliation(
     QDRANT_API_KEY: string;
     QDRANT_COLLECTION?: string;
     VENICE_API_KEY: string;
+    GRAPH_API_KEY?: string;
   }
 ): Promise<ReconciliationResult> {
   const qdrant = createQdrantClient(env);
@@ -300,7 +315,7 @@ export async function runReconciliation(
 
   try {
     // Get all agent IDs from Graph
-    const graphAgentIds = await fetchAllAgentIdsFromGraph();
+    const graphAgentIds = await fetchAllAgentIdsFromGraph(env.GRAPH_API_KEY);
     console.info(`Reconciliation: ${graphAgentIds.size} agents in Graph`);
 
     // Get all agent IDs from Qdrant
@@ -347,7 +362,7 @@ export async function runReconciliation(
       for (let i = 0; i < missing.length; i += batchSize) {
         const batch = missing.slice(i, i + batchSize);
         try {
-          const agents = await fetchAgentsByIds(batch);
+          const agents = await fetchAgentsByIds(batch, env.GRAPH_API_KEY);
           const indexed = await indexAgentsToQdrant(agents, env);
           result.missingIndexed += indexed;
         } catch (error) {

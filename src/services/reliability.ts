@@ -87,15 +87,23 @@ export class ReliabilityService {
   async getMetricsBatch(agentIds: string[]): Promise<Map<string, ReliabilityMetrics>> {
     if (agentIds.length === 0) return new Map();
 
-    const placeholders = agentIds.map(() => '?').join(',');
-    const { results } = await this.db
-      .prepare(`SELECT * FROM agent_reliability WHERE agent_id IN (${placeholders})`)
-      .bind(...agentIds)
-      .all<ReliabilityRow>();
-
     const metricsMap = new Map<string, ReliabilityMetrics>();
-    for (const row of results) {
-      metricsMap.set(row.agent_id, this.rowToMetrics(row));
+
+    // D1 has a limit of 100 bound parameters per query
+    const BATCH_SIZE = 95;
+
+    for (let i = 0; i < agentIds.length; i += BATCH_SIZE) {
+      const batch = agentIds.slice(i, i + BATCH_SIZE);
+      const placeholders = batch.map(() => '?').join(',');
+
+      const { results } = await this.db
+        .prepare(`SELECT * FROM agent_reliability WHERE agent_id IN (${placeholders})`)
+        .bind(...batch)
+        .all<ReliabilityRow>();
+
+      for (const row of results) {
+        metricsMap.set(row.agent_id, this.rowToMetrics(row));
+      }
     }
 
     return metricsMap;

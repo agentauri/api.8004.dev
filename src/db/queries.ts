@@ -16,11 +16,11 @@ import type {
 } from './schema';
 
 /**
- * Maximum number of placeholders in a single SQLite query.
- * SQLite has a limit of 999 host parameters (SQLITE_MAX_VARIABLE_NUMBER).
- * We use 500 to leave margin for other parameters in complex queries.
+ * Maximum number of placeholders in a single D1 query.
+ * Cloudflare D1 has a limit of 100 bound parameters per query.
+ * We use 95 to leave margin for other parameters in complex queries.
  */
-const MAX_BATCH_SIZE = 500;
+const MAX_BATCH_SIZE = 95;
 
 /**
  * Get classification for an agent
