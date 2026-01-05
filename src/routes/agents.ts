@@ -10,6 +10,7 @@ import {
   getClassificationsBatch,
   getReputationsBatch,
 } from '@/db/queries';
+import type { FieldCondition } from '@/lib/qdrant/types';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import {
@@ -1118,7 +1119,7 @@ agents.get('/:agentId/similar', async (c) => {
     // Query Qdrant for agents with matching skills or domains (much faster than SDK)
     // Build custom filter: agents must have ANY of the target skills OR ANY of the target domains
     const qdrant = createQdrantClient(c.env);
-    const shouldConditions = [];
+    const shouldConditions: FieldCondition[] = [];
     if (targetSkills.length > 0) {
       shouldConditions.push({ key: 'skills', match: { any: targetSkills } });
     }
