@@ -6,9 +6,14 @@
 
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { getClassificationsBatch } from '@/db/queries';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
-import { type SearchRequestBody, searchRequestSchema } from '@/lib/utils/validation';
+import {
+  type SearchRequestBody,
+  parseClassificationRow,
+  searchRequestSchema,
+} from '@/lib/utils/validation';
 import { CACHE_TTL, createCacheService } from '@/services/cache';
 import { createQdrantSearchService, searchFiltersToAgentFilters } from '@/services/qdrant-search';
 import type { AgentSummary, Env, OASFSource, SearchResponse, Variables } from '@/types';
@@ -75,11 +80,33 @@ search.post('/', async (c) => {
     filters,
   });
 
+  // Batch fetch classifications from D1 database
+  const agentIds = searchResult.results.map((r) => r.agentId);
+  const classificationsMap = await getClassificationsBatch(c.env.DB, agentIds);
+
   // Transform results to AgentSummary format
   const agents: AgentSummary[] = searchResult.results.map((result) => {
     const tokenId = result.agentId.split(':')[1] ?? '0';
-    const skills = result.metadata?.skills ?? [];
-    const domains = result.metadata?.domains ?? [];
+    const qdrantSkills = result.metadata?.skills ?? [];
+    const qdrantDomains = result.metadata?.domains ?? [];
+
+    // Get classification from D1 (preferred) or fallback to Qdrant metadata
+    const classificationRow = classificationsMap.get(result.agentId);
+    const d1Oasf = parseClassificationRow(classificationRow);
+
+    // Use D1 classification if available, otherwise check Qdrant metadata
+    const hasQdrantOasf = qdrantSkills.length > 0 || qdrantDomains.length > 0;
+    const oasf = d1Oasf
+      ? d1Oasf
+      : hasQdrantOasf
+        ? {
+            skills: qdrantSkills.map((slug) => ({ slug, confidence: 1 })),
+            domains: qdrantDomains.map((slug) => ({ slug, confidence: 1 })),
+            confidence: 1,
+            classifiedAt: new Date().toISOString(),
+            modelVersion: 'qdrant-indexed',
+          }
+        : undefined;
 
     return {
       id: result.agentId,
@@ -96,19 +123,8 @@ search.post('/', async (c) => {
       operators: [],
       ens: result.metadata?.ens,
       did: result.metadata?.did,
-      oasf:
-        skills.length > 0 || domains.length > 0
-          ? {
-              skills: skills.map((slug) => ({ slug, confidence: 1 })),
-              domains: domains.map((slug) => ({ slug, confidence: 1 })),
-              confidence: 1,
-              classifiedAt: new Date().toISOString(),
-              modelVersion: 'qdrant-indexed',
-            }
-          : undefined,
-      oasfSource: (skills.length > 0 || domains.length > 0
-        ? 'llm-classification'
-        : 'none') as OASFSource,
+      oasf,
+      oasfSource: (oasf ? 'llm-classification' : 'none') as OASFSource,
       searchScore: result.score,
       matchReasons: result.matchReasons,
       reputationScore: result.metadata?.reputation,

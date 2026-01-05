@@ -5,7 +5,11 @@
  */
 
 import { Hono } from 'hono';
-import { enqueueClassificationsBatch, getClassification } from '@/db/queries';
+import {
+  enqueueClassificationsBatch,
+  getClassification,
+  getClassificationsBatch,
+} from '@/db/queries';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import {
@@ -302,24 +306,21 @@ agents.get('/', async (c) => {
     }
   }
 
+  // Batch fetch classifications from D1 database
+  const agentIds = searchResult.results.map((r) => r.agentId);
+  const classificationsMap = await getClassificationsBatch(c.env.DB, agentIds);
+
   // Transform results to AgentSummary format
-  let agents: AgentSummary[] = searchResult.results.map((result) => ({
-    id: result.agentId,
-    chainId: result.chainId,
-    tokenId: result.agentId.split(':')[1] ?? '0',
-    name: result.name,
-    description: result.description,
-    image: result.metadata?.image,
-    active: result.metadata?.active ?? true,
-    hasMcp: result.metadata?.hasMcp ?? false,
-    hasA2a: result.metadata?.hasA2a ?? false,
-    x402Support: result.metadata?.x402Support ?? false,
-    supportedTrust: result.metadata?.x402Support ? ['x402'] : [],
-    operators: [],
-    ens: result.metadata?.ens,
-    did: result.metadata?.did,
-    oasf:
-      result.metadata?.skills?.length || result.metadata?.domains?.length
+  let agents: AgentSummary[] = searchResult.results.map((result) => {
+    // Get classification from D1 (preferred) or fallback to Qdrant metadata
+    const classificationRow = classificationsMap.get(result.agentId);
+    const d1Oasf = parseClassificationRow(classificationRow);
+
+    // Use D1 classification if available, otherwise check Qdrant metadata
+    const hasQdrantOasf = result.metadata?.skills?.length || result.metadata?.domains?.length;
+    const oasf = d1Oasf
+      ? d1Oasf
+      : hasQdrantOasf
         ? {
             skills: (result.metadata?.skills ?? []).map((slug) => ({ slug, confidence: 1 })),
             domains: (result.metadata?.domains ?? []).map((slug) => ({ slug, confidence: 1 })),
@@ -327,15 +328,30 @@ agents.get('/', async (c) => {
             classifiedAt: new Date().toISOString(),
             modelVersion: 'qdrant-indexed',
           }
-        : undefined,
-    oasfSource:
-      result.metadata?.skills?.length || result.metadata?.domains?.length
-        ? 'llm-classification'
-        : ('none' as OASFSource),
-    searchScore: result.score,
-    matchReasons: result.matchReasons,
-    reputationScore: result.metadata?.reputation,
-  }));
+        : undefined;
+
+    return {
+      id: result.agentId,
+      chainId: result.chainId,
+      tokenId: result.agentId.split(':')[1] ?? '0',
+      name: result.name,
+      description: result.description,
+      image: result.metadata?.image,
+      active: result.metadata?.active ?? true,
+      hasMcp: result.metadata?.hasMcp ?? false,
+      hasA2a: result.metadata?.hasA2a ?? false,
+      x402Support: result.metadata?.x402Support ?? false,
+      supportedTrust: result.metadata?.x402Support ? ['x402'] : [],
+      operators: [],
+      ens: result.metadata?.ens,
+      did: result.metadata?.did,
+      oasf,
+      oasfSource: (oasf ? 'llm-classification' : 'none') as OASFSource,
+      searchScore: result.score,
+      matchReasons: result.matchReasons,
+      reputationScore: result.metadata?.reputation,
+    };
+  });
 
   // Apply reputation filtering (not yet in Qdrant index)
   if (query.minRep !== undefined || query.maxRep !== undefined) {
