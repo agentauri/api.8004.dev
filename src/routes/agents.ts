@@ -1116,14 +1116,18 @@ agents.get('/:agentId/similar', async (c) => {
     }
 
     // Query Qdrant for agents with matching skills or domains (much faster than SDK)
+    // Build custom filter: agents must have ANY of the target skills OR ANY of the target domains
     const qdrant = createQdrantClient(c.env);
+    const shouldConditions = [];
+    if (targetSkills.length > 0) {
+      shouldConditions.push({ key: 'skills', match: { any: targetSkills } });
+    }
+    if (targetDomains.length > 0) {
+      shouldConditions.push({ key: 'domains', match: { any: targetDomains } });
+    }
+
     const qdrantResult = await qdrant.scroll({
-      filters: {
-        // OR mode: match agents with any of the target skills or domains
-        filterMode: 'OR',
-        skills: targetSkills,
-        domains: targetDomains,
-      },
+      qdrantFilter: { should: shouldConditions },
       limit: 100,
     });
 
