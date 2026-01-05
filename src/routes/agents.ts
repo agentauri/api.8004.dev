@@ -22,6 +22,8 @@ import {
 import { CACHE_KEYS, CACHE_TTL, createCacheService, hashQueryParams } from '@/services/cache';
 import { createIPFSService } from '@/services/ipfs';
 import { resolveClassification, toOASFClassification } from '@/services/oasf-resolver';
+import { createQdrantClient } from '@/services/qdrant';
+import { payloadToAgentSummary } from '@/services/qdrant-search';
 import { createReputationService } from '@/services/reputation';
 import { createSDKService } from '@/services/sdk';
 import { createSearchService } from '@/services/search';
@@ -1113,18 +1115,20 @@ agents.get('/:agentId/similar', async (c) => {
       });
     }
 
-    // Query SDK for agents (without skills/domains filter - we'll compute similarity from classifications)
-    const sdk = createSDKService(c.env, c.env.CACHE);
+    // Query Qdrant for agents with matching skills or domains (much faster than SDK)
+    const qdrant = createQdrantClient(c.env);
+    const qdrantResult = await qdrant.scroll({
+      filters: {
+        // OR mode: match agents with any of the target skills or domains
+        filterMode: 'OR',
+        skills: targetSkills,
+        domains: targetDomains,
+      },
+      limit: 100,
+    });
 
-    // Get a batch of classified agents to find similar ones
-    const agentsResult = await sdk.getAgents({ limit: 100 });
-    const candidates = agentsResult.items.filter((a) => a.id !== agentId);
-
-    // Get classifications for candidates to compute similarity
-    const candidateIds = candidates.map((a) => a.id);
-    const classifications = await getClassificationsBatch(c.env.DB, candidateIds);
-
-    // Compute similarity scores
+    // Convert Qdrant results to candidates (excluding target agent)
+    // Skills/domains are already in the Qdrant payload, no need for D1 batch query
     interface SimilarAgent extends AgentSummary {
       similarityScore: number;
       matchedSkills: string[];
@@ -1132,24 +1136,12 @@ agents.get('/:agentId/similar', async (c) => {
     }
 
     const similarAgents: SimilarAgent[] = [];
-    for (const agent of candidates) {
-      const agentClassification = classifications.get(agent.id);
-      if (!agentClassification) continue;
+    for (const item of qdrantResult.items) {
+      const payload = item.payload;
+      if (!payload || payload.agent_id === agentId) continue;
 
-      let agentSkills: string[] = [];
-      let agentDomains: string[] = [];
-      try {
-        const skills = JSON.parse(agentClassification.skills);
-        agentSkills = skills.map((s: { slug: string }) => s.slug);
-      } catch {
-        // Invalid skills JSON
-      }
-      try {
-        const domains = JSON.parse(agentClassification.domains);
-        agentDomains = domains.map((d: { slug: string }) => d.slug);
-      } catch {
-        // Invalid domains JSON
-      }
+      const agentSkills: string[] = payload.skills ?? [];
+      const agentDomains: string[] = payload.domains ?? [];
 
       // Calculate overlap
       const matchedSkills = targetSkills.filter((s) => agentSkills.includes(s));
@@ -1171,7 +1163,7 @@ agents.get('/:agentId/similar', async (c) => {
 
       if (similarityScore > 0) {
         similarAgents.push({
-          ...agent,
+          ...payloadToAgentSummary(payload),
           similarityScore,
           matchedSkills,
           matchedDomains,
