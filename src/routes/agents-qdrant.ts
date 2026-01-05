@@ -15,10 +15,10 @@ import {
   parseClassificationRow,
 } from '@/lib/utils/validation';
 import { CACHE_KEYS, CACHE_TTL, createCacheService } from '@/services/cache';
-import { sortAgents } from '@/services/pagination-cache';
 import { findComplementaryAgents, findIOCompatibleAgents } from '@/services/complementarity';
 import { createIPFSService } from '@/services/ipfs';
 import { resolveClassification, toOASFClassification } from '@/services/oasf-resolver';
+import { sortAgents } from '@/services/pagination-cache';
 import {
   createQdrantSearchService,
   payloadToAgentSummary,
@@ -250,7 +250,10 @@ agents.get('/', async (c) => {
         }
 
         // Apply offset pagination - slice from offset to offset + limit
-        const paginatedAgents = sortedSdkAgents.slice(effectiveOffset, effectiveOffset + query.limit);
+        const paginatedAgents = sortedSdkAgents.slice(
+          effectiveOffset,
+          effectiveOffset + query.limit
+        );
         const hasMore = sortedSdkAgents.length > effectiveOffset + query.limit;
 
         // Get chain stats for totals

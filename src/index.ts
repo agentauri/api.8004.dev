@@ -427,7 +427,8 @@ export default {
             });
             console.info(
               `Graph sync: ${graphResult.newAgents} new, ${graphResult.updatedAgents} updated, ` +
-                `${graphResult.reembedded} reembedded, ${graphResult.errors.length} errors`
+                `${graphResult.reembedded} reembedded, ${graphResult.skipped ?? 0} skipped, ` +
+                `${graphResult.errors.length} errors${graphResult.hasMore ? ' (more pending)' : ''}`
             );
           } catch (error) {
             console.error('Graph sync failed:', error instanceof Error ? error.message : error);

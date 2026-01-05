@@ -24,6 +24,26 @@ import type {
 } from '../lib/qdrant/types';
 
 /**
+ * Convert agent ID to a deterministic UUID v5-like format
+ * Uses SHA-256 hash truncated to UUID format
+ * @param agentId - Agent ID in format "chainId:tokenId"
+ * @returns UUID string
+ */
+async function agentIdToUuid(agentId: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(agentId);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = new Uint8Array(hashBuffer);
+
+  // Format as UUID (8-4-4-4-12 hex characters)
+  const hex = Array.from(hashArray.slice(0, 16))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
+/**
  * Qdrant client configuration
  */
 export interface QdrantConfig {
@@ -163,6 +183,7 @@ export class QdrantClient {
 
   /**
    * Upsert points (insert or update)
+   * Note: Point IDs must be UUIDs (use agentIdToUuid for agent IDs)
    */
   async upsert(points: QdrantPoint[], wait = true): Promise<void> {
     const request: QdrantUpsertRequest = {
@@ -179,9 +200,13 @@ export class QdrantClient {
 
   /**
    * Upsert a single agent
+   * @param agentId - Agent ID in format "chainId:tokenId"
+   * @param vector - Embedding vector
+   * @param payload - Agent payload (must include agent_id field)
    */
-  async upsertAgent(id: string, vector: number[], payload: AgentPayload): Promise<void> {
-    await this.upsert([{ id, vector, payload }]);
+  async upsertAgent(agentId: string, vector: number[], payload: AgentPayload): Promise<void> {
+    const uuid = await agentIdToUuid(agentId);
+    await this.upsert([{ id: uuid, vector, payload }]);
   }
 
   /**
@@ -195,7 +220,14 @@ export class QdrantClient {
 
     for (let i = 0; i < agents.length; i += batchSize) {
       const batch = agents.slice(i, i + batchSize);
-      await this.upsert(batch.map((a) => ({ id: a.id, vector: a.vector, payload: a.payload })));
+      const pointsWithUuids = await Promise.all(
+        batch.map(async (a) => ({
+          id: await agentIdToUuid(a.id),
+          vector: a.vector,
+          payload: a.payload,
+        }))
+      );
+      await this.upsert(pointsWithUuids);
     }
   }
 

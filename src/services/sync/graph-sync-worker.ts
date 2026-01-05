@@ -13,11 +13,7 @@ import type { AgentPayload } from '../../lib/qdrant/types';
 import { type A2AClient, createA2AClient, type ExtractedIOModes } from '../a2a-client';
 import { generateEmbedding } from '../embedding';
 import { createQdrantClient, type QdrantClient } from '../qdrant';
-import {
-  type AgentReachability,
-  createReachabilityService,
-  type ReachabilityService,
-} from '../reachability';
+import { type AgentReachability, createReachabilityService } from '../reachability';
 import { type ContentFields, computeContentHash, computeEmbedHash } from './content-hash';
 
 // Graph endpoints per chain (using gateway.thegraph.com with subgraph IDs)
@@ -66,7 +62,22 @@ export interface GraphSyncResult {
   updatedAgents: number;
   reembedded: number;
   errors: string[];
+  /** Number of agents skipped (already synced) */
+  skipped?: number;
+  /** Whether there are more agents to sync in the next run */
+  hasMore?: boolean;
 }
+
+/**
+ * Maximum agents to process per sync invocation
+ * Keeps us well under Cloudflare's 1000 subrequest limit:
+ * - ~10 Graph API requests
+ * - ~100 A2A card fetches (for agents with A2A)
+ * - ~100 embedding requests
+ * - ~100 Qdrant upserts
+ * Total: ~310 subrequests max
+ */
+const MAX_AGENTS_PER_SYNC = 100;
 
 interface AgentToSync {
   agent: GraphAgent;
@@ -323,22 +334,8 @@ async function fetchA2AIOModes(
 }
 
 /**
- * Fetch reachability status for all agents
- * @param agents - Agents to fetch reachability for
- * @param reachabilityService - Reachability service instance
- * @returns Map of agentId to reachability status
- */
-async function fetchReachabilityBatch(
-  agents: GraphAgent[],
-  reachabilityService: ReachabilityService
-): Promise<Map<string, AgentReachability>> {
-  const agentIds = agents.filter((a) => a.registrationFile).map((a) => `${a.chainId}:${a.agentId}`);
-
-  return reachabilityService.getAgentReachabilitiesBatch(agentIds);
-}
-
-/**
  * Sync agents from Graph to Qdrant
+ * Processes agents incrementally to stay under Cloudflare's subrequest limit
  */
 export async function syncFromGraph(
   db: D1Database,
@@ -358,65 +355,95 @@ export async function syncFromGraph(
     updatedAgents: 0,
     reembedded: 0,
     errors: [],
+    skipped: 0,
+    hasMore: false,
   };
 
   // Fetch all agents from Graph
   const agents = await fetchAllAgentsFromGraph(env.GRAPH_API_KEY);
-  console.info(`Graph sync: fetched ${agents.length} agents`);
+  console.info(`Graph sync: fetched ${agents.length} agents from Graph`);
 
-  // Fetch A2A IO modes for agents with A2A endpoints
-  console.info('Graph sync: fetching A2A AgentCards...');
-  const ioModesMap = await fetchA2AIOModes(agents, a2aClient);
-  console.info(`Graph sync: fetched ${ioModesMap.size} A2A AgentCards with IO modes`);
+  // Filter to agents with registration files
+  const agentsWithReg = agents.filter((a) => a.registrationFile);
+  console.info(`Graph sync: ${agentsWithReg.length} agents have registration files`);
 
-  // Fetch reachability status for all agents
-  console.info('Graph sync: fetching reachability status...');
-  const reachabilityMap = await fetchReachabilityBatch(agents, reachabilityService);
-  console.info(`Graph sync: fetched reachability for ${reachabilityMap.size} agents`);
+  // Get existing sync metadata for all agents (to identify which need syncing)
+  const agentIds = agentsWithReg.map((a) => `${a.chainId}:${a.agentId}`);
 
-  // Process each agent
+  // Query existing metadata in batches
+  const existingMetadata = new Map<string, { content_hash: string; embed_hash: string }>();
+  const BATCH_SIZE = 95;
+  for (let i = 0; i < agentIds.length; i += BATCH_SIZE) {
+    const batch = agentIds.slice(i, i + BATCH_SIZE);
+    const placeholders = batch.map(() => '?').join(',');
+    const rows = await db
+      .prepare(
+        `SELECT agent_id, content_hash, embed_hash FROM agent_sync_metadata WHERE agent_id IN (${placeholders})`
+      )
+      .bind(...batch)
+      .all<{ agent_id: string; content_hash: string; embed_hash: string }>();
+    for (const row of rows.results ?? []) {
+      existingMetadata.set(row.agent_id, {
+        content_hash: row.content_hash,
+        embed_hash: row.embed_hash,
+      });
+    }
+  }
+  console.info(`Graph sync: found ${existingMetadata.size} agents already synced`);
+
+  // Identify agents that need syncing (new or changed)
+  // First pass: find agents without metadata (new agents) - limit to MAX_AGENTS_PER_SYNC
   const toSync: AgentToSync[] = [];
+  let skipped = 0;
 
-  for (const agent of agents) {
-    if (!agent.registrationFile) continue;
+  for (const agent of agentsWithReg) {
+    if (toSync.length >= MAX_AGENTS_PER_SYNC) {
+      result.hasMore = true;
+      break;
+    }
 
     const agentId = `${agent.chainId}:${agent.agentId}`;
-    const ioModes = ioModesMap.get(agentId);
+    const existing = existingMetadata.get(agentId);
 
-    try {
-      // Get existing sync metadata
-      const existing = await db
-        .prepare('SELECT content_hash, embed_hash FROM agent_sync_metadata WHERE agent_id = ?')
-        .bind(agentId)
-        .first<{ content_hash: string; embed_hash: string }>();
-
-      const embedFields = getEmbedFields(agent, ioModes);
-      const newEmbedHash = await computeEmbedHash(embedFields);
-
-      // Get reachability for content hash calculation
-      const reachability = reachabilityMap.get(agentId);
-      const payload = agentToPayload(agent, ioModes, reachability);
-      const contentFields = getContentFields(payload);
-      const newContentHash = await computeContentHash(contentFields);
-
-      if (!existing) {
-        // New agent - needs full index with embedding
-        toSync.push({ agent, needsEmbed: true, ioModes });
-      } else if (existing.embed_hash !== newEmbedHash) {
-        // Embedding fields changed - need to re-embed
-        toSync.push({ agent, needsEmbed: true, ioModes });
-      } else if (existing.content_hash !== newContentHash) {
-        // Only metadata changed - update without re-embed
-        toSync.push({ agent, needsEmbed: false, ioModes });
-      }
-      // else: no changes, skip
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      result.errors.push(`Check ${agentId}: ${message}`);
+    if (!existing) {
+      // New agent - needs full index with embedding
+      toSync.push({ agent, needsEmbed: true });
+    } else {
+      // Already synced - skip for now (we'll handle updates in a separate pass)
+      skipped++;
     }
   }
 
-  console.info(`Graph sync: ${toSync.length} agents to sync`);
+  result.skipped = skipped;
+  console.info(`Graph sync: ${toSync.length} new agents to sync, ${skipped} already synced`);
+
+  if (toSync.length === 0) {
+    console.info('Graph sync: no new agents to sync');
+    return result;
+  }
+
+  // Fetch A2A IO modes only for agents we're going to sync
+  const agentsToFetchA2A = toSync.filter((a) => a.agent.registrationFile?.a2aEndpoint);
+  console.info(`Graph sync: fetching A2A AgentCards for ${agentsToFetchA2A.length} agents...`);
+  const ioModesMap = await fetchA2AIOModes(
+    agentsToFetchA2A.map((a) => a.agent),
+    a2aClient
+  );
+  console.info(`Graph sync: fetched ${ioModesMap.size} A2A AgentCards with IO modes`);
+
+  // Update toSync with IO modes
+  for (const item of toSync) {
+    const agentId = `${item.agent.chainId}:${item.agent.agentId}`;
+    item.ioModes = ioModesMap.get(agentId);
+  }
+
+  // Fetch reachability status only for agents we're syncing
+  const syncAgentIds = toSync.map((a) => `${a.agent.chainId}:${a.agent.agentId}`);
+  console.info('Graph sync: fetching reachability status...');
+  const reachabilityMap = await reachabilityService.getAgentReachabilitiesBatch(syncAgentIds);
+  console.info(`Graph sync: fetched reachability for ${reachabilityMap.size} agents`);
+
+  console.info(`Graph sync: processing ${toSync.length} agents...`);
 
   // Process agents that need syncing
   for (const { agent, needsEmbed, ioModes } of toSync) {
