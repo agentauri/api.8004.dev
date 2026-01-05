@@ -383,18 +383,45 @@ export default {
 
   /**
    * Queue consumer handler
+   * Processes messages in parallel with concurrency limit for improved throughput
    */
   async queue(batch: MessageBatch<ClassificationJob>, env: Env): Promise<void> {
-    for (const message of batch.messages) {
-      try {
-        await processClassificationJob(message.body, env);
-        message.ack();
-      } catch (error) {
-        console.error('Classification job failed:', error);
-        // Message will be retried or sent to DLQ
-        message.retry();
-      }
-    }
+    const CONCURRENCY = 5; // Process up to 5 messages concurrently
+    const { globalLogger } = await import('@/lib/logger');
+
+    globalLogger.info('Processing queue batch', {
+      operation: 'queue-batch',
+      messageCount: batch.messages.length,
+      concurrency: CONCURRENCY,
+    });
+
+    // Process messages in parallel with controlled concurrency
+    const results = await Promise.allSettled(
+      batch.messages.map(async (message) => {
+        try {
+          await processClassificationJob(message.body, env);
+          message.ack();
+          return { agentId: message.body.agentId, status: 'success' };
+        } catch (error) {
+          globalLogger.logError('Classification job failed', error, {
+            agentId: message.body.agentId,
+          });
+          // Message will be retried or sent to DLQ
+          message.retry();
+          return { agentId: message.body.agentId, status: 'failed' };
+        }
+      })
+    );
+
+    // Log batch summary
+    const succeeded = results.filter((r) => r.status === 'fulfilled').length;
+    const failed = results.filter((r) => r.status === 'rejected').length;
+    globalLogger.info('Queue batch completed', {
+      operation: 'queue-batch-complete',
+      succeeded,
+      failed,
+      total: batch.messages.length,
+    });
   },
 
   /**

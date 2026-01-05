@@ -4,7 +4,13 @@
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';
-import { mockEASResponse, mockHealthyResponse, setupMockFetch, testRoute } from '../../setup';
+import {
+  mockEASResponse,
+  mockHealthyResponse,
+  mockSearchConfig,
+  setupMockFetch,
+  testRoute,
+} from '../../setup';
 
 const mockFetch = setupMockFetch();
 
@@ -25,10 +31,9 @@ describe('GET /api/v1/health', () => {
     expect(body.services).toBeDefined();
   });
 
-  // TODO: Update to use mockQdrantConfig.searchError instead of mockFetch
-  // The architecture changed from external search service to internal Qdrant mock
-  it.skip('returns degraded status when search service is down', async () => {
-    mockFetch.mockRejectedValue(new Error('Connection failed'));
+  it('returns degraded status when search service is down', async () => {
+    // Configure mock search service to throw error on health check
+    mockSearchConfig.healthCheckError = new Error('Connection failed');
 
     const response = await testRoute('/api/v1/health');
 
@@ -36,6 +41,9 @@ describe('GET /api/v1/health', () => {
     const body = await response.json();
     expect(body.status).toBe('degraded');
     expect(body.services.searchService).toBe('error');
+
+    // Reset for other tests
+    mockSearchConfig.healthCheckError = null;
   });
 
   it('includes request ID header', async () => {
@@ -85,12 +93,9 @@ describe('GET /api/v1/health', () => {
     expect(body.services.classifier).toBe('error');
   });
 
-  // TODO: Update to use mockQdrantConfig.searchError instead of mockFetch
-  it.skip('returns degraded status when search service returns unhealthy', async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ status: 'error' }),
-    });
+  it('returns degraded status when search service returns unhealthy', async () => {
+    // Configure mock search service to return unhealthy status
+    mockSearchConfig.healthCheckStatus = 'error';
 
     const response = await testRoute('/api/v1/health');
 
@@ -98,18 +103,16 @@ describe('GET /api/v1/health', () => {
     const body = (await response.json()) as { status: string; services: { searchService: string } };
     expect(body.status).toBe('degraded');
     expect(body.services.searchService).toBe('error');
+
+    // Reset for other tests
+    mockSearchConfig.healthCheckStatus = 'ok';
   });
 });
 
-// TODO: These tests need to be updated to use mockQdrantConfig.searchError
-// The architecture changed from external search service to internal Qdrant mock
-describe.skip('Health check error handling', () => {
-  beforeEach(() => {
-    mockFetch.mockReset();
-  });
-
+describe('Health check error handling', () => {
   it('returns 503 when search service throws Error', async () => {
-    mockFetch.mockRejectedValue(new Error('Connection timeout'));
+    // Configure mock search service to throw an Error
+    mockSearchConfig.healthCheckError = new Error('Connection timeout');
 
     const response = await testRoute('/api/v1/health');
 
@@ -117,10 +120,15 @@ describe.skip('Health check error handling', () => {
     const body = (await response.json()) as { status: string; services: { searchService: string } };
     expect(body.status).toBe('degraded');
     expect(body.services.searchService).toBe('error');
+
+    // Reset for other tests
+    mockSearchConfig.healthCheckError = null;
   });
 
   it('returns 503 when search service throws non-Error', async () => {
-    mockFetch.mockRejectedValue('Network failure');
+    // Configure mock search service to throw a non-Error value
+    // Using string as the error value to test non-Error handling
+    mockSearchConfig.healthCheckError = 'Network failure' as unknown as Error;
 
     const response = await testRoute('/api/v1/health');
 
@@ -128,6 +136,9 @@ describe.skip('Health check error handling', () => {
     const body = (await response.json()) as { status: string; services: { searchService: string } };
     expect(body.status).toBe('degraded');
     expect(body.services.searchService).toBe('error');
+
+    // Reset for other tests
+    mockSearchConfig.healthCheckError = null;
   });
 });
 

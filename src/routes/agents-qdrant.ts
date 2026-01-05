@@ -310,25 +310,32 @@ agents.get('/', async (c) => {
   const agentIds = searchResult.results.map((r) => r.agentId);
   const classificationsMap = await getClassificationsBatch(c.env.DB, agentIds);
 
+  // Check if filtering by skills/domains is active
+  const isFilteringByOasf = Boolean(query.skills || query.domains);
+
   // Transform results to AgentSummary format
   let agents: AgentSummary[] = searchResult.results.map((result) => {
-    // Get classification from D1 (preferred) or fallback to Qdrant metadata
+    // Get classification from D1
     const classificationRow = classificationsMap.get(result.agentId);
     const d1Oasf = parseClassificationRow(classificationRow);
 
-    // Use D1 classification if available, otherwise check Qdrant metadata
+    // Get classification from Qdrant metadata
     const hasQdrantOasf = result.metadata?.skills?.length || result.metadata?.domains?.length;
-    const oasf = d1Oasf
-      ? d1Oasf
-      : hasQdrantOasf
-        ? {
-            skills: (result.metadata?.skills ?? []).map((slug) => ({ slug, confidence: 1 })),
-            domains: (result.metadata?.domains ?? []).map((slug) => ({ slug, confidence: 1 })),
-            confidence: 1,
-            classifiedAt: new Date().toISOString(),
-            modelVersion: 'qdrant-indexed',
-          }
-        : undefined;
+    const qdrantOasf = hasQdrantOasf
+      ? {
+          skills: (result.metadata?.skills ?? []).map((slug) => ({ slug, confidence: 1 })),
+          domains: (result.metadata?.domains ?? []).map((slug) => ({ slug, confidence: 1 })),
+          confidence: 1,
+          classifiedAt: new Date().toISOString(),
+          modelVersion: 'qdrant-indexed',
+        }
+      : undefined;
+
+    // When filtering by skills/domains, prefer Qdrant metadata to ensure consistency
+    // between filter criteria and displayed results. Otherwise prefer D1 (more detailed).
+    const oasf = isFilteringByOasf
+      ? qdrantOasf ?? d1Oasf
+      : d1Oasf ?? qdrantOasf;
 
     return {
       id: result.agentId,

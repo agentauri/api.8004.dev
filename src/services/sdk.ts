@@ -5,6 +5,7 @@
 
 import type { SearchParams } from 'agent0-sdk';
 import { SDK } from 'agent0-sdk';
+import { circuitBreakers } from '@/lib/utils/circuit-breaker';
 import { SDKError } from '@/lib/utils/errors';
 import type {
   AgentDetail,
@@ -371,6 +372,35 @@ export function buildSubgraphUrls(graphApiKey: string): Record<number, string> {
 }
 
 /**
+ * Execute a subgraph GraphQL query with circuit breaker protection
+ * @param url - Subgraph URL
+ * @param query - GraphQL query string
+ * @returns Parsed JSON response or null on error
+ */
+async function fetchSubgraphWithCircuitBreaker<T>(
+  url: string,
+  query: string
+): Promise<T | null> {
+  return circuitBreakers.theGraph.execute(async () => {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Subgraph error ${response.status}`);
+    }
+
+    return (await response.json()) as T;
+  }).catch((error) => {
+    // Log but don't throw for circuit open or other errors
+    console.warn('[SDK] Subgraph call failed:', error.message);
+    return null;
+  });
+}
+
+/**
  * Subgraph extra fields not exposed by SDK's AgentSummary
  */
 interface SubgraphAgentExtras {
@@ -386,6 +416,7 @@ interface SubgraphAgentExtras {
 /**
  * Fetch extra agent fields directly from subgraph
  * The SDK's AgentSummary doesn't expose agentURI, endpoints, versions, etc.
+ * Uses circuit breaker for resilience.
  * @param chainId - Chain ID
  * @param agentId - Agent ID in format "chainId:tokenId"
  * @returns Extra fields from subgraph
@@ -398,61 +429,49 @@ async function fetchAgentExtrasFromSubgraph(
   const url = subgraphUrls[chainId];
   if (!url) return {};
 
-  try {
-    const query = `{
-      agent(id: "${agentId}") {
-        agentURI
-        updatedAt
-        createdAt
-        registrationFile {
-          a2aEndpoint
-          a2aVersion
-          mcpEndpoint
-          mcpVersion
-        }
+  const query = `{
+    agent(id: "${agentId}") {
+      agentURI
+      updatedAt
+      createdAt
+      registrationFile {
+        a2aEndpoint
+        a2aVersion
+        mcpEndpoint
+        mcpVersion
       }
-    }`;
+    }
+  }`;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query }),
-    });
-
-    if (!response.ok) return {};
-
-    const data = (await response.json()) as {
-      data?: {
-        agent?: {
-          agentURI?: string;
-          updatedAt?: string;
-          createdAt?: string;
-          registrationFile?: {
-            a2aEndpoint?: string;
-            a2aVersion?: string;
-            mcpEndpoint?: string;
-            mcpVersion?: string;
-          };
+  type SubgraphResponse = {
+    data?: {
+      agent?: {
+        agentURI?: string;
+        updatedAt?: string;
+        createdAt?: string;
+        registrationFile?: {
+          a2aEndpoint?: string;
+          a2aVersion?: string;
+          mcpEndpoint?: string;
+          mcpVersion?: string;
         };
       };
     };
+  };
 
-    const agent = data?.data?.agent;
-    if (!agent) return {};
+  const data = await fetchSubgraphWithCircuitBreaker<SubgraphResponse>(url, query);
+  const agent = data?.data?.agent;
+  if (!agent) return {};
 
-    return {
-      agentURI: agent.agentURI || undefined,
-      a2aEndpoint: agent.registrationFile?.a2aEndpoint || undefined,
-      a2aVersion: agent.registrationFile?.a2aVersion || undefined,
-      mcpEndpoint: agent.registrationFile?.mcpEndpoint || undefined,
-      mcpVersion: agent.registrationFile?.mcpVersion || undefined,
-      updatedAt: agent.updatedAt || undefined,
-      createdAt: agent.createdAt || undefined,
-    };
-  } catch {
-    // Silently fail - the SDK data is still usable
-    return {};
-  }
+  return {
+    agentURI: agent.agentURI || undefined,
+    a2aEndpoint: agent.registrationFile?.a2aEndpoint || undefined,
+    a2aVersion: agent.registrationFile?.a2aVersion || undefined,
+    mcpEndpoint: agent.registrationFile?.mcpEndpoint || undefined,
+    mcpVersion: agent.registrationFile?.mcpVersion || undefined,
+    updatedAt: agent.updatedAt || undefined,
+    createdAt: agent.createdAt || undefined,
+  };
 }
 
 /**
@@ -485,6 +504,7 @@ export interface SubgraphValidation {
 
 /**
  * Fetch feedbacks for an agent directly from subgraph
+ * Uses circuit breaker for resilience.
  * @param chainId - Chain ID
  * @param agentId - Agent ID in format "chainId:tokenId"
  * @param limit - Maximum number of feedbacks to return
@@ -499,51 +519,32 @@ export async function fetchFeedbacksFromSubgraph(
   const url = subgraphUrls[chainId];
   if (!url) return [];
 
-  try {
-    const query = `{
-      feedbacks(where: {agent: "${agentId}"}, first: ${limit}, orderBy: createdAt, orderDirection: desc) {
-        id
-        score
-        clientAddress
-        tag1
-        tag2
-        feedbackUri
-        createdAt
-        isRevoked
-      }
-    }`;
+  const query = `{
+    feedbacks(where: {agent: "${agentId}"}, first: ${limit}, orderBy: createdAt, orderDirection: desc) {
+      id
+      score
+      clientAddress
+      tag1
+      tag2
+      feedbackUri
+      createdAt
+      isRevoked
+    }
+  }`;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query }),
-    });
-
-    if (!response.ok) return [];
-
-    const data = (await response.json()) as {
-      data?: {
-        feedbacks?: Array<{
-          id: string;
-          score: number;
-          clientAddress: string;
-          tag1?: string;
-          tag2?: string;
-          feedbackUri?: string;
-          createdAt: string;
-          isRevoked: boolean;
-        }>;
-      };
+  type FeedbackResponse = {
+    data?: {
+      feedbacks?: SubgraphFeedback[];
     };
+  };
 
-    return data?.data?.feedbacks || [];
-  } catch {
-    return [];
-  }
+  const data = await fetchSubgraphWithCircuitBreaker<FeedbackResponse>(url, query);
+  return data?.data?.feedbacks || [];
 }
 
 /**
  * Fetch validations for an agent directly from subgraph
+ * Uses circuit breaker for resilience.
  * @param chainId - Chain ID
  * @param agentId - Agent ID in format "chainId:tokenId"
  * @param limit - Maximum number of validations to return
@@ -558,47 +559,27 @@ export async function fetchValidationsFromSubgraph(
   const url = subgraphUrls[chainId];
   if (!url) return [];
 
-  try {
-    const query = `{
-      validations(where: {agent: "${agentId}"}, first: ${limit}, orderBy: createdAt, orderDirection: desc) {
-        id
-        validatorAddress
-        status
-        tag
-        requestUri
-        responseUri
-        createdAt
-        updatedAt
-      }
-    }`;
+  const query = `{
+    validations(where: {agent: "${agentId}"}, first: ${limit}, orderBy: createdAt, orderDirection: desc) {
+      id
+      validatorAddress
+      status
+      tag
+      requestUri
+      responseUri
+      createdAt
+      updatedAt
+    }
+  }`;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query }),
-    });
-
-    if (!response.ok) return [];
-
-    const data = (await response.json()) as {
-      data?: {
-        validations?: Array<{
-          id: string;
-          validatorAddress: string;
-          status: 'PENDING' | 'COMPLETED' | 'FAILED';
-          tag?: string;
-          requestUri?: string;
-          responseUri?: string;
-          createdAt: string;
-          updatedAt: string;
-        }>;
-      };
+  type ValidationResponse = {
+    data?: {
+      validations?: SubgraphValidation[];
     };
+  };
 
-    return data?.data?.validations || [];
-  } catch {
-    return [];
-  }
+  const data = await fetchSubgraphWithCircuitBreaker<ValidationResponse>(url, query);
+  return data?.data?.validations || [];
 }
 
 /**
@@ -708,46 +689,37 @@ export async function fetchAllAgentsFromSubgraph(
       }
     }`;
 
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
-      });
+    type AgentsResponse = {
+      data?: { agents?: SubgraphRawAgent[] };
+      errors?: Array<{ message: string }>;
+    };
 
-      if (!response.ok) {
-        console.error(`Subgraph query failed for chain ${chainId}: ${response.status}`);
-        break;
-      }
+    const data = await fetchSubgraphWithCircuitBreaker<AgentsResponse>(url, query);
 
-      const data = (await response.json()) as {
-        data?: { agents?: SubgraphRawAgent[] };
-        errors?: Array<{ message: string }>;
-      };
+    if (!data) {
+      // Circuit breaker triggered or request failed
+      break;
+    }
 
-      if (data.errors?.length) {
-        console.error(`Subgraph errors for chain ${chainId}:`, data.errors[0]?.message);
-        break;
-      }
+    if (data.errors?.length) {
+      console.error(`Subgraph errors for chain ${chainId}:`, data.errors[0]?.message);
+      break;
+    }
 
-      const agents = data?.data?.agents || [];
-      if (agents.length === 0) break;
+    const agents = data?.data?.agents || [];
+    if (agents.length === 0) break;
 
-      allAgents.push(...agents);
-      currentSkip += agents.length;
+    allAgents.push(...agents);
+    currentSkip += agents.length;
 
-      // If we got less than batch size, no more results
-      if (agents.length < batchSize) break;
+    // If we got less than batch size, no more results
+    if (agents.length < batchSize) break;
 
-      // Safety limit to prevent infinite loops
-      if (currentSkip > 20000) {
-        console.warn(
-          `fetchAllAgentsFromSubgraph: hit safety limit at ${currentSkip} for chain ${chainId}`
-        );
-        break;
-      }
-    } catch (error) {
-      console.error(`Subgraph fetch error for chain ${chainId}:`, error);
+    // Safety limit to prevent infinite loops
+    if (currentSkip > 20000) {
+      console.warn(
+        `fetchAllAgentsFromSubgraph: hit safety limit at ${currentSkip} for chain ${chainId}`
+      );
       break;
     }
   }
@@ -1014,6 +986,12 @@ export interface SDKService {
    * Get a single agent by ID
    */
   getAgent(chainId: number, tokenId: string): Promise<AgentDetail | null>;
+
+  /**
+   * Get multiple agents by IDs in parallel
+   * Efficiently fetches multiple agents, avoiding N+1 queries
+   */
+  getAgentsBatch(agentIds: string[]): Promise<Map<string, AgentDetail>>;
 
   /**
    * Get agent count by chain
@@ -1425,6 +1403,38 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
       }
     },
 
+    async getAgentsBatch(agentIds: string[]): Promise<Map<string, AgentDetail>> {
+      const result = new Map<string, AgentDetail>();
+      if (agentIds.length === 0) return result;
+
+      // Process in parallel with concurrency limit
+      const BATCH_SIZE = 10;
+      const batches: string[][] = [];
+      for (let i = 0; i < agentIds.length; i += BATCH_SIZE) {
+        batches.push(agentIds.slice(i, i + BATCH_SIZE));
+      }
+
+      for (const batch of batches) {
+        const batchResults = await Promise.allSettled(
+          batch.map(async (agentId) => {
+            const [chainIdStr, tokenId] = agentId.split(':');
+            if (!chainIdStr || !tokenId) return null;
+            const chainId = Number.parseInt(chainIdStr, 10);
+            const agent = await this.getAgent(chainId, tokenId);
+            return agent ? { agentId, agent } : null;
+          })
+        );
+
+        for (const r of batchResults) {
+          if (r.status === 'fulfilled' && r.value) {
+            result.set(r.value.agentId, r.value.agent);
+          }
+        }
+      }
+
+      return result;
+    },
+
     async getChainStats(): Promise<ChainStats[]> {
       // Request coalescing: if a request is already in progress, return the same promise
       // This prevents duplicate concurrent calls when cache is empty
@@ -1433,7 +1443,7 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
       }
 
       // Helper to count agents via direct subgraph query (without registrationFile filter)
-      // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Pagination loop with safety limits requires multiple exit conditions
+      // Uses circuit breaker for resilience
       async function countAllAgentsDirectly(chainId: number): Promise<number> {
         const url = subgraphUrls[chainId];
         if (!url) return 0;
@@ -1443,15 +1453,11 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
 
         while (true) {
           const query = `{ agents(first: 1000, skip: ${skip}) { id } }`;
-          const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query }),
-          });
+          type CountResponse = { data?: { agents?: { id: string }[] } };
+          const data = await fetchSubgraphWithCircuitBreaker<CountResponse>(url, query);
 
-          if (!response.ok) break;
+          if (!data) break; // Circuit breaker triggered or request failed
 
-          const data = (await response.json()) as { data?: { agents?: { id: string }[] } };
           const agents = data?.data?.agents || [];
           const count = agents.length;
 

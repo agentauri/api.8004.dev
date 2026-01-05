@@ -1,9 +1,14 @@
 /**
  * API Key authentication middleware
  * @module lib/middleware/api-key
+ *
+ * Supports two modes:
+ * 1. Legacy: Single shared API key from environment (API_KEY)
+ * 2. D1: Individual API keys stored in database with per-key rate limits
  */
 
 import type { MiddlewareHandler } from 'hono';
+import { DEFAULT_RATE_LIMITS, validateApiKey, type ApiKeyTier } from '@/services/api-keys';
 import type { Env, Variables } from '@/types';
 
 /**
@@ -13,7 +18,11 @@ export interface ApiKeyVariables extends Variables {
   /** Whether request is authenticated with valid API key */
   isAuthenticated: boolean;
   /** API key tier for rate limiting */
-  apiKeyTier: 'anonymous' | 'standard' | 'premium';
+  apiKeyTier: ApiKeyTier;
+  /** API key ID (for D1 keys) */
+  apiKeyId?: string;
+  /** Rate limit in requests per minute */
+  rateLimitRpm: number;
 }
 
 /**
@@ -40,8 +49,15 @@ function extractApiKey(request: Request): string | null {
  * Sets context variables:
  * - isAuthenticated: boolean
  * - apiKeyTier: 'anonymous' | 'standard' | 'premium'
+ * - apiKeyId: string (optional, for D1 keys)
+ * - rateLimitRpm: number
  *
  * Does NOT block requests without API key - just sets lower tier
+ *
+ * Validation order:
+ * 1. Check legacy environment API key (API_KEY)
+ * 2. Check D1 database for individual keys
+ * 3. Fall back to anonymous tier
  */
 export function apiKeyAuth(): MiddlewareHandler<{
   Bindings: Env;
@@ -49,22 +65,44 @@ export function apiKeyAuth(): MiddlewareHandler<{
 }> {
   return async (c, next) => {
     const apiKey = extractApiKey(c.req.raw);
+    const logger = c.get('logger');
 
     // Default to anonymous
     c.set('isAuthenticated', false);
     c.set('apiKeyTier', 'anonymous');
+    c.set('rateLimitRpm', DEFAULT_RATE_LIMITS.anonymous);
 
     if (apiKey) {
-      // Validate against environment API key
-      const validKey = c.env.API_KEY;
-
-      if (validKey && apiKey === validKey) {
+      // First check legacy environment API key
+      const legacyKey = c.env.API_KEY;
+      if (legacyKey && apiKey === legacyKey) {
         c.set('isAuthenticated', true);
         c.set('apiKeyTier', 'standard');
-      } else if (validKey) {
-        // Invalid API key provided - still allow but as anonymous
-        // Could optionally reject here with 401
-        console.warn('Invalid API key provided');
+        c.set('rateLimitRpm', DEFAULT_RATE_LIMITS.standard);
+        await next();
+        return;
+      }
+
+      // Then check D1 for individual keys (only if DB is available)
+      if (c.env.DB) {
+        try {
+          const validation = await validateApiKey(c.env.DB, apiKey);
+          if (validation.valid) {
+            c.set('isAuthenticated', true);
+            c.set('apiKeyTier', validation.tier);
+            c.set('rateLimitRpm', validation.rateLimitRpm);
+            if (validation.keyId) {
+              c.set('apiKeyId', validation.keyId);
+            }
+          } else if (validation.reason) {
+            logger.debug('API key validation failed', { reason: validation.reason });
+          }
+        } catch (error) {
+          // D1 validation failed - log but don't block
+          logger.warn('D1 API key validation error', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     }
 
@@ -75,6 +113,8 @@ export function apiKeyAuth(): MiddlewareHandler<{
 /**
  * Middleware that requires authentication
  * Returns 401 if no valid API key provided
+ *
+ * Checks both legacy environment key and D1 keys
  */
 export function requireApiKey(): MiddlewareHandler<{
   Bindings: Env;
@@ -82,7 +122,7 @@ export function requireApiKey(): MiddlewareHandler<{
 }> {
   return async (c, next) => {
     const apiKey = extractApiKey(c.req.raw);
-    const validKey = c.env.API_KEY;
+    const logger = c.get('logger');
 
     if (!apiKey) {
       return c.json(
@@ -95,20 +135,50 @@ export function requireApiKey(): MiddlewareHandler<{
       );
     }
 
-    if (!validKey || apiKey !== validKey) {
-      return c.json(
-        {
-          success: false,
-          error: 'Invalid API key',
-          code: 'UNAUTHORIZED',
-        },
-        401
-      );
+    // First check legacy environment API key
+    const legacyKey = c.env.API_KEY;
+    if (legacyKey && apiKey === legacyKey) {
+      c.set('isAuthenticated', true);
+      c.set('apiKeyTier', 'standard');
+      c.set('rateLimitRpm', DEFAULT_RATE_LIMITS.standard);
+      await next();
+      return;
     }
 
-    c.set('isAuthenticated', true);
-    c.set('apiKeyTier', 'standard');
+    // Then check D1 for individual keys (only if DB is available)
+    if (c.env.DB) {
+      try {
+        const validation = await validateApiKey(c.env.DB, apiKey);
+        if (validation.valid) {
+          c.set('isAuthenticated', true);
+          c.set('apiKeyTier', validation.tier);
+          c.set('rateLimitRpm', validation.rateLimitRpm);
+          if (validation.keyId) {
+            c.set('apiKeyId', validation.keyId);
+          }
+          await next();
+          return;
+        }
 
-    await next();
+        // Log the reason for invalid key
+        if (validation.reason) {
+          logger.debug('API key rejected', { reason: validation.reason });
+        }
+      } catch (error) {
+        logger.warn('D1 API key validation error', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    // If we get here, the key is invalid
+    return c.json(
+      {
+        success: false,
+        error: 'Invalid API key',
+        code: 'UNAUTHORIZED',
+      },
+      401
+    );
   };
 }

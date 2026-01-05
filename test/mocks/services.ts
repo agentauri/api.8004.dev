@@ -13,6 +13,7 @@ export function createMockSDKService(overrides: Partial<MockSDKService> = {}): M
   return {
     getAgent: vi.fn().mockResolvedValue(createMockAgent()),
     getAgents: vi.fn().mockResolvedValue({ items: [createMockAgent()], nextCursor: undefined }),
+    getAgentsBatch: vi.fn().mockResolvedValue(new Map()),
     getChainStats: vi.fn().mockResolvedValue([
       {
         chainId: 11155111,
@@ -52,6 +53,7 @@ export function createMockSDKService(overrides: Partial<MockSDKService> = {}): M
 export interface MockSDKService {
   getAgent: ReturnType<typeof vi.fn>;
   getAgents: ReturnType<typeof vi.fn>;
+  getAgentsBatch: ReturnType<typeof vi.fn>;
   getChainStats: ReturnType<typeof vi.fn>;
 }
 

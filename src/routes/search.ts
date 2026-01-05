@@ -154,7 +154,7 @@ search.post('/', async (c) => {
       byChain = result.byChain;
       searchMode = 'name';
     } catch (sdkError) {
-      console.error('SDK name search failed:', sdkError);
+      c.get('logger').logError('SDK name search failed', sdkError);
       return errors.internalError(c, 'Search service error');
     }
   } else {
@@ -351,10 +351,9 @@ search.post('/', async (c) => {
     } catch (vectorSearchError) {
       // ========== FALLBACK: SDK NAME SEARCH (only for 'auto' mode) ==========
       // For 'semantic' mode, we would have already returned above (no fallback)
-      console.warn(
-        'Vector search failed, falling back to SDK name search:',
-        vectorSearchError instanceof Error ? vectorSearchError.message : vectorSearchError
-      );
+      c.get('logger').warn('Vector search failed, falling back to SDK name search', {
+        error: vectorSearchError instanceof Error ? vectorSearchError.message : String(vectorSearchError),
+      });
 
       try {
         const result = await performNameSearch(c.env, sdk, body, 'fallback');
@@ -366,7 +365,7 @@ search.post('/', async (c) => {
         searchMode = 'fallback';
       } catch (sdkError) {
         // Both searches failed
-        console.error('SDK fallback search also failed:', sdkError);
+        c.get('logger').logError('SDK fallback search also failed', sdkError);
         return errors.internalError(c, 'Search service error');
       }
     }

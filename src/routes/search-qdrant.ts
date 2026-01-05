@@ -67,6 +67,20 @@ search.post('/', async (c) => {
         skills: body.filters.skills,
         domains: body.filters.domains,
         filterMode: body.filters.filterMode,
+        // Extended filters (matching GET /agents for consistency)
+        mcpTools: body.filters.mcpTools,
+        a2aSkills: body.filters.a2aSkills,
+        // Wallet filters
+        owner: body.filters.owner,
+        walletAddress: body.filters.walletAddress,
+        // Trust model filters
+        trustModels: body.filters.trustModels,
+        hasTrusts: body.filters.hasTrusts,
+        // Reachability filters
+        reachableA2a: body.filters.reachableA2a,
+        reachableMcp: body.filters.reachableMcp,
+        // Registration file filter
+        hasRegistrationFile: body.filters.hasRegistrationFile,
       })
     : undefined;
 
@@ -84,29 +98,36 @@ search.post('/', async (c) => {
   const agentIds = searchResult.results.map((r) => r.agentId);
   const classificationsMap = await getClassificationsBatch(c.env.DB, agentIds);
 
+  // Check if filtering by skills/domains is active
+  const isFilteringByOasf = Boolean(body.filters?.skills || body.filters?.domains);
+
   // Transform results to AgentSummary format
   const agents: AgentSummary[] = searchResult.results.map((result) => {
     const tokenId = result.agentId.split(':')[1] ?? '0';
     const qdrantSkills = result.metadata?.skills ?? [];
     const qdrantDomains = result.metadata?.domains ?? [];
 
-    // Get classification from D1 (preferred) or fallback to Qdrant metadata
+    // Get classification from D1
     const classificationRow = classificationsMap.get(result.agentId);
     const d1Oasf = parseClassificationRow(classificationRow);
 
-    // Use D1 classification if available, otherwise check Qdrant metadata
+    // Get classification from Qdrant metadata
     const hasQdrantOasf = qdrantSkills.length > 0 || qdrantDomains.length > 0;
-    const oasf = d1Oasf
-      ? d1Oasf
-      : hasQdrantOasf
-        ? {
-            skills: qdrantSkills.map((slug) => ({ slug, confidence: 1 })),
-            domains: qdrantDomains.map((slug) => ({ slug, confidence: 1 })),
-            confidence: 1,
-            classifiedAt: new Date().toISOString(),
-            modelVersion: 'qdrant-indexed',
-          }
-        : undefined;
+    const qdrantOasf = hasQdrantOasf
+      ? {
+          skills: qdrantSkills.map((slug) => ({ slug, confidence: 1 })),
+          domains: qdrantDomains.map((slug) => ({ slug, confidence: 1 })),
+          confidence: 1,
+          classifiedAt: new Date().toISOString(),
+          modelVersion: 'qdrant-indexed',
+        }
+      : undefined;
+
+    // When filtering by skills/domains, prefer Qdrant metadata to ensure consistency
+    // between filter criteria and displayed results. Otherwise prefer D1 (more detailed).
+    const oasf = isFilteringByOasf
+      ? qdrantOasf ?? d1Oasf
+      : d1Oasf ?? qdrantOasf;
 
     return {
       id: result.agentId,

@@ -235,6 +235,8 @@ export const searchRequestSchema = z.object({
       // Reachability filters
       reachableA2a: z.boolean().optional(),
       reachableMcp: z.boolean().optional(),
+      // Registration file filter
+      hasRegistrationFile: z.boolean().optional(),
     })
     .optional(),
   minScore: z.number().min(0).max(1).default(0.3),

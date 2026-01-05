@@ -8,6 +8,8 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { globalLogger } from '@/lib/logger';
+import { circuitBreakers, CircuitOpenError } from '@/lib/utils/circuit-breaker';
 import { buildClassificationPrompt } from '@/lib/oasf/prompt';
 import { validateDomainSlug, validateSkillSlug } from '@/lib/oasf/taxonomy';
 import type {
@@ -137,7 +139,7 @@ export function sanitizeClassification(
 
   // Log warning if any slugs were filtered
   if (invalidSlugs.length > 0) {
-    console.warn(`Filtered invalid OASF slugs: ${invalidSlugs.join(', ')}`);
+    globalLogger.warn('Filtered invalid OASF slugs', { invalidSlugs });
   }
 
   return { skills: validSkills, domains: validDomains, invalidSlugs };
@@ -317,16 +319,23 @@ export function createClassifierService(
 
   return {
     async classify(agent: AgentClassificationInput): Promise<ClassificationResultWithProvider> {
-      // Try Gemini first
+      // Try Gemini first with circuit breaker
       try {
-        return await gemini.classify(agent);
+        return await circuitBreakers.classifier.execute(() => gemini.classify(agent));
       } catch (geminiError) {
-        console.warn(
-          'Gemini classification failed, falling back to Claude:',
-          geminiError instanceof Error ? geminiError.message : geminiError
-        );
+        const isCircuitOpen = geminiError instanceof CircuitOpenError;
+        const errorMsg = isCircuitOpen
+          ? 'Circuit breaker open'
+          : geminiError instanceof Error
+            ? geminiError.message
+            : String(geminiError);
 
-        // Fallback to Claude
+        globalLogger.warn('Gemini classification failed, falling back to Claude', {
+          reason: errorMsg,
+          circuitOpen: isCircuitOpen,
+        });
+
+        // Fallback to Claude (no circuit breaker - it's already the fallback)
         return await claude.classify(agent);
       }
     },

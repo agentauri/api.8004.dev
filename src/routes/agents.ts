@@ -488,93 +488,52 @@ agents.get('/', async (c) => {
         // For 'semantic' mode, return empty results
       }
 
-      // Batch fetch classifications and reputations for all search results (N+1 fix)
+      // Batch fetch all data for search results (eliminates N+1 queries)
       const agentIds = searchResults.results.map((r) => r.agentId);
-      const [classificationsMap, reputationsMap] = await Promise.all([
+      const [classificationsMap, reputationsMap, agentsMap] = await Promise.all([
         getClassificationsBatch(c.env.DB, agentIds),
         getReputationsBatch(c.env.DB, agentIds),
+        sdk.getAgentsBatch(agentIds),
       ]);
 
-      // Enrich search results with full agent data
-      // Use Promise.allSettled for graceful error handling - failed fetches use search data fallback
-      const enrichedResults = await Promise.allSettled(
-        searchResults.results.map(async (result) => {
-          const { chainId, tokenId } = parseAgentId(result.agentId);
-          const agent = await sdk.getAgent(chainId, tokenId);
+      // Enrich search results with full agent data from batch result
+      const enrichedResults = searchResults.results.map((result) => {
+        const { tokenId } = parseAgentId(result.agentId);
+        const agent = agentsMap.get(result.agentId);
 
-          // Get classification from batch result
-          const classificationRow = classificationsMap.get(result.agentId);
-          const oasf = parseClassificationRow(classificationRow);
+        // Get classification from batch result
+        const classificationRow = classificationsMap.get(result.agentId);
+        const oasf = parseClassificationRow(classificationRow);
 
-          // Get reputation from batch result
-          const reputationRow = reputationsMap.get(result.agentId);
+        // Get reputation from batch result
+        const reputationRow = reputationsMap.get(result.agentId);
 
-          return {
-            id: result.agentId,
-            chainId: result.chainId,
-            tokenId,
-            name: agent?.name ?? result.name,
-            description: agent?.description ?? result.description,
-            image: agent?.image,
-            active: agent?.active ?? true,
-            hasMcp: agent?.hasMcp ?? false,
-            hasA2a: agent?.hasA2a ?? false,
-            x402Support: agent?.x402Support ?? false,
-            supportedTrust: agent?.supportedTrust ?? [],
-            operators: agent?.operators ?? [],
-            ens: agent?.ens,
-            did: agent?.did,
-            walletAddress: agent?.walletAddress,
-            oasf,
-            oasfSource: (oasf ? 'llm-classification' : 'none') as OASFSource,
-            searchScore: result.score,
-            reputationScore: reputationRow?.average_score,
-            reputationCount: reputationRow?.feedback_count,
-          };
-        })
-      );
+        return {
+          id: result.agentId,
+          chainId: result.chainId,
+          tokenId,
+          name: agent?.name ?? result.name,
+          description: agent?.description ?? result.description,
+          image: agent?.image,
+          active: agent?.active ?? true,
+          hasMcp: agent?.hasMcp ?? false,
+          hasA2a: agent?.hasA2a ?? false,
+          x402Support: agent?.x402Support ?? false,
+          supportedTrust: agent?.supportedTrust ?? [],
+          operators: agent?.operators ?? [],
+          ens: agent?.ens,
+          did: agent?.did,
+          walletAddress: agent?.walletAddress,
+          oasf,
+          oasfSource: (oasf ? 'llm-classification' : 'none') as OASFSource,
+          searchScore: result.score,
+          reputationScore: reputationRow?.average_score,
+          reputationCount: reputationRow?.feedback_count,
+        };
+      });
 
-      // Filter successful results and log failures
-      const enrichedAgents = enrichedResults
-        .map((result, index) => {
-          if (result.status === 'fulfilled') {
-            return result.value;
-          }
-          // Log failed enrichment but use search result data as fallback
-          const searchResult = searchResults.results[index];
-          console.error(`Failed to enrich agent ${searchResult?.agentId}:`, result.reason);
-          if (searchResult) {
-            const { tokenId } = parseAgentId(searchResult.agentId);
-            const reputationRow = reputationsMap.get(searchResult.agentId);
-            const fallbackOasf = parseClassificationRow(
-              classificationsMap.get(searchResult.agentId)
-            );
-            return {
-              id: searchResult.agentId,
-              chainId: searchResult.chainId,
-              tokenId,
-              name: searchResult.name,
-              description: searchResult.description,
-              image: undefined,
-              active: true,
-              hasMcp: false,
-              hasA2a: false,
-              x402Support: false,
-              supportedTrust: [],
-              operators: [],
-              ens: undefined,
-              did: undefined,
-              walletAddress: undefined,
-              oasf: fallbackOasf,
-              oasfSource: (fallbackOasf ? 'llm-classification' : 'none') as OASFSource,
-              searchScore: searchResult.score,
-              reputationScore: reputationRow?.average_score,
-              reputationCount: reputationRow?.feedback_count,
-            };
-          }
-          return null;
-        })
-        .filter((agent): agent is NonNullable<typeof agent> => agent !== null);
+      // Use enriched results directly (batch fetching eliminates individual failures)
+      const enrichedAgents = enrichedResults;
 
       // Post-filter using enriched SDK data (mcp, a2a, x402, skills, domains don't work upstream)
       let postFilteredAgents = enrichedAgents;

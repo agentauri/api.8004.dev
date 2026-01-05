@@ -4,6 +4,7 @@
  */
 
 import type { ClassificationJob } from './classification';
+import type { Logger } from '@/lib/logger';
 
 /**
  * Cloudflare Workers environment bindings
@@ -86,6 +87,8 @@ export interface Env {
  */
 export interface Variables {
   requestId: string;
+  /** Structured logger with request context */
+  logger: Logger;
   /** Whether request is authenticated with valid API key */
   isAuthenticated?: boolean;
   /** API key tier for rate limiting */

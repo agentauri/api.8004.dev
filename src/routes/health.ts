@@ -4,6 +4,8 @@
  */
 
 import { Hono } from 'hono';
+import { getAllCircuitStatus } from '@/lib/utils/circuit-breaker';
+import { getCacheMetrics } from '@/services/cache-metrics';
 import { createEASIndexerService } from '@/services/eas-indexer';
 import { createSearchService } from '@/services/search';
 import { syncD1ToQdrant, syncFromGraph, syncFromSDK } from '@/services/sync';
@@ -18,8 +20,7 @@ async function checkDatabase(db: D1Database): Promise<ServiceStatus> {
   try {
     await db.prepare('SELECT 1').first();
     return 'ok';
-  } catch (error) {
-    console.error('Database health check failed:', error instanceof Error ? error.message : error);
+  } catch {
     return 'error';
   }
 }
@@ -32,11 +33,7 @@ async function checkSearchService(url: string, env?: Env): Promise<ServiceStatus
     const searchService = createSearchService(url, undefined, env);
     const healthy = await searchService.healthCheck();
     return healthy ? 'ok' : 'error';
-  } catch (error) {
-    console.error(
-      'Search service health check failed:',
-      error instanceof Error ? error.message : error
-    );
+  } catch {
     return 'error';
   }
 }
@@ -77,6 +74,9 @@ health.get('/', async (c) => {
   const allOk = allStatuses.every((s) => s === 'ok');
   const anyError = allStatuses.some((s) => s === 'error');
 
+  // Get circuit breaker status
+  const circuitStatus = getAllCircuitStatus();
+
   const response: HealthResponse = {
     status: allOk ? 'ok' : anyError ? 'degraded' : 'down',
     timestamp: new Date().toISOString(),
@@ -87,6 +87,9 @@ health.get('/', async (c) => {
       classifier: classifierStatus,
       database: dbStatus,
     },
+    // Add circuit breaker status (optional - not in HealthResponse type)
+    // @ts-expect-error - extending response with circuit breaker info
+    circuits: circuitStatus,
   };
 
   const httpStatus = response.status === 'ok' ? 200 : 503;
@@ -162,6 +165,7 @@ health.post('/sync-qdrant', async (c) => {
   try {
     // Use SDK sync if no Graph API key, otherwise use Graph sync
     const useSDK = !env.GRAPH_API_KEY;
+    const logger = c.get('logger');
 
     let agentSyncResult: {
       newAgents: number;
@@ -171,12 +175,10 @@ health.post('/sync-qdrant', async (c) => {
     };
 
     if (useSDK) {
-      console.info(
-        `Using SDK sync (limit: ${limit}, batchSize: ${batchSize}, includeAll: ${includeAll})`
-      );
+      logger.info('Starting SDK sync', { limit, batchSize, includeAll });
       agentSyncResult = await syncFromSDK(env, qdrantEnv, { limit, batchSize, includeAll });
     } else {
-      console.info('Using Graph sync');
+      logger.info('Starting Graph sync');
       agentSyncResult = await syncFromGraph(env.DB, qdrantEnv);
     }
 
@@ -208,7 +210,7 @@ health.post('/sync-qdrant', async (c) => {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Qdrant sync failed:', error);
+    c.get('logger').logError('Qdrant sync failed', error);
     return c.json(
       {
         success: false,
@@ -252,7 +254,7 @@ health.post('/qdrant/indexes', async (c) => {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Failed to create indexes:', error);
+    c.get('logger').logError('Failed to create indexes', error);
     return c.json(
       {
         success: false,
@@ -331,6 +333,27 @@ health.get('/qdrant', async (c) => {
       },
     });
   }
+});
+
+/**
+ * GET /api/v1/health/cache
+ * Returns cache hit/miss metrics
+ */
+health.get('/cache', (c) => {
+  const metrics = getCacheMetrics();
+
+  return c.json({
+    success: true,
+    data: {
+      hitRate: `${metrics.hitRate}%`,
+      totalHits: metrics.totalHits,
+      totalMisses: metrics.totalMisses,
+      totalErrors: metrics.totalErrors,
+      windowSeconds: metrics.windowSeconds,
+      byPrefix: metrics.byPrefix,
+    },
+    timestamp: new Date().toISOString(),
+  });
 });
 
 export { health };

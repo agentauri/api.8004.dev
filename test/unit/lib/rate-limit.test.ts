@@ -5,7 +5,13 @@
 
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
+import {
+  endpointRateLimits,
+  getEndpointRateLimit,
+  perEndpointRateLimit,
+  rateLimit,
+  rateLimitConfigs,
+} from '@/lib/utils/rate-limit';
 
 // Create a mock KV store
 function createMockKV() {
@@ -258,5 +264,199 @@ describe('rateLimit edge cases', () => {
     );
 
     consoleSpy.mockRestore();
+  });
+});
+
+describe('endpointRateLimits', () => {
+  it('has search endpoint config', () => {
+    expect(endpointRateLimits['/api/v1/search']).toEqual({
+      anonymous: 30,
+      authenticated: 100,
+    });
+  });
+
+  it('has agents endpoint config', () => {
+    expect(endpointRateLimits['/api/v1/agents']).toEqual({
+      anonymous: 60,
+      authenticated: 200,
+    });
+  });
+
+  it('has classify endpoint config', () => {
+    expect(endpointRateLimits['/api/v1/agents/:agentId/classify']).toEqual({
+      anonymous: 10,
+      authenticated: 30,
+    });
+  });
+
+  it('has default config', () => {
+    expect(endpointRateLimits['default']).toEqual({
+      anonymous: 60,
+      authenticated: 300,
+    });
+  });
+});
+
+describe('getEndpointRateLimit', () => {
+  it('returns search endpoint limit for anonymous user', () => {
+    const result = getEndpointRateLimit('/api/v1/search', false);
+    expect(result.limit).toBe(30);
+    expect(result.keyPrefix).toContain('search');
+  });
+
+  it('returns search endpoint limit for authenticated user', () => {
+    const result = getEndpointRateLimit('/api/v1/search', true);
+    expect(result.limit).toBe(100);
+    expect(result.keyPrefix).toContain('search');
+  });
+
+  it('returns agents endpoint limit', () => {
+    const result = getEndpointRateLimit('/api/v1/agents', false);
+    expect(result.limit).toBe(60);
+  });
+
+  it('matches classify endpoint pattern', () => {
+    const result = getEndpointRateLimit('/api/v1/agents/11155111:123/classify', false);
+    expect(result.limit).toBe(10);
+    expect(result.keyPrefix).toContain('classify');
+  });
+
+  it('matches single agent detail pattern', () => {
+    const result = getEndpointRateLimit('/api/v1/agents/11155111:123', false);
+    expect(result.limit).toBe(60); // Uses agents limit
+  });
+
+  it('returns default for unknown endpoint', () => {
+    const result = getEndpointRateLimit('/api/v1/unknown', false);
+    expect(result.limit).toBe(60); // Anonymous default
+  });
+
+  it('returns authenticated default for unknown endpoint', () => {
+    const result = getEndpointRateLimit('/api/v1/unknown', true);
+    expect(result.limit).toBe(300); // Authenticated default
+  });
+
+  it('normalizes path with trailing slash', () => {
+    const result = getEndpointRateLimit('/api/v1/search/', false);
+    expect(result.limit).toBe(30);
+  });
+
+  it('normalizes path with query params', () => {
+    const result = getEndpointRateLimit('/api/v1/search?q=test', false);
+    expect(result.limit).toBe(30);
+  });
+});
+
+describe('perEndpointRateLimit middleware', () => {
+  let mockKV: ReturnType<typeof createMockKV>;
+
+  beforeEach(() => {
+    mockKV = createMockKV();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2024-01-01T00:00:00Z'));
+  });
+
+  it('applies search endpoint limit for anonymous user', async () => {
+    const app = new Hono<{
+      Bindings: { CACHE: typeof mockKV };
+      Variables: { isAuthenticated?: boolean };
+    }>();
+    app.use('*', async (c, next) => {
+      c.set('isAuthenticated', false);
+      await next();
+    });
+    app.use('*', perEndpointRateLimit());
+    app.post('/api/v1/search', (c) => c.text('OK'));
+
+    const request = new Request('http://localhost/api/v1/search', {
+      method: 'POST',
+      headers: { 'CF-Connecting-IP': '1.2.3.4' },
+    });
+    const response = await app.fetch(request, { CACHE: mockKV });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-RateLimit-Limit')).toBe('30'); // Search limit for anonymous
+  });
+
+  it('applies higher limit for authenticated user', async () => {
+    const app = new Hono<{
+      Bindings: { CACHE: typeof mockKV };
+      Variables: { isAuthenticated?: boolean };
+    }>();
+    app.use('*', async (c, next) => {
+      c.set('isAuthenticated', true);
+      await next();
+    });
+    app.use('*', perEndpointRateLimit());
+    app.post('/api/v1/search', (c) => c.text('OK'));
+
+    const request = new Request('http://localhost/api/v1/search', {
+      method: 'POST',
+      headers: { 'CF-Connecting-IP': '1.2.3.4' },
+    });
+    const response = await app.fetch(request, { CACHE: mockKV });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-RateLimit-Limit')).toBe('100'); // Search limit for authenticated
+  });
+
+  it('applies classify endpoint limit', async () => {
+    const app = new Hono<{
+      Bindings: { CACHE: typeof mockKV };
+      Variables: { isAuthenticated?: boolean };
+    }>();
+    app.use('*', async (c, next) => {
+      c.set('isAuthenticated', false);
+      await next();
+    });
+    app.use('*', perEndpointRateLimit());
+    app.post('/api/v1/agents/:agentId/classify', (c) => c.text('OK'));
+
+    const request = new Request('http://localhost/api/v1/agents/11155111:1/classify', {
+      method: 'POST',
+      headers: { 'CF-Connecting-IP': '1.2.3.4' },
+    });
+    const response = await app.fetch(request, { CACHE: mockKV });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-RateLimit-Limit')).toBe('10'); // Classify limit for anonymous
+  });
+
+  it('uses separate rate limit keys per endpoint', async () => {
+    const app = new Hono<{
+      Bindings: { CACHE: typeof mockKV };
+      Variables: { isAuthenticated?: boolean };
+    }>();
+    app.use('*', async (c, next) => {
+      c.set('isAuthenticated', false);
+      await next();
+    });
+    app.use('*', perEndpointRateLimit());
+    app.get('/api/v1/agents', (c) => c.text('OK'));
+    app.post('/api/v1/search', (c) => c.text('OK'));
+
+    const env = { CACHE: mockKV };
+
+    // Make request to agents endpoint
+    await app.fetch(
+      new Request('http://localhost/api/v1/agents', {
+        headers: { 'CF-Connecting-IP': '1.2.3.4' },
+      }),
+      env
+    );
+
+    // Make request to search endpoint
+    await app.fetch(
+      new Request('http://localhost/api/v1/search', {
+        method: 'POST',
+        headers: { 'CF-Connecting-IP': '1.2.3.4' },
+      }),
+      env
+    );
+
+    // Should have separate entries for each endpoint
+    const putCalls = mockKV.put.mock.calls.map((call) => call[0]);
+    expect(putCalls.some((key) => key.includes('agents'))).toBe(true);
+    expect(putCalls.some((key) => key.includes('search'))).toBe(true);
   });
 });

@@ -187,31 +187,6 @@ describe('SDK error paths', () => {
     mockConfig.chainErrorMap.clear();
   });
 
-  // TODO: This test requires agent0-sdk mock to support error injection via mockConfig
-  // Currently skipped because MOCK_EXTERNAL_SERVICES=undefined bypasses the mock service
-  it.skip('throws SDKError when SDK searchAgents fails for single-chain query', async () => {
-    // Use mock config to simulate SDK error
-    mockConfig.searchAgentsError = new Error('SDK connection failed');
-
-    const sdk = createSDKService(mockEnv);
-    // Single-chain query throws SDKError (no Promise.allSettled resilience)
-    await expect(sdk.getAgents({ chainIds: [11155111] })).rejects.toThrow(SDKError);
-    await expect(sdk.getAgents({ chainIds: [11155111] })).rejects.toThrow('searchAgents');
-  });
-
-  // TODO: This test requires agent0-sdk mock to support error injection via mockConfig
-  // Currently skipped because MOCK_EXTERNAL_SERVICES=undefined bypasses the mock service
-  it.skip('returns empty results when SDK fails for multi-chain query (graceful degradation)', async () => {
-    // Use mock config to simulate SDK error
-    mockConfig.searchAgentsError = new Error('SDK connection failed');
-
-    const sdk = createSDKService(mockEnv);
-    // Multi-chain query uses Promise.allSettled, so it returns empty instead of throwing
-    const result = await sdk.getAgents({});
-    expect(result.items).toEqual([]);
-    expect(result.total).toBe(0);
-  });
-
   it('returns empty result when filtering to non-existent chains', async () => {
     const sdk = createSDKService(mockEnv);
     const result = await sdk.getAgents({ chainIds: [999999] });
@@ -219,69 +194,9 @@ describe('SDK error paths', () => {
     expect(result.nextCursor).toBeUndefined();
   });
 
-  // TODO: This test requires agent0-sdk mock to support error injection
-  // Currently skipped because MOCK_EXTERNAL_SERVICES=undefined bypasses the mock service
-  // which reads mockConfig, and uses the agent0-sdk mock instead which doesn't support error config
-  it.skip('throws SDKError when getAgent fails', async () => {
-    mockConfig.getAgentError = new Error('Agent fetch failed');
-    const sdk = createSDKService(mockEnv);
-
-    await expect(sdk.getAgent(11155111, '1')).rejects.toThrow(SDKError);
-    await expect(sdk.getAgent(11155111, '1')).rejects.toThrow('getAgent');
-  });
-
   it('returns null for unsupported chain in getAgent', async () => {
     const sdk = createSDKService(mockEnv);
     expect(await sdk.getAgent(999999, '1')).toBeNull();
-  });
-
-  // TODO: This test requires agent0-sdk mock to support error injection via mockConfig
-  // Currently skipped because MOCK_EXTERNAL_SERVICES=undefined bypasses the mock service
-  it.skip('handles chain stats errors gracefully', async () => {
-    // Mock fetch for subgraph calls - return error
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network error')));
-
-    mockConfig.searchAgentsError = new Error('RPC timeout');
-    const sdk = createSDKService(mockEnv);
-    const stats = await sdk.getChainStats();
-
-    expect(stats.length).toBe(SUPPORTED_CHAINS.length);
-    for (const stat of stats) {
-      expect(stat.status).toBe('error');
-      expect(stat.totalCount).toBe(0);
-      expect(stat.withRegistrationFileCount).toBe(0);
-      expect(stat.activeCount).toBe(0);
-    }
-
-    vi.unstubAllGlobals();
-  });
-
-  // TODO: This test requires agent0-sdk mock to support chain-specific error injection
-  // Currently skipped because MOCK_EXTERNAL_SERVICES=undefined bypasses the mock service
-  it.skip('continues processing other chains when one fails', async () => {
-    // Mock fetch for subgraph calls
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ data: { agents: [{ id: '1' }] } }),
-      })
-    );
-
-    // Only first chain fails
-    mockConfig.chainErrorMap.set(11155111, new Error('First chain failed'));
-    const sdk = createSDKService(mockEnv);
-    const stats = await sdk.getChainStats();
-
-    const firstChain = stats.find((s) => s.chainId === 11155111);
-    expect(firstChain?.status).toBe('error');
-
-    const otherChains = stats.filter((s) => s.chainId !== 11155111);
-    for (const chain of otherChains) {
-      expect(chain.status).toBe('ok');
-    }
-
-    vi.unstubAllGlobals();
   });
 });
 
@@ -460,18 +375,6 @@ describe('SDK search method', () => {
     expect(result.items).toEqual([]);
     expect(result.total).toBe(0);
     expect(result.hasMore).toBe(false);
-  });
-
-  // TODO: Re-enable when agent0-sdk module mock is properly configured
-  // This test requires the agent0-sdk mock to be used instead of the fixture-based mock service
-  it.skip('returns empty results when SDK fails (graceful degradation with Promise.allSettled)', async () => {
-    mockConfig.searchAgentsError = new Error('SDK connection failed');
-    const sdk = createSDKService(mockEnv);
-
-    // With Promise.allSettled, failed chain queries return empty results instead of throwing
-    const result = await sdk.search({ query: 'test' });
-    expect(result.items).toEqual([]);
-    expect(result.total).toBe(0);
   });
 
   it('calculates byChain breakdown correctly', async () => {

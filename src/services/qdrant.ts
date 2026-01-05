@@ -5,6 +5,7 @@
  */
 
 import { buildFilter } from '../lib/qdrant/filter-builder';
+import { circuitBreakers, CircuitOpenError } from '../lib/utils/circuit-breaker';
 import type {
   AgentFilterParams,
   AgentPayload,
@@ -134,32 +135,41 @@ export class QdrantClient {
   }
 
   /**
-   * Make an HTTP request to Qdrant API
+   * Make an HTTP request to Qdrant API with circuit breaker protection
    */
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+    return circuitBreakers.qdrant.execute(async () => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
-    try {
-      const response = await fetch(`${this.url}${path}`, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          'api-key': this.apiKey,
-        },
-        body: body ? JSON.stringify(body) : undefined,
-        signal: controller.signal,
-      });
+      try {
+        const response = await fetch(`${this.url}${path}`, {
+          method,
+          headers: {
+            'Content-Type': 'application/json',
+            'api-key': this.apiKey,
+          },
+          body: body ? JSON.stringify(body) : undefined,
+          signal: controller.signal,
+        });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Qdrant API error ${response.status}: ${errorText}`);
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Qdrant API error ${response.status}: ${errorText}`);
+        }
+
+        return (await response.json()) as T;
+      } finally {
+        clearTimeout(timeoutId);
       }
+    });
+  }
 
-      return (await response.json()) as T;
-    } finally {
-      clearTimeout(timeoutId);
-    }
+  /**
+   * Check if Qdrant circuit is currently open
+   */
+  isCircuitOpen(): boolean {
+    return !circuitBreakers.qdrant.isAllowed();
   }
 
   /**

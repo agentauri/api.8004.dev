@@ -26,6 +26,15 @@ import {
 } from './fixtures';
 
 /**
+ * Configuration for mock SDK behavior
+ * Tests can modify these to simulate errors
+ */
+export const mockSDKConfig = {
+  searchError: null as Error | null,
+  getAgentError: null as Error | null,
+};
+
+/**
  * Calculate basic search score based on name/description match quality
  */
 function calculateBasicScore(query: string, name: string, description: string): number {
@@ -201,12 +210,31 @@ export function createMockSDKService(): SDKService {
       return agent;
     },
 
+    async getAgentsBatch(agentIds: string[]): Promise<Map<string, AgentDetail>> {
+      const result = new Map<string, AgentDetail>();
+      for (const agentId of agentIds) {
+        const [chainIdStr, tokenId] = agentId.split(':');
+        if (chainIdStr && tokenId) {
+          const agent = await this.getAgent(Number.parseInt(chainIdStr, 10), tokenId);
+          if (agent) {
+            result.set(agentId, agent);
+          }
+        }
+      }
+      return result;
+    },
+
     async getChainStats(): Promise<ChainStats[]> {
       return [...MOCK_CHAIN_STATS];
     },
 
     // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Mock search mirrors production search logic
     async search(params: FallbackSearchParams): Promise<FallbackSearchResult> {
+      // Check for simulated error
+      if (mockSDKConfig.searchError) {
+        throw mockSDKConfig.searchError;
+      }
+
       const {
         query,
         chainIds,

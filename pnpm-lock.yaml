@@ -4,6 +4,10 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  parse-duration: ^2.1.3
+  nanoid: ^5.0.9
+
 importers:
 
   .:
@@ -2272,14 +2276,9 @@ packages:
   multiformats@13.4.1:
     resolution: {integrity: sha512-VqO6OSvLrFVAYYjgsr8tyv62/rCQhPgsZUXLTqoFLSgdkgiUYKYeArbt1uWLlEpkjxQe+P0+sHlbPEte1Bi06Q==}
 
-  nanoid@3.3.11:
-    resolution: {integrity: sha512-N8SpfPUnUp1bK+PMYW8qSWdl9U+wwNWI4QKxOYDy9JAro3WMX7p2OeVRF9v+347pnakNevPmiHhNmZ2HbFA76w==}
-    engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
-    hasBin: true
-
-  nanoid@4.0.2:
-    resolution: {integrity: sha512-7ZtY5KTCNheRGfEFxnedV5zFiORN1+Y1N6zvPTnHQd8ENUvfaDBeuJDZb2bN/oXwXxu3qkTXDzy57W5vAmDTBw==}
-    engines: {node: ^14 || ^16 || >=18}
+  nanoid@5.1.6:
+    resolution: {integrity: sha512-c7+7RQ+dMB5dPwwCp4ee1/iV/q2P6aK1mTZcfr1BTuVlyW9hJYiMPybJCcnBlQtuSmTIWNeazm/zqNoZSSElBg==}
+    engines: {node: ^18 || >=20}
     hasBin: true
 
   native-fetch@3.0.0:
@@ -2356,8 +2355,8 @@ packages:
   package-json-from-dist@1.0.1:
     resolution: {integrity: sha512-UEZIS3/by4OC8vL3P2dTXRETpebLI2NiI5vIrjaD/5UtrkFX/tNbwjTSRAGC/+7CAo2pIcBaRgWmcBBHcsaCIw==}
 
-  parse-duration@1.1.2:
-    resolution: {integrity: sha512-p8EIONG8L0u7f8GFgfVlL4n8rnChTt8O5FSxgxMz2tjc9FMP199wxVKVB6IbKx11uTbKHACSvaLVIKNnoeNR/A==}
+  parse-duration@2.1.5:
+    resolution: {integrity: sha512-/IX1KRw6zHDOOJrgIz++gvFASbFl7nc8GEXaLdD7d1t1x/GnrK6hh5Fgk8G3RLpkIEi4tsGj9pupGLWNg0EiJA==}
 
   parseurl@1.3.3:
     resolution: {integrity: sha512-CiyeOxFT/JZyN5m0z9PfXw4SCBJ6Sygz1Dpl0wqjlhDEGGBP1GnsUVEL0p63hoG1fcj3fHynXi9NYO4nWOL+qQ==}
@@ -4796,7 +4795,7 @@ snapshots:
   interface-datastore@7.0.4:
     dependencies:
       interface-store: 3.0.4
-      nanoid: 4.0.2
+      nanoid: 5.1.6
       uint8arrays: 4.0.10
 
   interface-datastore@8.3.2:
@@ -4843,8 +4842,8 @@ snapshots:
       it-to-stream: 1.0.0
       merge-options: 3.0.4
       multiformats: 11.0.2
-      nanoid: 4.0.2
-      parse-duration: 1.1.2
+      nanoid: 5.1.6
+      parse-duration: 2.1.5
       timeout-abort-controller: 3.0.0
       uint8arrays: 4.0.10
     transitivePeerDependencies:
@@ -4869,7 +4868,7 @@ snapshots:
       it-last: 2.0.1
       merge-options: 3.0.4
       multiformats: 11.0.2
-      parse-duration: 1.1.2
+      parse-duration: 2.1.5
       stream-to-it: 0.2.4
       uint8arrays: 4.0.10
     transitivePeerDependencies:
@@ -4894,7 +4893,7 @@ snapshots:
       it-glob: 1.0.2
       it-to-stream: 1.0.0
       merge-options: 3.0.4
-      nanoid: 3.3.11
+      nanoid: 5.1.6
       native-fetch: 3.0.0(node-fetch@2.7.0(encoding@0.1.13))
       node-fetch: 2.7.0(encoding@0.1.13)
       react-native-fetch-api: 3.0.0
@@ -5141,9 +5140,7 @@ snapshots:
 
   multiformats@13.4.1: {}
 
-  nanoid@3.3.11: {}
-
-  nanoid@4.0.2: {}
+  nanoid@5.1.6: {}
 
   native-fetch@3.0.0(node-fetch@2.7.0(encoding@0.1.13)):
     dependencies:
@@ -5214,7 +5211,7 @@ snapshots:
 
   package-json-from-dist@1.0.1: {}
 
-  parse-duration@1.1.2: {}
+  parse-duration@2.1.5: {}
 
   parseurl@1.3.3: {}
 
@@ -5243,7 +5240,7 @@ snapshots:
 
   postcss@8.5.6:
     dependencies:
-      nanoid: 3.3.11
+      nanoid: 5.1.6
       picocolors: 1.1.1
       source-map-js: 1.2.1
 

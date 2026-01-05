@@ -241,6 +241,11 @@ export class QdrantSearchService {
         results = results.slice(0, options.limit);
       }
 
+      // Reverse results for ascending order (Qdrant returns descending score by default)
+      if (options.order === 'asc') {
+        results = results.reverse();
+      }
+
       const byChain = this.calculateByChain(results);
       // Use filtered count for total
       const total = await this.qdrant.countWithFilter(options.filter);

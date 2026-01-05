@@ -62,9 +62,7 @@ describe('GET /api/v1/agents', () => {
     }
   });
 
-  // TODO: Fix OASF enrichment in mock Qdrant search service
-  // The mock returns SearchResultItem without OASF data
-  it.skip('includes OASF classification when available', async () => {
+  it('includes OASF classification when available', async () => {
     await insertMockClassification('11155111:1');
 
     const response = await testRoute('/api/v1/agents');
@@ -72,11 +70,10 @@ describe('GET /api/v1/agents', () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     const agent = body.data.find((a: { id: string }) => a.id === '11155111:1');
-    if (agent) {
-      expect(agent.oasf).toBeDefined();
-      expect(agent.oasf.skills).toBeDefined();
-      expect(agent.oasf.domains).toBeDefined();
-    }
+    expect(agent).toBeDefined();
+    expect(agent.oasf).toBeDefined();
+    expect(agent.oasf.skills).toBeDefined();
+    expect(agent.oasf.domains).toBeDefined();
   });
 
   it('performs semantic search when query provided', async () => {

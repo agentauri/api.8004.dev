@@ -95,23 +95,38 @@ describe('Validations Route', () => {
       const res = await app.request('/api/v1/agents/11155111:1/validations?limit=5', {}, env);
 
       expect(res.status).toBe(200);
-      // Verify limit was passed to SDK (with subgraphUrls parameter)
-      // Note: subgraphUrls is empty because GRAPH_API_KEY is not set in test env
-      expect(mockFetchValidations).toHaveBeenCalledWith(11155111, '11155111:1', {}, 5);
+      // Verify limit was passed to SDK (with subgraphUrls parameter from mock)
+      expect(mockFetchValidations).toHaveBeenCalledWith(
+        11155111,
+        '11155111:1',
+        { 11155111: 'https://mock-subgraph-url' },
+        5
+      );
     });
 
     it('clamps limit to valid range', async () => {
       mockFetchValidations.mockResolvedValue([]);
 
       const app = createTestApp();
+      const mockSubgraphUrls = { 11155111: 'https://mock-subgraph-url' };
 
       // Test max limit clamping
       await app.request('/api/v1/agents/11155111:1/validations?limit=5000', {}, env);
-      expect(mockFetchValidations).toHaveBeenCalledWith(11155111, '11155111:1', {}, 1000);
+      expect(mockFetchValidations).toHaveBeenCalledWith(
+        11155111,
+        '11155111:1',
+        mockSubgraphUrls,
+        1000
+      );
 
       // Test min limit clamping
       await app.request('/api/v1/agents/11155111:1/validations?limit=0', {}, env);
-      expect(mockFetchValidations).toHaveBeenCalledWith(11155111, '11155111:1', {}, 1);
+      expect(mockFetchValidations).toHaveBeenCalledWith(
+        11155111,
+        '11155111:1',
+        mockSubgraphUrls,
+        1
+      );
     });
 
     it('rejects invalid agent ID format', async () => {

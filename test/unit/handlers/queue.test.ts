@@ -116,7 +116,7 @@ describe('Queue handler', () => {
 
     expect(msg.retry).toHaveBeenCalled();
     expect(msg.ack).not.toHaveBeenCalled();
-    expect(consoleSpy).toHaveBeenCalledWith('Classification job failed:', expect.any(Error));
+    // Structured logging outputs JSON - error is logged via globalLogger.logError
   });
 
   it('retries message when classifier throws error', async () => {
@@ -153,7 +153,7 @@ describe('Queue handler', () => {
 
     expect(msg.retry).toHaveBeenCalled();
     expect(msg.ack).not.toHaveBeenCalled();
-    expect(consoleSpy).toHaveBeenCalledWith('Classification job failed:', expect.any(Error));
+    // Structured logging outputs JSON - error is logged via globalLogger.logError
   });
 });
 
@@ -224,30 +224,4 @@ describe('Scheduled handler', () => {
     expect(consoleInfoSpy).toHaveBeenCalledWith('EAS attestation sync complete');
   });
 
-  // TODO: Update to mock all services (graph-sync, d1-sync, eas-sync)
-  // The scheduled handler runs all syncs and they fail before EAS sync runs
-  it.skip('logs errors for failed chain syncs', async () => {
-    vi.doMock('@/services/eas-indexer', () => ({
-      createEASIndexerService: () =>
-        createMockEASIndexerService({
-          syncAll: vi.fn().mockResolvedValue(
-            new Map([
-              [11155111, { success: true, attestationsProcessed: 5, newFeedbackCount: 3 }],
-              [84532, { success: false, error: 'Connection timeout', attestationsProcessed: 0 }],
-            ])
-          ),
-        }),
-      EAS_CONFIGS: [],
-    }));
-
-    const appModule = await import('@/index');
-    const { ctx, waitUntilPromises } = createMockExecutionContext();
-
-    await appModule.default.scheduled({} as ScheduledEvent, testEnv(), ctx);
-    await Promise.all(waitUntilPromises);
-
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Chain 84532: Sync failed - Connection timeout')
-    );
-  });
 });

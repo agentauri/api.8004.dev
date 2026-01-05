@@ -11,6 +11,17 @@ import type { SearchResultItem, SearchServiceResult } from '@/types';
 import { MOCK_AGENTS_SUMMARY, MOCK_CLASSIFICATIONS } from './fixtures';
 
 /**
+ * Configuration for mock search behavior
+ * Tests can modify these to simulate errors
+ */
+export const mockSearchConfig = {
+  /** Set to an Error to simulate search failures */
+  searchError: null as Error | null,
+  healthCheckError: null as Error | null,
+  healthCheckStatus: 'ok' as 'ok' | 'error',
+};
+
+/**
  * Calculate semantic-like score based on text similarity
  * Uses a combination of exact match, substring match, and word overlap
  */
@@ -139,6 +150,11 @@ export function createMockSearchService(): SearchService {
   return {
     // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Mock search mirrors production search logic with all filters
     async search(params: SearchParams): Promise<SearchServiceResult> {
+      // Check for simulated error
+      if (mockSearchConfig.searchError) {
+        throw mockSearchConfig.searchError;
+      }
+
       const { query, limit = 20, minScore = 0.3, cursor, offset, filters } = params;
 
       // Determine starting offset
@@ -257,8 +273,12 @@ export function createMockSearchService(): SearchService {
     },
 
     async healthCheck(): Promise<boolean> {
-      // Mock always returns healthy
-      return true;
+      // Check for simulated error
+      if (mockSearchConfig.healthCheckError) {
+        throw mockSearchConfig.healthCheckError;
+      }
+      // Return status based on configuration
+      return mockSearchConfig.healthCheckStatus === 'ok';
     },
   };
 }

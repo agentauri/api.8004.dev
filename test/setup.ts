@@ -10,6 +10,8 @@ import {
   createMockQdrantSearchService,
   mockQdrantConfig,
 } from '@/services/mock/mock-qdrant-search';
+import { mockSDKConfig } from '@/services/mock/mock-sdk';
+import { mockSearchConfig } from '@/services/mock/mock-search';
 import { setMockQdrantSearchServiceFactory } from '@/services/qdrant-search';
 import type { Env } from '@/types';
 import { mockConfig } from './mocks/agent0-sdk';
@@ -83,8 +85,17 @@ afterEach(async () => {
   mockConfig.getAgentError = null;
   mockConfig.chainErrorMap.clear();
 
+  // Reset mock SDK service configuration (for MOCK_EXTERNAL_SERVICES=true)
+  mockSDKConfig.searchError = null;
+  mockSDKConfig.getAgentError = null;
+
   // Reset mock Qdrant configuration
   mockQdrantConfig.searchError = null;
+
+  // Reset mock search configuration
+  mockSearchConfig.searchError = null;
+  mockSearchConfig.healthCheckError = null;
+  mockSearchConfig.healthCheckStatus = 'ok';
 });
 
 /**
@@ -405,6 +416,11 @@ export function setupMockFetch() {
   mockFetch.mockResolvedValue(mockHealthyResponse());
   return mockFetch;
 }
+
+/**
+ * Re-export mockSearchConfig for tests that need to control search service behavior
+ */
+export { mockSearchConfig } from '@/services/mock/mock-search';
 
 // ============================================
 // OAuth Test Helpers
