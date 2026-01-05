@@ -8,7 +8,7 @@
  */
 
 import type { MiddlewareHandler } from 'hono';
-import { DEFAULT_RATE_LIMITS, validateApiKey, type ApiKeyTier } from '@/services/api-keys';
+import { type ApiKeyTier, DEFAULT_RATE_LIMITS, validateApiKey } from '@/services/api-keys';
 import type { Env, Variables } from '@/types';
 
 /**
@@ -63,6 +63,7 @@ export function apiKeyAuth(): MiddlewareHandler<{
   Bindings: Env;
   Variables: ApiKeyVariables;
 }> {
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Authentication middleware requires branching logic for multiple auth methods
   return async (c, next) => {
     const apiKey = extractApiKey(c.req.raw);
     const logger = c.get('logger');
@@ -120,6 +121,7 @@ export function requireApiKey(): MiddlewareHandler<{
   Bindings: Env;
   Variables: ApiKeyVariables;
 }> {
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Authentication middleware requires branching logic for multiple auth methods
   return async (c, next) => {
     const apiKey = extractApiKey(c.req.raw);
     const logger = c.get('logger');

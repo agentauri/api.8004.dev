@@ -3,5 +3,5 @@
  * @module lib/logger
  */
 
-export { Logger, createLogger, globalLogger } from './logger';
-export type { LogLevel, LogContext, LogEntry } from './logger';
+export type { LogContext, LogEntry, LogLevel } from './logger';
+export { createLogger, globalLogger, Logger } from './logger';

@@ -352,7 +352,10 @@ search.post('/', async (c) => {
       // ========== FALLBACK: SDK NAME SEARCH (only for 'auto' mode) ==========
       // For 'semantic' mode, we would have already returned above (no fallback)
       c.get('logger').warn('Vector search failed, falling back to SDK name search', {
-        error: vectorSearchError instanceof Error ? vectorSearchError.message : String(vectorSearchError),
+        error:
+          vectorSearchError instanceof Error
+            ? vectorSearchError.message
+            : String(vectorSearchError),
       });
 
       try {

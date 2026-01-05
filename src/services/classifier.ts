@@ -9,9 +9,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { globalLogger } from '@/lib/logger';
-import { circuitBreakers, CircuitOpenError } from '@/lib/utils/circuit-breaker';
 import { buildClassificationPrompt } from '@/lib/oasf/prompt';
 import { validateDomainSlug, validateSkillSlug } from '@/lib/oasf/taxonomy';
+import { CircuitOpenError, circuitBreakers } from '@/lib/utils/circuit-breaker';
 import type {
   AgentClassificationInput,
   ClassificationResult,

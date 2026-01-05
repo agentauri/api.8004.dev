@@ -12,6 +12,7 @@ import type { AgentFilterParams, FieldCondition, QdrantFilter } from './types';
  * @param params - API filter parameters
  * @returns Qdrant filter object or undefined if no filters
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Filter builder handles 20+ filter types requiring extensive branching
 export function buildFilter(params: AgentFilterParams): QdrantFilter | undefined {
   const mustConditions: FieldCondition[] = [];
   const shouldConditions: FieldCondition[] = [];

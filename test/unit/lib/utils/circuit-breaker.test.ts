@@ -3,7 +3,7 @@
  * @module test/unit/lib/utils/circuit-breaker
  */
 
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CircuitBreaker,
   CircuitOpenError,
@@ -65,7 +65,9 @@ describe('CircuitBreaker', () => {
 
       // Cause 3 failures to reach threshold
       for (let i = 0; i < 3; i++) {
-        await expect(breaker.execute(() => Promise.reject(new Error(`fail ${i}`)))).rejects.toThrow();
+        await expect(
+          breaker.execute(() => Promise.reject(new Error(`fail ${i}`)))
+        ).rejects.toThrow();
       }
 
       expect(breaker.getStatus().state).toBe('open');
@@ -154,7 +156,9 @@ describe('CircuitBreaker', () => {
       expect(breaker.getStatus().state).toBe('half-open');
 
       // Second call fails - should re-open
-      await expect(breaker.execute(() => Promise.reject(new Error('fail again')))).rejects.toThrow();
+      await expect(
+        breaker.execute(() => Promise.reject(new Error('fail again')))
+      ).rejects.toThrow();
       expect(breaker.getStatus().state).toBe('open');
     });
 

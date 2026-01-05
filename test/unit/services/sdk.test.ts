@@ -4,7 +4,6 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SDKError } from '@/lib/utils/errors';
 import {
   calculateBasicScore,
   createSDKService,

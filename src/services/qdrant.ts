@@ -5,7 +5,6 @@
  */
 
 import { buildFilter } from '../lib/qdrant/filter-builder';
-import { circuitBreakers, CircuitOpenError } from '../lib/utils/circuit-breaker';
 import type {
   AgentFilterParams,
   AgentPayload,
@@ -23,6 +22,7 @@ import type {
   QdrantSearchResponse,
   QdrantUpsertRequest,
 } from '../lib/qdrant/types';
+import { circuitBreakers } from '../lib/utils/circuit-breaker';
 
 /**
  * Convert agent ID to a deterministic UUID v5-like format

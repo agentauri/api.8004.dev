@@ -189,7 +189,7 @@ export function getEndpointRateLimit(
 
   // Fall back to default
   if (!config) {
-    config = endpointRateLimits['default'] ?? { anonymous: 60, authenticated: 300 };
+    config = endpointRateLimits.default ?? { anonymous: 60, authenticated: 300 };
   }
 
   const limit = isAuthenticated ? config.authenticated : config.anonymous;

@@ -3,8 +3,8 @@
  * @module types/env
  */
 
-import type { ClassificationJob } from './classification';
 import type { Logger } from '@/lib/logger';
+import type { ClassificationJob } from './classification';
 
 /**
  * Cloudflare Workers environment bindings

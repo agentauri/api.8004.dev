@@ -377,27 +377,26 @@ export function buildSubgraphUrls(graphApiKey: string): Record<number, string> {
  * @param query - GraphQL query string
  * @returns Parsed JSON response or null on error
  */
-async function fetchSubgraphWithCircuitBreaker<T>(
-  url: string,
-  query: string
-): Promise<T | null> {
-  return circuitBreakers.theGraph.execute(async () => {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query }),
+async function fetchSubgraphWithCircuitBreaker<T>(url: string, query: string): Promise<T | null> {
+  return circuitBreakers.theGraph
+    .execute(async () => {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Subgraph error ${response.status}`);
+      }
+
+      return (await response.json()) as T;
+    })
+    .catch((error) => {
+      // Log but don't throw for circuit open or other errors
+      console.warn('[SDK] Subgraph call failed:', error.message);
+      return null;
     });
-
-    if (!response.ok) {
-      throw new Error(`Subgraph error ${response.status}`);
-    }
-
-    return (await response.json()) as T;
-  }).catch((error) => {
-    // Log but don't throw for circuit open or other errors
-    console.warn('[SDK] Subgraph call failed:', error.message);
-    return null;
-  });
 }
 
 /**

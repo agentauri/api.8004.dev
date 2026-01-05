@@ -333,9 +333,7 @@ agents.get('/', async (c) => {
 
     // When filtering by skills/domains, prefer Qdrant metadata to ensure consistency
     // between filter criteria and displayed results. Otherwise prefer D1 (more detailed).
-    const oasf = isFilteringByOasf
-      ? qdrantOasf ?? d1Oasf
-      : d1Oasf ?? qdrantOasf;
+    const oasf = isFilteringByOasf ? (qdrantOasf ?? d1Oasf) : (d1Oasf ?? qdrantOasf);
 
     return {
       id: result.agentId,

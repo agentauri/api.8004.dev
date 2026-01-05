@@ -10,8 +10,8 @@ import { getClassificationsBatch } from '@/db/queries';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import {
-  type SearchRequestBody,
   parseClassificationRow,
+  type SearchRequestBody,
   searchRequestSchema,
 } from '@/lib/utils/validation';
 import { CACHE_TTL, createCacheService } from '@/services/cache';
@@ -125,9 +125,7 @@ search.post('/', async (c) => {
 
     // When filtering by skills/domains, prefer Qdrant metadata to ensure consistency
     // between filter criteria and displayed results. Otherwise prefer D1 (more detailed).
-    const oasf = isFilteringByOasf
-      ? qdrantOasf ?? d1Oasf
-      : d1Oasf ?? qdrantOasf;
+    const oasf = isFilteringByOasf ? (qdrantOasf ?? d1Oasf) : (d1Oasf ?? qdrantOasf);
 
     return {
       id: result.agentId,

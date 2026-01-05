@@ -159,11 +159,10 @@ describe('Queue handler', () => {
 
 describe('Scheduled handler', () => {
   let consoleInfoSpy: ReturnType<typeof vi.spyOn>;
-  let consoleSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     consoleInfoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
-    consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.clearAllMocks();
     vi.resetModules();
   });
@@ -223,5 +222,4 @@ describe('Scheduled handler', () => {
     expect(consoleInfoSpy).toHaveBeenCalledWith('Starting EAS attestation sync...');
     expect(consoleInfoSpy).toHaveBeenCalledWith('EAS attestation sync complete');
   });
-
 });

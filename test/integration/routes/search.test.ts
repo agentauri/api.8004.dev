@@ -75,9 +75,7 @@ describe('POST /api/v1/search', () => {
     expect(body.data.length).toBeGreaterThan(0);
 
     // Find the agent we inserted classification for
-    const agentWithClassification = body.data.find(
-      (a: { id: string }) => a.id === '11155111:1'
-    );
+    const agentWithClassification = body.data.find((a: { id: string }) => a.id === '11155111:1');
     expect(agentWithClassification).toBeDefined();
     expect(agentWithClassification.oasf).toBeDefined();
     expect(agentWithClassification.oasf.skills).toBeDefined();

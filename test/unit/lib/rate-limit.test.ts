@@ -290,7 +290,7 @@ describe('endpointRateLimits', () => {
   });
 
   it('has default config', () => {
-    expect(endpointRateLimits['default']).toEqual({
+    expect(endpointRateLimits.default).toEqual({
       anonymous: 60,
       authenticated: 300,
     });
