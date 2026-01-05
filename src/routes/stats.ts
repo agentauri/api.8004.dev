@@ -32,6 +32,9 @@ stats.get('/', async (c) => {
   const sdk = createSDKService(c.env);
   const chainStats = await sdk.getChainStats();
 
+  // Check if any chain has errors - don't cache stale data
+  const hasErrors = chainStats.some((chain) => chain.status === 'error');
+
   // Aggregate totals
   const totalAgents = chainStats.reduce((sum, chain) => sum + chain.totalCount, 0);
   const withRegistrationFile = chainStats.reduce(
@@ -50,7 +53,10 @@ stats.get('/', async (c) => {
     },
   };
 
-  await cache.set(cacheKey, response, CACHE_TTL.PLATFORM_STATS);
+  // Only cache if all chains succeeded
+  if (!hasErrors) {
+    await cache.set(cacheKey, response, CACHE_TTL.PLATFORM_STATS);
+  }
   return c.json(response);
 });
 

@@ -75,7 +75,7 @@ export async function syncD1ToQdrant(
     .all<ReputationRow>();
 
   // Update classifications in Qdrant
-  for (const c of classifications.results) {
+  for (const c of classifications.results ?? []) {
     try {
       const skillsData = JSON.parse(c.skills) as SkillOrDomain[];
       const domainsData = JSON.parse(c.domains) as SkillOrDomain[];
@@ -104,7 +104,7 @@ export async function syncD1ToQdrant(
   }
 
   // Update reputation in Qdrant
-  for (const r of reputation.results) {
+  for (const r of reputation.results ?? []) {
     try {
       // Convert 1-5 scale to 0-100
       const reputationScore = Math.round(r.average_score * 20);

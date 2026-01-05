@@ -240,7 +240,21 @@ export function createGeminiClassifier(apiKey: string, model: string): Classifie
     async classify(agent: AgentClassificationInput): Promise<ClassificationResultWithProvider> {
       const prompt = buildClassificationPrompt(agent);
 
-      const result = await geminiModel.generateContent(prompt);
+      // Gemini SDK doesn't have built-in timeout, so we use Promise.race
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(
+          () => reject(new Error('Gemini classification timeout')),
+          CLASSIFICATION_TIMEOUT_MS
+        );
+      });
+
+      const result = await Promise.race([
+        geminiModel.generateContent({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 1024 },
+        }),
+        timeoutPromise,
+      ]);
       const response = result.response;
       const text = response.text();
 

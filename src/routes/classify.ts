@@ -115,14 +115,15 @@ classify.post('/', async (c) => {
     return c.json(response, 202);
   }
 
+  // Record in database queue first (before sending to queue)
+  // This prevents race condition where queue processes before DB record exists
+  await enqueueClassification(c.env.DB, agentId);
+
   // Queue the classification job
   await c.env.CLASSIFICATION_QUEUE.send({
     agentId,
     force: body.force,
   });
-
-  // Record in database queue
-  await enqueueClassification(c.env.DB, agentId);
 
   // Invalidate cache if force re-classification
   if (body.force) {

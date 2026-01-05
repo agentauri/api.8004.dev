@@ -1592,7 +1592,6 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
         if (!primaryChain) {
           return { items: [], total: 0, hasMore: false, byChain: {} };
         }
-        const _sdk = getSDK(primaryChain.chainId);
 
         // Build base search params
         const baseSearchParams: SearchParams = {
