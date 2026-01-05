@@ -23,11 +23,7 @@ import { findComplementaryAgents, findIOCompatibleAgents } from '@/services/comp
 import { createIPFSService } from '@/services/ipfs';
 import { resolveClassification, toOASFClassification } from '@/services/oasf-resolver';
 import { sortAgents } from '@/services/pagination-cache';
-import {
-  createQdrantSearchService,
-  payloadToAgentSummary,
-  searchFiltersToAgentFilters,
-} from '@/services/qdrant-search';
+import { createQdrantSearchService, searchFiltersToAgentFilters } from '@/services/qdrant-search';
 import { createReputationService } from '@/services/reputation';
 import { createSDKService } from '@/services/sdk';
 import type {
@@ -37,10 +33,32 @@ import type {
   ChainStats,
   Env,
   OASFSource,
+  SearchResultItem,
   Variables,
 } from '@/types';
 import { classify } from './classify';
 import { reputation } from './reputation';
+
+/**
+ * Convert SearchResultItem to AgentSummary for similar agents response
+ */
+function searchResultToAgentSummary(result: SearchResultItem): AgentSummary {
+  const [chainIdStr, tokenId] = result.agentId.split(':');
+  return {
+    id: result.agentId,
+    chainId: result.chainId,
+    tokenId: tokenId ?? '0',
+    name: result.name,
+    description: result.description,
+    image: result.metadata?.image,
+    active: result.metadata?.active ?? true,
+    hasMcp: result.metadata?.hasMcp ?? false,
+    hasA2a: result.metadata?.hasA2a ?? false,
+    x402Support: result.metadata?.x402Support ?? false,
+    supportedTrust: [],
+    searchScore: result.score,
+  };
+}
 
 /**
  * Enqueue classification jobs for unclassified agents
@@ -560,50 +578,74 @@ agents.get('/:agentId/similar', async (c) => {
     // Use Qdrant to search for agents with matching skills/domains
     const searchService = createQdrantSearchService(c.env);
 
-    // Search by skills first
-    let similarAgents: AgentSummary[] = [];
+    // Search by skills first, then domains
+    const allResults: SearchResultItem[] = [];
+    const seen = new Set<string>();
 
     if (targetSkills.length > 0) {
       const skillsResult = await searchService.search({
         limit: 50,
         filters: { skills: targetSkills },
       });
-      similarAgents = skillsResult.results
-        .filter((r) => r.agentId !== agentId)
-        .map((r) =>
-          payloadToAgentSummary(
-            r as unknown as Parameters<typeof payloadToAgentSummary>[0],
-            r.score
-          )
-        );
-    }
-
-    // Also search by domains if not enough results
-    if (similarAgents.length < limit && targetDomains.length > 0) {
-      const domainsResult = await searchService.search({
-        limit: 50,
-        filters: { domains: targetDomains },
-      });
-      const domainAgents = domainsResult.results
-        .filter((r) => r.agentId !== agentId)
-        .map((r) =>
-          payloadToAgentSummary(
-            r as unknown as Parameters<typeof payloadToAgentSummary>[0],
-            r.score
-          )
-        );
-
-      // Merge and deduplicate
-      const seen = new Set(similarAgents.map((a) => a.id));
-      for (const agent of domainAgents) {
-        if (!seen.has(agent.id)) {
-          similarAgents.push(agent);
-          seen.add(agent.id);
+      for (const r of skillsResult.results) {
+        if (r.agentId !== agentId && !seen.has(r.agentId)) {
+          allResults.push(r);
+          seen.add(r.agentId);
         }
       }
     }
 
-    const topSimilar = similarAgents.slice(0, limit);
+    // Also search by domains if not enough results
+    if (allResults.length < 50 && targetDomains.length > 0) {
+      const domainsResult = await searchService.search({
+        limit: 50,
+        filters: { domains: targetDomains },
+      });
+      for (const r of domainsResult.results) {
+        if (r.agentId !== agentId && !seen.has(r.agentId)) {
+          allResults.push(r);
+          seen.add(r.agentId);
+        }
+      }
+    }
+
+    // Compute similarity scores based on skill/domain overlap
+    interface SimilarAgent extends AgentSummary {
+      similarityScore: number;
+      matchedSkills: string[];
+      matchedDomains: string[];
+    }
+
+    const scoredAgents: SimilarAgent[] = allResults.map((r) => {
+      const agentSkills = r.metadata?.skills ?? [];
+      const agentDomains = r.metadata?.domains ?? [];
+
+      // Calculate overlap
+      const matchedSkills = targetSkills.filter((s) => agentSkills.includes(s));
+      const matchedDomains = targetDomains.filter((d) => agentDomains.includes(d));
+
+      // Jaccard-like similarity score
+      const skillUnion = new Set([...targetSkills, ...agentSkills]).size;
+      const domainUnion = new Set([...targetDomains, ...agentDomains]).size;
+
+      const skillSimilarity = skillUnion > 0 ? matchedSkills.length / skillUnion : 0;
+      const domainSimilarity = domainUnion > 0 ? matchedDomains.length / domainUnion : 0;
+
+      // Weight skills more heavily (60% skills, 40% domains), return score as 0-1
+      const similarityScore =
+        Math.round((skillSimilarity * 0.6 + domainSimilarity * 0.4) * 100) / 100;
+
+      return {
+        ...searchResultToAgentSummary(r),
+        similarityScore,
+        matchedSkills,
+        matchedDomains,
+      };
+    });
+
+    // Sort by similarity score and take top N
+    scoredAgents.sort((a, b) => b.similarityScore - a.similarityScore);
+    const topSimilar = scoredAgents.filter((a) => a.similarityScore > 0).slice(0, limit);
 
     const response = {
       success: true as const,
