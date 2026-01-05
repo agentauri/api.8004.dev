@@ -50,7 +50,7 @@
     "zod": "^4.3.4"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.3.10",
+    "@biomejs/biome": "^2.3.11",
     "@cloudflare/vitest-pool-workers": "^0.11.1",
     "@cloudflare/workers-types": "^4.20260103.0",
     "@vitest/coverage-istanbul": "2.1.9",
