@@ -92,10 +92,13 @@ export function registerSearchFallbackTests(): void {
     });
 
     it('POST /search with chainIds filter works', async () => {
+      // Use unique offset to bypass cache
+      const uniqueOffset = Math.floor(Date.now() / 1000);
       const { json } = await post('/search', {
         query: 'agent',
         filters: { chainIds: [11155111] },
         limit: 10,
+        offset: uniqueOffset,
       });
       assertSuccess(json);
       assertHasSearchMode(json);
@@ -105,10 +108,13 @@ export function registerSearchFallbackTests(): void {
     });
 
     it('POST /search with active=true filter works', async () => {
+      // Use unique offset to bypass cache
+      const uniqueOffset = Math.floor(Date.now() / 1000);
       const { json } = await post('/search', {
         query: 'agent',
         filters: { active: true },
         limit: 10,
+        offset: uniqueOffset,
       });
       assertSuccess(json);
       assertHasSearchMode(json);
@@ -118,10 +124,13 @@ export function registerSearchFallbackTests(): void {
     });
 
     it('POST /search with active=false returns ONLY inactive agents', async () => {
+      // Use unique offset to bypass cache
+      const uniqueOffset = Math.floor(Date.now() / 1000);
       const { json } = await post('/search', {
         query: 'agent',
         filters: { active: false },
         limit: 10,
+        offset: uniqueOffset,
       });
       assertSuccess(json);
       assertHasSearchMode(json);
@@ -174,10 +183,13 @@ export function registerSearchFallbackTests(): void {
     });
 
     it('POST /search with minRep filter works', async () => {
+      // Use unique offset to bypass cache
+      const uniqueOffset = Math.floor(Date.now() / 1000);
       const { json } = await post('/search', {
         query: 'agent',
         filters: { minRep: 3 },
         limit: 10,
+        offset: uniqueOffset,
       });
       assertSuccess(json);
       assertHasSearchMode(json);
@@ -229,10 +241,13 @@ export function registerSearchFallbackTests(): void {
     });
 
     it('POST /search AND mode booleans + chainId', async () => {
+      // Use unique offset to bypass cache
+      const uniqueOffset = Math.floor(Date.now() / 1000);
       const { json } = await post('/search', {
         query: 'agent',
         filters: { mcp: true, chainIds: [11155111], filterMode: 'AND' },
         limit: 10,
+        offset: uniqueOffset,
       });
       assertSuccess(json);
       assertHasSearchMode(json);
@@ -314,10 +329,13 @@ export function registerSearchFallbackTests(): void {
     });
 
     it('POST /search OR mode booleans + chainId (chainId is always AND)', async () => {
+      // Use unique offset to bypass cache
+      const uniqueOffset = Math.floor(Date.now() / 1000);
       const { json } = await post('/search', {
         query: 'agent',
         filters: { mcp: true, a2a: true, chainIds: [11155111], filterMode: 'OR' },
         limit: 10,
+        offset: uniqueOffset,
       });
       assertSuccess(json);
       assertHasSearchMode(json);

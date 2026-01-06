@@ -113,10 +113,13 @@ export function registerSearchTests(): void {
     });
 
     it('POST /search with filters.domains', async () => {
+      // Use unique offset to bypass cache
+      const uniqueOffset = Math.floor(Date.now() / 1000);
       const { json } = await post('/search', {
         query: 'agent',
         filters: { domains: ['technology'] },
         limit: 5,
+        offset: uniqueOffset,
       });
       assertSuccess(json);
       assertHasSearchMode(json);
@@ -126,10 +129,13 @@ export function registerSearchTests(): void {
     });
 
     it('POST /search with active=false returns ONLY inactive agents', async () => {
+      // Use unique offset to bypass cache
+      const uniqueOffset = Math.floor(Date.now() / 1000);
       const { json } = await post('/search', {
         query: 'agent',
         filters: { active: false },
         limit: 5,
+        offset: uniqueOffset,
       });
       assertSuccess(json);
       assertHasSearchMode(json);
@@ -489,10 +495,13 @@ export function registerSearchTests(): void {
     });
 
     it('POST /search with chainIds filter works', async () => {
+      // Use unique offset to bypass cache
+      const uniqueOffset = Math.floor(Date.now() / 1000);
       const { json } = await post('/search', {
         query: 'agent',
         filters: { chainIds: [11155111] },
         limit: 5,
+        offset: uniqueOffset,
       });
       assertSuccess(json);
       assertHasSearchMode(json);
@@ -613,11 +622,14 @@ export function registerSearchTests(): void {
     });
 
     it('POST /search cursor + filters maintains filters across pages', async () => {
+      // Use unique offset to bypass cache
+      const uniqueOffset = Math.floor(Date.now() / 1000);
       // Get first page with filters
       const { json: page1 } = await post('/search', {
         query: 'agent',
         filters: { mcp: true, chainIds: [11155111] },
         limit: 5,
+        offset: uniqueOffset,
       });
       assertSuccess(page1);
       assertHasSearchMode(page1);

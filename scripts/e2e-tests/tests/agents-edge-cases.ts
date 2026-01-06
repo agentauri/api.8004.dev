@@ -46,9 +46,12 @@ export function registerAgentsEdgeCasesTests(): void {
 
     it('Empty result set returns proper pagination', async () => {
       // Query for something very specific that likely returns no results
+      // Use unique offset to bypass cache
+      const uniqueOffset = Math.floor(Date.now() / 1000);
       const { json } = await get('/agents', {
         skills: 'nonexistent_skill_slug_12345',
         limit: 10,
+        offset: uniqueOffset,
       });
       assertSuccess(json);
       assertHasMeta(json);
@@ -146,10 +149,13 @@ export function registerAgentsEdgeCasesTests(): void {
   describe('Reputation Filter Edge Cases', () => {
     it('minRep > maxRep returns empty array', async () => {
       // When minRep is greater than maxRep, no results should match
+      // Use unique offset to bypass cache
+      const uniqueOffset = Math.floor(Date.now() / 1000);
       const { json } = await get('/agents', {
         minRep: 5,
         maxRep: 1,
         limit: 10,
+        offset: uniqueOffset,
       });
       assertSuccess(json);
       // Should return empty array since range is impossible

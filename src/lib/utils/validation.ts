@@ -226,6 +226,9 @@ export const searchRequestSchema = z.object({
       mcpTools: z.array(z.string()).optional(),
       a2aSkills: z.array(z.string()).optional(),
       filterMode: z.enum(['AND', 'OR']).optional(),
+      // Reputation filters
+      minRep: z.number().min(0).max(100).optional(),
+      maxRep: z.number().min(0).max(100).optional(),
       // Wallet filters
       owner: z.string().optional(),
       walletAddress: z.string().optional(),

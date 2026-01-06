@@ -101,10 +101,13 @@ export function registerSearchFiltersTests(): void {
     });
 
     it('search with mcp filter', async () => {
+      // Use unique offset to bypass cache
+      const uniqueOffset = Math.floor(Date.now() / 1000);
       const { json } = await post('/search', {
         query: TEST_QUERY,
         limit: LIMIT,
         filters: { mcp: true },
+        offset: uniqueOffset,
       });
       assertSuccess(json);
       if (json.data?.length > 0) {
@@ -113,10 +116,13 @@ export function registerSearchFiltersTests(): void {
     });
 
     it('search with a2a filter', async () => {
+      // Use unique offset to bypass cache
+      const uniqueOffset = Math.floor(Date.now() / 1000);
       const { json } = await post('/search', {
         query: TEST_QUERY,
         limit: LIMIT,
         filters: { a2a: true },
+        offset: uniqueOffset,
       });
       assertSuccess(json);
       if (json.data?.length > 0) {
@@ -125,10 +131,13 @@ export function registerSearchFiltersTests(): void {
     });
 
     it('search with x402 filter', async () => {
+      // Use unique offset to bypass cache
+      const uniqueOffset = Math.floor(Date.now() / 1000);
       const { json } = await post('/search', {
         query: TEST_QUERY,
         limit: LIMIT,
         filters: { x402: true },
+        offset: uniqueOffset,
       });
       assertSuccess(json);
       if (json.data?.length > 0) {
@@ -175,10 +184,13 @@ export function registerSearchFiltersTests(): void {
     });
 
     it('skills filter via POST', async () => {
+      // Use unique offset to bypass cache
+      const uniqueOffset = Math.floor(Date.now() / 1000);
       const { json } = await post('/search', {
         query: TEST_QUERY,
         limit: LIMIT,
         filters: { skills: [TEST_SKILLS[0]] },
+        offset: uniqueOffset,
       });
       assertSuccess(json);
       if (json.data?.length > 0) {
@@ -211,10 +223,13 @@ export function registerSearchFiltersTests(): void {
     });
 
     it('domains filter via POST', async () => {
+      // Use unique offset to bypass cache
+      const uniqueOffset = Math.floor(Date.now() / 1000);
       const { json } = await post('/search', {
         query: TEST_QUERY,
         limit: LIMIT,
         filters: { domains: [TEST_DOMAINS[0]] },
+        offset: uniqueOffset,
       });
       assertSuccess(json);
       if (json.data?.length > 0) {
@@ -297,6 +312,8 @@ export function registerSearchFiltersTests(): void {
     });
 
     it('filterMode=OR via POST', async () => {
+      // Use unique offset to bypass cache
+      const uniqueOffset = Math.floor(Date.now() / 1000);
       const { json } = await post('/search', {
         query: TEST_QUERY,
         limit: LIMIT,
@@ -305,6 +322,7 @@ export function registerSearchFiltersTests(): void {
           x402: true,
           filterMode: 'OR',
         },
+        offset: uniqueOffset,
       });
       assertSuccess(json);
       if (json.data?.length > 0) {

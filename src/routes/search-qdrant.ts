@@ -70,6 +70,9 @@ search.post('/', async (c) => {
         // Extended filters (matching GET /agents for consistency)
         mcpTools: body.filters.mcpTools,
         a2aSkills: body.filters.a2aSkills,
+        // Reputation filters
+        minRep: body.filters.minRep,
+        maxRep: body.filters.maxRep,
         // Wallet filters
         owner: body.filters.owner,
         walletAddress: body.filters.walletAddress,

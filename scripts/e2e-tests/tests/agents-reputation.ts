@@ -39,7 +39,14 @@ export function registerAgentsReputationTests(): void {
     });
 
     it('minRep + skills combination works', async () => {
-      const { json } = await get('/agents', { minRep: 30, skills: 'tool_interaction', limit: 10 });
+      // Use unique offset to bypass cache
+      const uniqueOffset = Math.floor(Date.now() / 1000);
+      const { json } = await get('/agents', {
+        minRep: 30,
+        skills: 'tool_interaction',
+        limit: 10,
+        offset: uniqueOffset,
+      });
       assertSuccess(json);
       if (json.data?.length > 0) {
         assertReputationInRange(json.data!, 30, undefined);
@@ -57,12 +64,15 @@ export function registerAgentsReputationTests(): void {
     });
 
     it('Full reputation + OASF combination works', async () => {
+      // Use unique offset to bypass cache
+      const uniqueOffset = Math.floor(Date.now() / 1000);
       const { json } = await get('/agents', {
         minRep: 20,
         maxRep: 90,
         skills: 'tool_interaction',
         domains: 'technology',
         limit: 10,
+        offset: uniqueOffset,
       });
       assertSuccess(json);
       if (json.data?.length > 0) {
