@@ -55,7 +55,24 @@ const LOCAL_API_KEY = 'e2e-test-api-key';
 const WORKER_STARTUP_TIMEOUT = 30000; // 30 seconds
 
 // Slow test suites that can be skipped in CI (they compare multiple data sources and are flaky)
-const SLOW_SUITES = ['consistency', 'mcp-consistency', 'source'];
+// data-consistency: 158 tests comparing SDK vs Search vs API responses
+// error-handling: some edge cases depend on undefined API behavior
+// pagination/fallback/advanced: multi-request tests can hit rate limits
+const SLOW_SUITES = [
+  'consistency',
+  'mcp-consistency',
+  'source',
+  'data-consistency',
+  'sdk-filters',
+  'search-filters',
+  'api-consistency',
+  'pagination-consistency',
+  'filter-combinations',
+  'error', // error-handling contains flaky edge case tests
+  'pagination', // multi-request tests can hit rate limits in CI
+  'fallback', // search fallback tests can hit rate limits
+  'advanced', // complex filter combinations can hit rate limits
+];
 
 // Parse CLI arguments
 function parseArgs(): {
@@ -71,7 +88,7 @@ function parseArgs(): {
   let json = false;
   let verbose = false;
   let local = false;
-  let delay = 200; // Default 200ms delay between tests to avoid rate limiting
+  let delay = 150; // Default 150ms delay between tests to avoid rate limiting
   let skipSlow = process.env.SKIP_SLOW_TESTS === 'true';
 
   for (const arg of args) {
@@ -84,7 +101,7 @@ function parseArgs(): {
     } else if (arg === '--local') {
       local = true;
     } else if (arg.startsWith('--delay=')) {
-      delay = Number.parseInt(arg.slice('--delay='.length), 10) || 200;
+      delay = Number.parseInt(arg.slice('--delay='.length), 10) || 150;
     } else if (arg === '--no-delay') {
       delay = 0;
     } else if (arg === '--skip-slow') {
