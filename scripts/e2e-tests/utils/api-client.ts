@@ -179,3 +179,75 @@ export function hasApiKey(): boolean {
 export function getApiBaseUrl(): string {
   return API_BASE;
 }
+
+// ============================================================================
+// Batch Request Helpers - Run multiple requests in parallel
+// ============================================================================
+
+export interface BatchRequest {
+  path: string;
+  params?: Record<string, string | number | boolean | undefined>;
+}
+
+export interface BatchPostRequest {
+  path: string;
+  body: unknown;
+}
+
+/**
+ * Execute multiple GET requests in parallel
+ * Useful for pagination tests and comparing different filter results
+ *
+ * @example
+ * const [page1, page2, page3] = await batchGet([
+ *   { path: '/agents', params: { page: 1, limit: 5 } },
+ *   { path: '/agents', params: { page: 2, limit: 5 } },
+ *   { path: '/agents', params: { page: 3, limit: 5 } },
+ * ]);
+ */
+export async function batchGet<T = Agent[]>(
+  requests: BatchRequest[]
+): Promise<Array<{ response: Response; json: ApiResponse<T>; duration: number }>> {
+  return Promise.all(requests.map(({ path, params }) => get<T>(path, params)));
+}
+
+/**
+ * Execute multiple POST requests in parallel
+ * Useful for search comparisons and filter testing
+ *
+ * @example
+ * const [search1, search2] = await batchPost([
+ *   { path: '/search', body: { query: 'AI', limit: 5 } },
+ *   { path: '/search', body: { query: 'crypto', limit: 5 } },
+ * ]);
+ */
+export async function batchPost<T = Agent[]>(
+  requests: BatchPostRequest[]
+): Promise<Array<{ response: Response; json: ApiResponse<T>; duration: number }>> {
+  return Promise.all(requests.map(({ path, body }) => post<T>(path, body)));
+}
+
+/**
+ * Execute mixed GET and POST requests in parallel
+ *
+ * @example
+ * const results = await batchMixed([
+ *   { type: 'get', path: '/agents', params: { limit: 5 } },
+ *   { type: 'post', path: '/search', body: { query: 'AI' } },
+ * ]);
+ */
+export async function batchMixed<T = Agent[]>(
+  requests: Array<
+    | { type: 'get'; path: string; params?: Record<string, string | number | boolean | undefined> }
+    | { type: 'post'; path: string; body: unknown }
+  >
+): Promise<Array<{ response: Response; json: ApiResponse<T>; duration: number }>> {
+  return Promise.all(
+    requests.map((req) => {
+      if (req.type === 'get') {
+        return get<T>(req.path, req.params);
+      }
+      return post<T>(req.path, req.body);
+    })
+  );
+}

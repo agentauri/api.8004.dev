@@ -11,6 +11,7 @@
 import { describe, expect, it } from '../test-runner';
 import { get, post } from '../utils/api-client';
 import type { Agent } from '../utils/api-client';
+import { fixtures } from '../utils/fixtures';
 
 const LIMIT = 5;
 
@@ -57,18 +58,14 @@ export function registerSmokeTests(): void {
 
   describe('Smoke - Agent Detail', () => {
     it('GET /agents/:id returns agent details', async () => {
-      // First get an agent ID
-      const { json: listJson } = await get('/agents', { limit: 1 });
-      expect(listJson.success).toBe(true);
-      if (!listJson.data || listJson.data.length === 0) {
+      // Use fixtures to get a cached agent (avoids extra request)
+      const agent = await fixtures.getOneAgent();
+      if (!agent) {
         console.log('  Note: No agents available for detail test');
         return;
       }
 
-      const agents = listJson.data as Agent[];
-      const agentId = agents[0]?.id;
-
-      const { json, response } = await get(`/agents/${agentId}`);
+      const { json, response } = await get(`/agents/${agent.id}`);
       expect(response.status).toBe(200);
       expect(json.success).toBe(true);
       expect(json.data).toBeDefined();

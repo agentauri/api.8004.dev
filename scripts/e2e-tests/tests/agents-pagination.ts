@@ -4,7 +4,7 @@
  */
 
 import { describe, it } from '../test-runner';
-import { get } from '../utils/api-client';
+import { batchGet, get } from '../utils/api-client';
 import type { Agent } from '../utils/api-client';
 import {
   assertBooleanFlag,
@@ -46,31 +46,23 @@ export function registerAgentsPaginationTests(): void {
     });
 
     it('GET /agents page=3 continues pagination', async () => {
-      const { json: page1 } = await get('/agents', { page: 1, limit: 5 });
-      const { json: page2 } = await get('/agents', { page: 2, limit: 5 });
-      const { json: page3 } = await get('/agents', { page: 3, limit: 5 });
+      // Use batchGet to fetch all 3 pages in parallel for speed
+      const [{ json: page1 }, { json: page2 }, { json: page3 }] = await batchGet([
+        { path: '/agents', params: { page: 1, limit: 5 } },
+        { path: '/agents', params: { page: 2, limit: 5 } },
+        { path: '/agents', params: { page: 3, limit: 5 } },
+      ]);
 
       assertSuccess(page1);
       assertSuccess(page2);
       assertSuccess(page3);
 
-      // Collect all IDs
-      const allAgents: { id: string }[] = [];
-      if (page1.data) {
-        for (const a of page1.data as Agent[]) {
-          allAgents.push({ id: a.id });
-        }
-      }
-      if (page2.data) {
-        for (const a of page2.data as Agent[]) {
-          allAgents.push({ id: a.id });
-        }
-      }
-      if (page3.data) {
-        for (const a of page3.data as Agent[]) {
-          allAgents.push({ id: a.id });
-        }
-      }
+      // Collect all IDs from all pages
+      const allAgents: { id: string }[] = [
+        ...((page1.data as Agent[]) || []).map((a) => ({ id: a.id })),
+        ...((page2.data as Agent[]) || []).map((a) => ({ id: a.id })),
+        ...((page3.data as Agent[]) || []).map((a) => ({ id: a.id })),
+      ];
 
       // Should have no duplicates across pages
       if (allAgents.length > 0) {
@@ -93,8 +85,11 @@ export function registerAgentsPaginationTests(): void {
     });
 
     it('GET /agents limit affects page size', async () => {
-      const { json: small } = await get('/agents', { page: 1, limit: 5 });
-      const { json: large } = await get('/agents', { page: 1, limit: 20 });
+      // Use batchGet to fetch both in parallel
+      const [{ json: small }, { json: large }] = await batchGet([
+        { path: '/agents', params: { page: 1, limit: 5 } },
+        { path: '/agents', params: { page: 1, limit: 20 } },
+      ]);
 
       assertSuccess(small);
       assertSuccess(large);
