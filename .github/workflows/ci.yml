@@ -96,16 +96,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Run tests with coverage (shard ${{ matrix.shard }}/3)
-        run: pnpm exec vitest run --coverage --shard=${{ matrix.shard }}/3
-
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-${{ matrix.shard }}
-          path: coverage/coverage-final.json
-          retention-days: 1
-          if-no-files-found: warn
+      - name: Run tests (shard ${{ matrix.shard }}/3)
+        run: pnpm exec vitest run --shard=${{ matrix.shard }}/3
 
   # Build verification - depends on all quality gates
   build:
