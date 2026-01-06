@@ -808,3 +808,373 @@ export async function getLatestEvaluation(
     tests: JSON.parse(row.tests),
   };
 }
+
+/**
+ * Evaluation row type from database
+ */
+interface EvaluationRow {
+  id: string;
+  agent_id: string;
+  chain_id: number;
+  evaluated_at: string;
+  overall_score: number;
+  is_reachable: number;
+  avg_latency_ms: number;
+  verified_skills: string;
+  failed_skills: string;
+  tests: string;
+  status?: string;
+  created_at: string;
+}
+
+/**
+ * Extended evaluation result with ID for API response
+ */
+export interface EvaluationWithId extends EvaluationResult {
+  id: string;
+  status: string;
+  createdAt: string;
+}
+
+/**
+ * Transform database row to EvaluationWithId
+ */
+function rowToEvaluationWithId(row: EvaluationRow): EvaluationWithId {
+  return {
+    id: row.id,
+    agentId: row.agent_id,
+    chainId: row.chain_id,
+    evaluatedAt: row.evaluated_at,
+    overallScore: row.overall_score,
+    isReachable: row.is_reachable === 1,
+    avgLatencyMs: row.avg_latency_ms,
+    verifiedSkills: JSON.parse(row.verified_skills),
+    failedSkills: JSON.parse(row.failed_skills),
+    tests: JSON.parse(row.tests),
+    status: row.status ?? 'completed',
+    createdAt: row.created_at,
+  };
+}
+
+/**
+ * Evaluation query parameters
+ */
+export interface EvaluationsQueryParams {
+  agentId?: string;
+  chainIds?: number[];
+  status?: string;
+  minScore?: number;
+  maxScore?: number;
+  limit: number;
+  offset: number;
+}
+
+/**
+ * Evaluation queue item
+ */
+export interface EvaluationQueueItem {
+  id: string;
+  agentId: string;
+  chainId: number;
+  status: string;
+  priority: number;
+  attempts: number;
+  maxAttempts: number;
+  skills: string[];
+  error?: string;
+  evaluationId?: string;
+  requestedBy?: string;
+  createdAt: string;
+  startedAt?: string;
+  completedAt?: string;
+}
+
+/**
+ * Get paginated evaluations with filters
+ */
+export async function getEvaluationsPaginated(
+  db: D1Database,
+  params: EvaluationsQueryParams
+): Promise<{ evaluations: EvaluationWithId[]; total: number }> {
+  const conditions: string[] = [];
+  const bindings: (string | number)[] = [];
+
+  if (params.agentId) {
+    conditions.push('agent_id = ?');
+    bindings.push(params.agentId);
+  }
+
+  if (params.chainIds && params.chainIds.length > 0) {
+    conditions.push(`chain_id IN (${params.chainIds.map(() => '?').join(', ')})`);
+    bindings.push(...params.chainIds);
+  }
+
+  if (params.status) {
+    conditions.push('status = ?');
+    bindings.push(params.status);
+  }
+
+  if (params.minScore !== undefined) {
+    conditions.push('overall_score >= ?');
+    bindings.push(params.minScore);
+  }
+
+  if (params.maxScore !== undefined) {
+    conditions.push('overall_score <= ?');
+    bindings.push(params.maxScore);
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  // Get total count
+  const countQuery = `SELECT COUNT(*) as count FROM agent_evaluations ${whereClause}`;
+  const countResult = await db
+    .prepare(countQuery)
+    .bind(...bindings)
+    .first<{ count: number }>();
+  const total = countResult?.count ?? 0;
+
+  // Get evaluations
+  const query = `
+    SELECT * FROM agent_evaluations
+    ${whereClause}
+    ORDER BY evaluated_at DESC
+    LIMIT ? OFFSET ?
+  `;
+  const result = await db
+    .prepare(query)
+    .bind(...bindings, params.limit, params.offset)
+    .all<EvaluationRow>();
+
+  const evaluations = (result.results ?? []).map(rowToEvaluationWithId);
+
+  return { evaluations, total };
+}
+
+/**
+ * Get single evaluation by ID
+ */
+export async function getEvaluationById(
+  db: D1Database,
+  id: string
+): Promise<EvaluationWithId | null> {
+  const row = await db
+    .prepare('SELECT * FROM agent_evaluations WHERE id = ?')
+    .bind(id)
+    .first<EvaluationRow>();
+
+  return row ? rowToEvaluationWithId(row) : null;
+}
+
+/**
+ * Get evaluations for a specific agent
+ */
+export async function getAgentEvaluations(
+  db: D1Database,
+  agentId: string,
+  limit: number,
+  offset: number
+): Promise<{ evaluations: EvaluationWithId[]; total: number }> {
+  // Get total count
+  const countResult = await db
+    .prepare('SELECT COUNT(*) as count FROM agent_evaluations WHERE agent_id = ?')
+    .bind(agentId)
+    .first<{ count: number }>();
+  const total = countResult?.count ?? 0;
+
+  // Get evaluations
+  const result = await db
+    .prepare(
+      `SELECT * FROM agent_evaluations
+       WHERE agent_id = ?
+       ORDER BY evaluated_at DESC
+       LIMIT ? OFFSET ?`
+    )
+    .bind(agentId, limit, offset)
+    .all<EvaluationRow>();
+
+  const evaluations = (result.results ?? []).map(rowToEvaluationWithId);
+
+  return { evaluations, total };
+}
+
+/**
+ * Queue row type from database
+ */
+interface QueueRow {
+  id: string;
+  agent_id: string;
+  chain_id: number;
+  status: string;
+  priority: number;
+  attempts: number;
+  max_attempts: number;
+  skills: string;
+  error: string | null;
+  evaluation_id: string | null;
+  requested_by: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+/**
+ * Transform queue row to EvaluationQueueItem
+ */
+function rowToQueueItem(row: QueueRow): EvaluationQueueItem {
+  return {
+    id: row.id,
+    agentId: row.agent_id,
+    chainId: row.chain_id,
+    status: row.status,
+    priority: row.priority,
+    attempts: row.attempts,
+    maxAttempts: row.max_attempts,
+    skills: JSON.parse(row.skills),
+    error: row.error ?? undefined,
+    evaluationId: row.evaluation_id ?? undefined,
+    requestedBy: row.requested_by ?? undefined,
+    createdAt: row.created_at,
+    startedAt: row.started_at ?? undefined,
+    completedAt: row.completed_at ?? undefined,
+  };
+}
+
+/**
+ * Add evaluation to queue
+ */
+export async function queueEvaluation(
+  db: D1Database,
+  agentId: string,
+  chainId: number,
+  options: {
+    skills?: string[];
+    priority?: number;
+    requestedBy?: string;
+  } = {}
+): Promise<EvaluationQueueItem> {
+  const id = crypto.randomUUID().replace(/-/g, '');
+  const skills = options.skills ?? [];
+  const priority = options.priority ?? 0;
+
+  await db
+    .prepare(
+      `INSERT INTO evaluation_queue
+       (id, agent_id, chain_id, skills, priority, requested_by)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .bind(id, agentId, chainId, JSON.stringify(skills), priority, options.requestedBy ?? null)
+    .run();
+
+  const row = await db
+    .prepare('SELECT * FROM evaluation_queue WHERE id = ?')
+    .bind(id)
+    .first<QueueRow>();
+
+  if (!row) {
+    throw new Error('Failed to create queue item');
+  }
+
+  return rowToQueueItem(row);
+}
+
+/**
+ * Get next pending evaluation from queue
+ */
+export async function getNextQueuedEvaluation(db: D1Database): Promise<EvaluationQueueItem | null> {
+  const row = await db
+    .prepare(
+      `SELECT * FROM evaluation_queue
+       WHERE status = 'pending' AND attempts < max_attempts
+       ORDER BY priority DESC, created_at ASC
+       LIMIT 1`
+    )
+    .first<QueueRow>();
+
+  return row ? rowToQueueItem(row) : null;
+}
+
+/**
+ * Update queue item status
+ */
+export async function updateQueueItemStatus(
+  db: D1Database,
+  id: string,
+  status: 'pending' | 'processing' | 'completed' | 'failed',
+  updates: {
+    error?: string;
+    evaluationId?: string;
+    incrementAttempts?: boolean;
+  } = {}
+): Promise<void> {
+  const setClause: string[] = ['status = ?'];
+  const bindings: (string | number | null)[] = [status];
+
+  if (status === 'processing') {
+    setClause.push("started_at = datetime('now')");
+  }
+
+  if (status === 'completed' || status === 'failed') {
+    setClause.push("completed_at = datetime('now')");
+  }
+
+  if (updates.error !== undefined) {
+    setClause.push('error = ?');
+    bindings.push(updates.error);
+  }
+
+  if (updates.evaluationId !== undefined) {
+    setClause.push('evaluation_id = ?');
+    bindings.push(updates.evaluationId);
+  }
+
+  if (updates.incrementAttempts) {
+    setClause.push('attempts = attempts + 1');
+  }
+
+  bindings.push(id);
+
+  await db
+    .prepare(`UPDATE evaluation_queue SET ${setClause.join(', ')} WHERE id = ?`)
+    .bind(...bindings)
+    .run();
+}
+
+/**
+ * Check if agent has pending evaluation in queue
+ */
+export async function hasQueuedEvaluation(db: D1Database, agentId: string): Promise<boolean> {
+  const row = await db
+    .prepare(
+      `SELECT id FROM evaluation_queue
+       WHERE agent_id = ? AND status IN ('pending', 'processing')
+       LIMIT 1`
+    )
+    .bind(agentId)
+    .first<{ id: string }>();
+
+  return row !== null;
+}
+
+/**
+ * Get queue statistics
+ */
+export async function getQueueStats(
+  db: D1Database
+): Promise<{ pending: number; processing: number; completed: number; failed: number }> {
+  const result = await db
+    .prepare(
+      `SELECT status, COUNT(*) as count FROM evaluation_queue
+       GROUP BY status`
+    )
+    .all<{ status: string; count: number }>();
+
+  const stats = { pending: 0, processing: 0, completed: 0, failed: 0 };
+  for (const row of result.results ?? []) {
+    if (row.status in stats) {
+      stats[row.status as keyof typeof stats] = row.count;
+    }
+  }
+
+  return stats;
+}

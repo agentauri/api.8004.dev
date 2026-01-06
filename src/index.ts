@@ -28,24 +28,32 @@ import { parseAgentId } from '@/lib/utils/validation';
 import { createMcp8004Handler } from '@/mcp';
 import {
   agents,
+  analytics,
   chains,
   compose,
   evaluate,
+  evaluations,
   events,
+  feedbacks,
   health,
   intents,
+  keys,
+  leaderboard,
   openapi,
   scripts,
   search,
   searchStream,
   stats,
   taxonomy,
+  trending,
+  webhooks,
 } from '@/routes';
 import { createClassifierService } from '@/services/classifier';
 import { createEASIndexerService } from '@/services/eas-indexer';
+import { updateQueueItemStatus } from '@/services/evaluator';
 import { createSDKService } from '@/services/sdk';
 import { runReconciliation, syncD1ToQdrant, syncFromGraph } from '@/services/sync';
-import type { ClassificationJob, Env, Variables } from '@/types';
+import type { ClassificationJob, Env, EvaluationJob, Variables } from '@/types';
 
 /**
  * Required environment variables that must be set in production
@@ -111,6 +119,20 @@ app.use('/api/v1/compose', requireApiKey());
 app.use('/api/v1/compose/*', requireApiKey());
 app.use('/api/v1/evaluate', requireApiKey());
 app.use('/api/v1/evaluate/*', requireApiKey());
+app.use('/api/v1/feedbacks', requireApiKey());
+app.use('/api/v1/feedbacks/*', requireApiKey());
+app.use('/api/v1/leaderboard', requireApiKey());
+app.use('/api/v1/leaderboard/*', requireApiKey());
+app.use('/api/v1/trending', requireApiKey());
+app.use('/api/v1/trending/*', requireApiKey());
+app.use('/api/v1/evaluations', requireApiKey());
+app.use('/api/v1/evaluations/*', requireApiKey());
+app.use('/api/v1/webhooks', requireApiKey());
+app.use('/api/v1/webhooks/*', requireApiKey());
+app.use('/api/v1/keys', requireApiKey());
+app.use('/api/v1/keys/*', requireApiKey());
+app.use('/api/v1/analytics', requireApiKey());
+app.use('/api/v1/analytics/*', requireApiKey());
 
 // Mount routes
 app.route('/api/v1/health', health);
@@ -125,6 +147,13 @@ app.route('/api/v1/events', events);
 app.route('/api/v1/compose', compose);
 app.route('/api/v1/intents', intents);
 app.route('/api/v1/evaluate', evaluate);
+app.route('/api/v1/feedbacks', feedbacks);
+app.route('/api/v1/leaderboard', leaderboard);
+app.route('/api/v1/trending', trending);
+app.route('/api/v1/evaluations', evaluations);
+app.route('/api/v1/webhooks', webhooks);
+app.route('/api/v1/keys', keys);
+app.route('/api/v1/analytics', analytics);
 
 // Scripts routes (public, no auth required)
 app.route('', scripts);
@@ -217,6 +246,48 @@ async function processClassificationJob(job: ClassificationJob, env: Env): Promi
 
     // Mark as failed
     await updateQueueStatus(env.DB, queueStatus.id, 'failed', errorMessage);
+
+    // Re-throw to trigger retry
+    throw error;
+  }
+}
+
+/**
+ * Queue consumer for evaluation jobs
+ * Processes agent evaluations (mystery shopper testing)
+ */
+async function processEvaluationJob(job: EvaluationJob, env: Env): Promise<void> {
+  const { queueItemId, agentId, skills } = job;
+
+  console.info(`Processing evaluation job ${queueItemId} for agent ${agentId}`);
+
+  // Mark as processing (started_at set automatically)
+  await updateQueueItemStatus(env.DB, queueItemId, 'processing');
+
+  try {
+    // TODO: Implement actual evaluation logic (mystery shopper testing)
+    // For now, this is a placeholder that marks the evaluation as completed
+    // The actual evaluation would:
+    // 1. Connect to the agent's MCP/A2A endpoints
+    // 2. Send test requests based on the agent's claimed skills
+    // 3. Verify the responses meet quality thresholds
+    // 4. Store results in agent_evaluations table
+
+    console.info(`Evaluation job ${queueItemId} for agent ${agentId}: skills=${skills.join(',')}`);
+
+    // Mark as completed (placeholder - actual evaluation logic to be implemented)
+    // completed_at set automatically based on status
+    await updateQueueItemStatus(env.DB, queueItemId, 'completed');
+
+    console.info(`Evaluation job ${queueItemId} completed`);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Failed to evaluate agent ${agentId}:`, errorMessage);
+
+    // Mark as failed (completed_at set automatically)
+    await updateQueueItemStatus(env.DB, queueItemId, 'failed', {
+      error: errorMessage,
+    });
 
     // Re-throw to trigger retry
     throw error;
@@ -383,14 +454,20 @@ export default {
 
   /**
    * Queue consumer handler
+   * Handles both classification and evaluation queues
    * Processes messages in parallel with concurrency limit for improved throughput
    */
-  async queue(batch: MessageBatch<ClassificationJob>, env: Env): Promise<void> {
+  async queue(batch: MessageBatch<ClassificationJob | EvaluationJob>, env: Env): Promise<void> {
     const CONCURRENCY = 5; // Process up to 5 messages concurrently
     const { globalLogger } = await import('@/lib/logger');
 
+    const queueName = batch.queue;
+    const isEvaluationQueue =
+      queueName === 'evaluation-jobs' || queueName === 'evaluation-jobs-staging';
+
     globalLogger.info('Processing queue batch', {
       operation: 'queue-batch',
+      queue: queueName,
       messageCount: batch.messages.length,
       concurrency: CONCURRENCY,
     });
@@ -399,16 +476,33 @@ export default {
     const results = await Promise.allSettled(
       batch.messages.map(async (message) => {
         try {
-          await processClassificationJob(message.body, env);
-          message.ack();
-          return { agentId: message.body.agentId, status: 'success' };
+          if (isEvaluationQueue) {
+            // Process evaluation job
+            const job = message.body as EvaluationJob;
+            await processEvaluationJob(job, env);
+            message.ack();
+            return { agentId: job.agentId, queueItemId: job.queueItemId, status: 'success' };
+          } else {
+            // Process classification job
+            const job = message.body as ClassificationJob;
+            await processClassificationJob(job, env);
+            message.ack();
+            return { agentId: job.agentId, status: 'success' };
+          }
         } catch (error) {
-          globalLogger.logError('Classification job failed', error, {
-            agentId: message.body.agentId,
-          });
+          const agentId = isEvaluationQueue
+            ? (message.body as EvaluationJob).agentId
+            : (message.body as ClassificationJob).agentId;
+          globalLogger.logError(
+            `${isEvaluationQueue ? 'Evaluation' : 'Classification'} job failed`,
+            error,
+            {
+              agentId,
+            }
+          );
           // Message will be retried or sent to DLQ
           message.retry();
-          return { agentId: message.body.agentId, status: 'failed' };
+          return { agentId, status: 'failed' };
         }
       })
     );
@@ -418,6 +512,7 @@ export default {
     const failed = results.filter((r) => r.status === 'rejected').length;
     globalLogger.info('Queue batch completed', {
       operation: 'queue-batch-complete',
+      queue: queueName,
       succeeded,
       failed,
       total: batch.messages.length,
@@ -510,13 +605,54 @@ export default {
       }
     }
 
-    // Hourly only (at minute 0): EAS + batch classification
+    // Hourly only (at minute 0): EAS + batch classification + analytics
     if (minute === 0) {
       // Sync EAS attestations every hour
       ctx.waitUntil(syncEASAttestations(env));
 
       // Batch classify unclassified agents (50 per hour)
       ctx.waitUntil(batchClassifyAgents(env));
+
+      // Run hourly analytics aggregation
+      ctx.waitUntil(
+        (async () => {
+          console.info('Starting hourly analytics aggregation...');
+          try {
+            const { runHourlyAggregation } = await import('@/services/analytics');
+            await runHourlyAggregation(env.DB);
+            console.info('Analytics aggregation completed');
+          } catch (error) {
+            console.error(
+              'Analytics aggregation failed:',
+              error instanceof Error ? error.message : error
+            );
+          }
+        })()
+      );
+
+      // Daily only (at 00:00 UTC): Take reputation snapshots for trending
+      const hour = new Date(event.scheduledTime).getUTCHours();
+      if (hour === 0) {
+        ctx.waitUntil(
+          (async () => {
+            console.info('Starting daily reputation snapshot...');
+            try {
+              const { createTrendingService } = await import('@/services/trending');
+              const trendingService = createTrendingService(env);
+              const result = await trendingService.takeSnapshot();
+              console.info(
+                `Reputation snapshot: ${result.agentsSnapshotted} agents, ` +
+                  `${result.errors.length} errors`
+              );
+            } catch (error) {
+              console.error(
+                'Reputation snapshot failed:',
+                error instanceof Error ? error.message : error
+              );
+            }
+          })()
+        );
+      }
     }
   },
 };

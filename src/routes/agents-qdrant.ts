@@ -13,6 +13,7 @@ import {
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import {
+  agentEvaluationsQuerySchema,
   agentIdSchema,
   listAgentsQuerySchema,
   parseAgentId,
@@ -20,6 +21,7 @@ import {
 } from '@/lib/utils/validation';
 import { CACHE_KEYS, CACHE_TTL, createCacheService } from '@/services/cache';
 import { findComplementaryAgents, findIOCompatibleAgents } from '@/services/complementarity';
+import { getAgentEvaluations } from '@/services/evaluator';
 import { createIPFSService } from '@/services/ipfs';
 import { resolveClassification, toOASFClassification } from '@/services/oasf-resolver';
 import { sortAgents } from '@/services/pagination-cache';
@@ -37,7 +39,9 @@ import type {
   Variables,
 } from '@/types';
 import { classify } from './classify';
+import { healthAgent } from './health-agent';
 import { reputation } from './reputation';
+import { verification } from './verification';
 
 /**
  * Convert SearchResultItem to AgentSummary for similar agents response
@@ -442,6 +446,117 @@ agents.get('/', async (c) => {
 });
 
 /**
+ * GET /api/v1/agents/batch
+ * Get multiple agents by IDs in a single request
+ * Max 50 IDs per request
+ */
+agents.get('/batch', async (c) => {
+  const idsParam = c.req.query('ids');
+
+  if (!idsParam) {
+    return errors.validationError(c, 'Missing required parameter: ids');
+  }
+
+  // Parse and validate IDs
+  const ids = idsParam
+    .split(',')
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0);
+
+  if (ids.length === 0) {
+    return errors.validationError(c, 'At least one agent ID is required');
+  }
+
+  if (ids.length > 50) {
+    return errors.validationError(c, 'Maximum 50 IDs allowed per request');
+  }
+
+  // Validate each ID format
+  const invalidIds: string[] = [];
+  const validIds: string[] = [];
+  for (const id of ids) {
+    const result = agentIdSchema.safeParse(id);
+    if (result.success) {
+      validIds.push(id);
+    } else {
+      invalidIds.push(id);
+    }
+  }
+
+  if (invalidIds.length > 0 && validIds.length === 0) {
+    return errors.validationError(
+      c,
+      `Invalid agent ID format. Expected chainId:tokenId. Invalid IDs: ${invalidIds.slice(0, 5).join(', ')}${invalidIds.length > 5 ? '...' : ''}`
+    );
+  }
+
+  // Fetch agents from SDK
+  const sdk = createSDKService(c.env, c.env.CACHE);
+  const foundAgents: Array<{
+    id: string;
+    chainId: number;
+    tokenId: string;
+    name: string;
+    description: string;
+    image?: string;
+    active: boolean;
+    hasMcp: boolean;
+    hasA2a: boolean;
+    x402Support: boolean;
+  }> = [];
+  const missingIds: string[] = [];
+
+  // Fetch each agent in parallel
+  const fetchPromises = validIds.map(async (agentId) => {
+    const { chainId, tokenId } = parseAgentId(agentId);
+    try {
+      const agent = await sdk.getAgent(chainId, tokenId);
+      if (agent) {
+        return {
+          found: true as const,
+          agent: {
+            id: agentId,
+            chainId,
+            tokenId,
+            name: agent.name,
+            description: agent.description,
+            image: agent.image,
+            active: agent.active,
+            hasMcp: agent.hasMcp,
+            hasA2a: agent.hasA2a,
+            x402Support: agent.x402Support,
+          },
+        };
+      }
+      return { found: false as const, id: agentId };
+    } catch {
+      return { found: false as const, id: agentId };
+    }
+  });
+
+  const results = await Promise.all(fetchPromises);
+
+  for (const result of results) {
+    if (result.found) {
+      foundAgents.push(result.agent);
+    } else {
+      missingIds.push(result.id);
+    }
+  }
+
+  return c.json({
+    success: true,
+    data: foundAgents,
+    meta: {
+      requested: validIds.length,
+      found: foundAgents.length,
+      missing: missingIds,
+      invalid: invalidIds,
+    },
+  });
+});
+
+/**
  * GET /api/v1/agents/:agentId
  * Get single agent details
  */
@@ -789,10 +904,88 @@ agents.get('/:agentId/compatible', async (c) => {
   }
 });
 
+/**
+ * GET /api/v1/agents/:agentId/evaluations
+ * Get evaluation history for a specific agent
+ */
+agents.get('/:agentId/evaluations', async (c) => {
+  const agentIdParam = c.req.param('agentId');
+
+  const agentIdResult = agentIdSchema.safeParse(agentIdParam);
+  if (!agentIdResult.success) {
+    return errors.validationError(c, 'Invalid agent ID format. Expected chainId:tokenId');
+  }
+
+  const agentId = agentIdResult.data;
+  const rawQuery = c.req.query();
+
+  // Validate query params
+  const queryResult = agentEvaluationsQuerySchema.safeParse(rawQuery);
+  if (!queryResult.success) {
+    return errors.validationError(c, queryResult.error.issues[0]?.message ?? 'Invalid query');
+  }
+
+  const query = queryResult.data;
+
+  // Check cache
+  const cache = createCacheService(c.env.CACHE, CACHE_TTL.AGENT_DETAIL);
+  const cacheKey = cache.generateKey(CACHE_KEYS.agentEvaluations(agentId, ''), query);
+
+  const cached = await cache.get(cacheKey);
+  if (cached) {
+    return c.json(cached);
+  }
+
+  // Calculate offset from cursor or offset param
+  let offset = query.offset ?? 0;
+  if (query.cursor) {
+    try {
+      const decoded = JSON.parse(Buffer.from(query.cursor, 'base64').toString('utf-8')) as {
+        _global_offset?: number;
+      };
+      offset = decoded._global_offset ?? 0;
+    } catch {
+      // Invalid cursor, use default offset
+    }
+  }
+
+  // Fetch evaluations
+  const result = await getAgentEvaluations(c.env.DB, agentId, query.limit, offset);
+
+  // Calculate pagination
+  const hasMore = offset + result.evaluations.length < result.total;
+  let nextCursor: string | undefined;
+  if (hasMore) {
+    const nextOffset = offset + query.limit;
+    nextCursor = Buffer.from(JSON.stringify({ _global_offset: nextOffset })).toString('base64');
+  }
+
+  const response = {
+    success: true as const,
+    data: result.evaluations,
+    meta: {
+      total: result.total,
+      hasMore,
+      nextCursor,
+    },
+  };
+
+  // Cache the response
+  await cache.set(cacheKey, response, CACHE_TTL.AGENT_DETAIL);
+
+  return c.json(response);
+});
+
 // Mount classification routes
 agents.route('/:agentId/classify', classify);
 
 // Mount reputation routes
 agents.route('/:agentId/reputation', reputation);
+
+// Mount health routes
+agents.route('/:agentId/health', healthAgent);
+
+// Mount verification routes
+agents.route('/:agentId/verification', verification);
 
 export { agents };

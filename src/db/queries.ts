@@ -655,3 +655,306 @@ export async function updateEasSyncState(
     .bind(chainId, lastBlock, lastTimestamp, attestationsSynced, error)
     .run();
 }
+
+// ============================================================================
+// Global Feedbacks Queries (Phase 1)
+// ============================================================================
+
+/**
+ * Score category type for filtering feedbacks
+ */
+export type ScoreCategory = 'positive' | 'neutral' | 'negative';
+
+/**
+ * Parameters for global feedbacks query
+ */
+export interface GlobalFeedbacksParams {
+  chainIds?: number[];
+  scoreCategory?: ScoreCategory;
+  limit: number;
+  offset: number;
+}
+
+/**
+ * Result of global feedbacks query
+ */
+export interface GlobalFeedbacksResult {
+  feedbacks: AgentFeedbackRow[];
+  total: number;
+}
+
+/**
+ * Feedback statistics
+ */
+export interface FeedbackStats {
+  total: number;
+  positive: number;
+  neutral: number;
+  negative: number;
+}
+
+/**
+ * Get all feedbacks with pagination and filtering
+ * Score categories: positive >= 70, neutral 40-69, negative < 40
+ */
+export async function getAllFeedbacksPaginated(
+  db: D1Database,
+  params: GlobalFeedbacksParams
+): Promise<GlobalFeedbacksResult> {
+  let whereClause = '1=1';
+  const bindings: (string | number)[] = [];
+
+  // Chain filter
+  if (params.chainIds && params.chainIds.length > 0) {
+    const placeholders = params.chainIds.map(() => '?').join(',');
+    whereClause += ` AND chain_id IN (${placeholders})`;
+    bindings.push(...params.chainIds);
+  }
+
+  // Score category filter
+  if (params.scoreCategory) {
+    switch (params.scoreCategory) {
+      case 'positive':
+        whereClause += ' AND score >= 70';
+        break;
+      case 'neutral':
+        whereClause += ' AND score >= 40 AND score < 70';
+        break;
+      case 'negative':
+        whereClause += ' AND score < 40';
+        break;
+    }
+  }
+
+  // Count query
+  const countResult = await db
+    .prepare(`SELECT COUNT(*) as count FROM agent_feedback WHERE ${whereClause}`)
+    .bind(...bindings)
+    .first<{ count: number }>();
+
+  // Data query
+  const result = await db
+    .prepare(
+      `SELECT * FROM agent_feedback
+       WHERE ${whereClause}
+       ORDER BY submitted_at DESC
+       LIMIT ? OFFSET ?`
+    )
+    .bind(...bindings, params.limit, params.offset)
+    .all<AgentFeedbackRow>();
+
+  return {
+    feedbacks: result.results,
+    total: countResult?.count ?? 0,
+  };
+}
+
+/**
+ * Get feedback statistics (counts by category)
+ */
+export async function getFeedbackStats(
+  db: D1Database,
+  chainIds?: number[]
+): Promise<FeedbackStats> {
+  let whereClause = '1=1';
+  const bindings: number[] = [];
+
+  if (chainIds && chainIds.length > 0) {
+    const placeholders = chainIds.map(() => '?').join(',');
+    whereClause += ` AND chain_id IN (${placeholders})`;
+    bindings.push(...chainIds);
+  }
+
+  const result = await db
+    .prepare(
+      `SELECT
+         COUNT(*) as total,
+         SUM(CASE WHEN score >= 70 THEN 1 ELSE 0 END) as positive,
+         SUM(CASE WHEN score >= 40 AND score < 70 THEN 1 ELSE 0 END) as neutral,
+         SUM(CASE WHEN score < 40 THEN 1 ELSE 0 END) as negative
+       FROM agent_feedback
+       WHERE ${whereClause}`
+    )
+    .bind(...bindings)
+    .first<{ total: number; positive: number; neutral: number; negative: number }>();
+
+  return result ?? { total: 0, positive: 0, neutral: 0, negative: 0 };
+}
+
+// ============================================================================
+// Leaderboard Queries (Phase 1)
+// ============================================================================
+
+/**
+ * Parameters for leaderboard query
+ */
+export interface LeaderboardParams {
+  chainIds?: number[];
+  limit: number;
+  offset: number;
+}
+
+/**
+ * Get agents ranked by reputation score
+ * Only includes agents with at least one feedback
+ */
+export async function getAgentsRankedByReputation(
+  db: D1Database,
+  params: LeaderboardParams
+): Promise<{ agents: AgentReputationRow[]; total: number }> {
+  let whereClause = 'feedback_count > 0'; // Only agents with feedback
+  const bindings: number[] = [];
+
+  if (params.chainIds && params.chainIds.length > 0) {
+    const placeholders = params.chainIds.map(() => '?').join(',');
+    whereClause += ` AND chain_id IN (${placeholders})`;
+    bindings.push(...params.chainIds);
+  }
+
+  const countResult = await db
+    .prepare(`SELECT COUNT(*) as count FROM agent_reputation WHERE ${whereClause}`)
+    .bind(...bindings)
+    .first<{ count: number }>();
+
+  const result = await db
+    .prepare(
+      `SELECT * FROM agent_reputation
+       WHERE ${whereClause}
+       ORDER BY average_score DESC, feedback_count DESC
+       LIMIT ? OFFSET ?`
+    )
+    .bind(...bindings, params.limit, params.offset)
+    .all<AgentReputationRow>();
+
+  return {
+    agents: result.results,
+    total: countResult?.count ?? 0,
+  };
+}
+
+// ============================================================================
+// Reputation History Queries (Phase 1 - Trending)
+// ============================================================================
+
+/**
+ * Row type for reputation history table
+ */
+export interface ReputationHistoryRow {
+  id: string;
+  agent_id: string;
+  chain_id: number;
+  snapshot_date: string;
+  reputation_score: number;
+  feedback_count: number;
+  created_at: string;
+}
+
+/**
+ * Insert daily reputation snapshot
+ */
+export async function insertReputationSnapshot(
+  db: D1Database,
+  snapshot: {
+    agent_id: string;
+    chain_id: number;
+    snapshot_date: string;
+    reputation_score: number;
+    feedback_count: number;
+  }
+): Promise<void> {
+  const id = crypto.randomUUID().replace(/-/g, '');
+  await db
+    .prepare(
+      `INSERT OR REPLACE INTO reputation_history
+       (id, agent_id, chain_id, snapshot_date, reputation_score, feedback_count)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .bind(
+      id,
+      snapshot.agent_id,
+      snapshot.chain_id,
+      snapshot.snapshot_date,
+      snapshot.reputation_score,
+      snapshot.feedback_count
+    )
+    .run();
+}
+
+/**
+ * Get reputation history for an agent in date range
+ */
+export async function getReputationHistory(
+  db: D1Database,
+  agentId: string,
+  startDate: string,
+  endDate: string
+): Promise<ReputationHistoryRow[]> {
+  const result = await db
+    .prepare(
+      `SELECT * FROM reputation_history
+       WHERE agent_id = ?
+       AND snapshot_date BETWEEN ? AND ?
+       ORDER BY snapshot_date DESC`
+    )
+    .bind(agentId, startDate, endDate)
+    .all<ReputationHistoryRow>();
+
+  return result.results;
+}
+
+/**
+ * Get reputation at a specific date for multiple agents
+ * Used for calculating trending (comparing current vs past)
+ */
+export async function getReputationAtDate(
+  db: D1Database,
+  date: string
+): Promise<Map<string, { score: number; feedbackCount: number }>> {
+  const result = await db
+    .prepare(
+      `SELECT agent_id, reputation_score, feedback_count
+       FROM reputation_history
+       WHERE snapshot_date = ?`
+    )
+    .bind(date)
+    .all<{ agent_id: string; reputation_score: number; feedback_count: number }>();
+
+  const map = new Map<string, { score: number; feedbackCount: number }>();
+  for (const row of result.results) {
+    map.set(row.agent_id, { score: row.reputation_score, feedbackCount: row.feedback_count });
+  }
+  return map;
+}
+
+/**
+ * Get snapshot state
+ */
+export async function getSnapshotState(
+  db: D1Database
+): Promise<{ last_snapshot_date: string | null; agents_snapshotted: number } | null> {
+  return db
+    .prepare(
+      'SELECT last_snapshot_date, agents_snapshotted FROM reputation_snapshot_state WHERE key = ?'
+    )
+    .bind('global')
+    .first();
+}
+
+/**
+ * Update snapshot state
+ */
+export async function updateSnapshotState(
+  db: D1Database,
+  date: string,
+  count: number,
+  error?: string
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE reputation_snapshot_state
+       SET last_snapshot_date = ?, agents_snapshotted = ?, last_error = ?, updated_at = datetime('now')
+       WHERE key = 'global'`
+    )
+    .bind(date, count, error ?? null)
+    .run();
+}

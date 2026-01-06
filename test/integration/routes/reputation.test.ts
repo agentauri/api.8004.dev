@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   insertMockFeedback,
   insertMockReputation,
+  insertMockReputationHistory,
   mockHealthyResponse,
   setupMockFetch,
   testRoute,
@@ -129,5 +130,107 @@ describe('GET /api/v1/agents/:agentId/reputation/feedback', () => {
 
     const body = await response.json();
     expect(body.meta.limit).toBe(1);
+  });
+});
+
+describe('GET /api/v1/agents/:agentId/reputation/history', () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValue(mockHealthyResponse());
+  });
+
+  it('returns reputation history with correct structure', async () => {
+    // Insert history data points
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0] ?? '';
+    await insertMockReputationHistory('11155111:1', todayStr, {
+      reputation_score: 85,
+      feedback_count: 10,
+    });
+
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    const yesterdayStr = yesterday.toISOString().split('T')[0] ?? '';
+    await insertMockReputationHistory('11155111:1', yesterdayStr, {
+      reputation_score: 80,
+      feedback_count: 8,
+    });
+
+    const response = await testRoute('/api/v1/agents/11155111:1/reputation/history');
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.data).toBeDefined();
+    expect(body.data.length).toBeGreaterThanOrEqual(1);
+
+    // Check structure of data points
+    const dataPoint = body.data[0];
+    expect(dataPoint).toHaveProperty('date');
+    expect(dataPoint).toHaveProperty('reputationScore');
+    expect(dataPoint).toHaveProperty('feedbackCount');
+  });
+
+  it('returns empty array when no history exists', async () => {
+    const response = await testRoute('/api/v1/agents/11155111:999/reputation/history');
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.data).toEqual([]);
+    expect(body.meta.dataPoints).toBe(0);
+  });
+
+  it('uses default period of 30d', async () => {
+    const response = await testRoute('/api/v1/agents/11155111:1/reputation/history');
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.meta.period).toBe('30d');
+  });
+
+  it('respects period parameter 7d', async () => {
+    const response = await testRoute('/api/v1/agents/11155111:1/reputation/history?period=7d');
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.meta.period).toBe('7d');
+  });
+
+  it('respects period parameter 90d', async () => {
+    const response = await testRoute('/api/v1/agents/11155111:1/reputation/history?period=90d');
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.meta.period).toBe('90d');
+  });
+
+  it('respects period parameter 1y', async () => {
+    const response = await testRoute('/api/v1/agents/11155111:1/reputation/history?period=1y');
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.meta.period).toBe('1y');
+  });
+
+  it('returns 400 for invalid period', async () => {
+    const response = await testRoute(
+      '/api/v1/agents/11155111:1/reputation/history?period=invalid'
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.success).toBe(false);
+  });
+
+  it('includes correct meta information', async () => {
+    const response = await testRoute('/api/v1/agents/11155111:1/reputation/history?period=7d');
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.meta).toHaveProperty('agentId', '11155111:1');
+    expect(body.meta).toHaveProperty('period', '7d');
+    expect(body.meta).toHaveProperty('startDate');
+    expect(body.meta).toHaveProperty('endDate');
+    expect(body.meta).toHaveProperty('dataPoints');
   });
 });

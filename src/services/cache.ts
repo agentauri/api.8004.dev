@@ -59,6 +59,18 @@ export const CACHE_TTL = {
   PAGINATION_SET: 300,
   /** MCP session: 1 hour for reconnection support */
   MCP_SESSION: 3600,
+  /** Leaderboard cache: 5 minutes */
+  LEADERBOARD: 300,
+  /** Global feedbacks cache: 1 minute (near real-time) */
+  FEEDBACKS_GLOBAL: 60,
+  /** Trending agents cache: 15 minutes (expensive computation) */
+  TRENDING: 900,
+  /** Evaluations list cache: 1 minute (shows live queue status) */
+  EVALUATIONS: 60,
+  /** Single evaluation cache: 5 minutes (immutable once completed) */
+  EVALUATION_DETAIL: 300,
+  /** Agent evaluations history: 1 minute */
+  AGENT_EVALUATIONS: 60,
 } as const;
 
 /**
@@ -83,6 +95,18 @@ export const CACHE_KEYS = {
   paginationSet: (filterHash: string) => `pagination:set:${filterHash}`,
   /** MCP session (stores session state for reconnection) */
   mcpSession: (sessionId: string) => `mcp-session:${sessionId}`,
+  /** Leaderboard (stores ranked agents by reputation) */
+  leaderboard: (hash: string) => `leaderboard:${hash}`,
+  /** Global feedbacks (stores all feedbacks across agents) */
+  feedbacksGlobal: (hash: string) => `feedbacks:global:${hash}`,
+  /** Trending agents (stores agents with reputation changes) */
+  trending: (period: string) => `trending:${period}`,
+  /** Evaluations list (stores paginated evaluations) */
+  evaluations: (hash: string) => `evaluations:${hash}`,
+  /** Single evaluation detail */
+  evaluationDetail: (id: string) => `evaluation:${id}`,
+  /** Agent evaluations history */
+  agentEvaluations: (agentId: string, hash: string) => `agent:evaluations:${agentId}:${hash}`,
 } as const;
 
 /**

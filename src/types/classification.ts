@@ -14,6 +14,20 @@ export interface ClassificationJob {
 }
 
 /**
+ * Evaluation job for the queue
+ */
+export interface EvaluationJob {
+  /** Queue item ID */
+  queueItemId: string;
+  /** Agent ID in format chainId:tokenId */
+  agentId: string;
+  /** Chain ID */
+  chainId: number;
+  /** Specific skills to evaluate */
+  skills: string[];
+}
+
+/**
  * Individual skill classification
  */
 export interface SkillClassification {

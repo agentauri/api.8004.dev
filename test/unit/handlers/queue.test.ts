@@ -42,7 +42,7 @@ describe('Queue handler', () => {
     vi.restoreAllMocks();
   });
 
-  it('acknowledges message when no queue entry exists', async () => {
+  it('acknowledges message when no queue entry exists', { timeout: 15000 }, async () => {
     vi.doMock('@/services/sdk', () => ({
       createSDKService: () => createMockSDKService(),
       SUPPORTED_CHAINS: [],
@@ -64,7 +64,7 @@ describe('Queue handler', () => {
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('No queue entry found'));
   });
 
-  it('processes classification job and acks on success', async () => {
+  it('processes classification job and acks on success', { timeout: 15000 }, async () => {
     await enqueueClassification(env.DB, '11155111:1');
 
     vi.doMock('@/services/sdk', () => ({

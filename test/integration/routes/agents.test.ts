@@ -740,3 +740,77 @@ describe('Agent detail with OASF enrichment', () => {
     expect(body.data).toBeDefined();
   });
 });
+
+describe('GET /api/v1/agents/batch', () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValue(mockHealthyResponse());
+  });
+
+  it('returns multiple agents by IDs', async () => {
+    const response = await testRoute('/api/v1/agents/batch?ids=11155111:1,11155111:2');
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(body.meta.requested).toBe(2);
+  });
+
+  it('returns 400 when ids parameter is missing', async () => {
+    const response = await testRoute('/api/v1/agents/batch');
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.success).toBe(false);
+  });
+
+  it('returns 400 when ids is empty', async () => {
+    const response = await testRoute('/api/v1/agents/batch?ids=');
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.success).toBe(false);
+  });
+
+  it('returns 400 when more than 50 IDs requested', async () => {
+    const ids = Array.from({ length: 51 }, (_, i) => `11155111:${i + 1}`).join(',');
+    const response = await testRoute(`/api/v1/agents/batch?ids=${ids}`);
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.success).toBe(false);
+    expect(body.error).toContain('Maximum 50 IDs');
+  });
+
+  it('reports invalid IDs in meta', async () => {
+    const response = await testRoute('/api/v1/agents/batch?ids=11155111:1,invalid-id');
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.meta.invalid).toContain('invalid-id');
+  });
+
+  it('returns 400 when all IDs are invalid', async () => {
+    const response = await testRoute('/api/v1/agents/batch?ids=invalid1,invalid2');
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.success).toBe(false);
+  });
+
+  it('reports missing agents in meta', async () => {
+    const response = await testRoute('/api/v1/agents/batch?ids=11155111:999999');
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.meta.missing).toBeDefined();
+  });
+
+  it('returns 401 without API key', async () => {
+    const response = await testRoute('/api/v1/agents/batch?ids=11155111:1', { skipAuth: true });
+    expect(response.status).toBe(401);
+  });
+});

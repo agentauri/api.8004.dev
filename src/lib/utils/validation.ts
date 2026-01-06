@@ -319,3 +319,111 @@ export function parseClassificationRow(
     return undefined;
   }
 }
+
+// ============================================================================
+// Phase 1 Endpoint Schemas
+// ============================================================================
+
+/**
+ * Leaderboard query parameters schema
+ */
+export const leaderboardQuerySchema = z.object({
+  period: z.enum(['all', '30d', '7d', '24h']).default('all'),
+  'chainIds[]': chainsSchema.optional(),
+  chainIds: chainsSchema.optional(),
+  mcp: stringBooleanSchema.optional(),
+  a2a: stringBooleanSchema.optional(),
+  x402: stringBooleanSchema.optional(),
+  limit: limitSchema,
+  cursor: z.string().optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+});
+
+export type LeaderboardQuery = z.infer<typeof leaderboardQuerySchema>;
+
+/**
+ * Global feedbacks query parameters schema
+ */
+export const feedbacksQuerySchema = z.object({
+  'chainIds[]': chainsSchema.optional(),
+  chainIds: chainsSchema.optional(),
+  scoreCategory: z.enum(['positive', 'neutral', 'negative']).optional(),
+  limit: limitSchema,
+  cursor: z.string().optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+});
+
+export type FeedbacksQuery = z.infer<typeof feedbacksQuerySchema>;
+
+/**
+ * Trending agents query parameters schema
+ */
+export const trendingQuerySchema = z.object({
+  period: z.enum(['24h', '7d', '30d']).default('7d'),
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .transform((v) => Math.min(v, 50))
+    .default(20),
+});
+
+export type TrendingQuery = z.infer<typeof trendingQuerySchema>;
+
+/**
+ * Evaluations list query parameters schema
+ */
+export const evaluationsQuerySchema = z.object({
+  /** Filter by agent ID */
+  agentId: z.string().optional(),
+  /** Filter by chain IDs */
+  'chainIds[]': chainsSchema.optional(),
+  chainIds: chainsSchema.optional(),
+  /** Filter by status */
+  status: z.enum(['pending', 'processing', 'completed', 'failed']).optional(),
+  /** Filter by minimum score */
+  minScore: z.coerce.number().int().min(0).max(100).optional(),
+  /** Filter by maximum score */
+  maxScore: z.coerce.number().int().min(0).max(100).optional(),
+  /** Results limit */
+  limit: limitSchema,
+  /** Pagination cursor */
+  cursor: z.string().optional(),
+  /** Pagination offset */
+  offset: z.coerce.number().int().min(0).optional(),
+});
+
+export type EvaluationsQuery = z.infer<typeof evaluationsQuerySchema>;
+
+/**
+ * Evaluation queue request schema
+ */
+export const queueEvaluationSchema = z.object({
+  /** Agent ID to evaluate */
+  agentId: agentIdSchema,
+  /** Specific skills to test */
+  skills: z.array(z.string()).optional(),
+  /** Priority (higher = processed first) */
+  priority: z.number().int().min(0).max(10).default(0),
+  /** Force re-evaluation even if recent result exists */
+  force: z.boolean().default(false),
+});
+
+export type QueueEvaluationRequest = z.infer<typeof queueEvaluationSchema>;
+
+/**
+ * Agent evaluations history query schema
+ */
+export const agentEvaluationsQuerySchema = z.object({
+  /** Results limit */
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .transform((v) => Math.min(v, 50))
+    .default(10),
+  /** Pagination cursor */
+  cursor: z.string().optional(),
+  /** Pagination offset */
+  offset: z.coerce.number().int().min(0).optional(),
+});

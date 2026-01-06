@@ -10,6 +10,37 @@
 import type { D1Database } from '@cloudflare/workers-types';
 
 /**
+ * Health status enum
+ */
+export type HealthStatus = 'healthy' | 'degraded' | 'unhealthy' | 'unknown';
+
+/**
+ * Agent health information
+ */
+export interface AgentHealth {
+  /** Overall health status */
+  status: HealthStatus;
+  /** Uptime percentage (0-100) */
+  uptimePercentage: number;
+  /** MCP endpoint health */
+  mcp: {
+    status: HealthStatus;
+    latencyMs: number | null;
+    successRate: number;
+    lastChecked: string | null;
+  } | null;
+  /** A2A endpoint health */
+  a2a: {
+    status: HealthStatus;
+    latencyMs: number | null;
+    successRate: number;
+    lastChecked: string | null;
+  } | null;
+  /** Last overall health check */
+  lastCheckedAt: string | null;
+}
+
+/**
  * Reliability metrics for an agent
  */
 export interface ReliabilityMetrics {
@@ -212,6 +243,116 @@ export class ReliabilityService {
       .all<ReliabilityRow>();
 
     return results.map((row) => this.rowToMetrics(row));
+  }
+
+  /**
+   * Compute health status for an agent
+   */
+  async computeHealthStatus(agentId: string): Promise<AgentHealth> {
+    const row = await this.db
+      .prepare('SELECT * FROM agent_reliability WHERE agent_id = ?')
+      .bind(agentId)
+      .first<ReliabilityRow>();
+
+    if (!row) {
+      return {
+        status: 'unknown',
+        uptimePercentage: 0,
+        mcp: null,
+        a2a: null,
+        lastCheckedAt: null,
+      };
+    }
+
+    const mcpTotal = row.mcp_success_count + row.mcp_failure_count;
+    const a2aTotal = row.a2a_success_count + row.a2a_failure_count;
+    const mcpSuccessRate = mcpTotal > 0 ? (row.mcp_success_count / mcpTotal) * 100 : 0;
+    const a2aSuccessRate = a2aTotal > 0 ? (row.a2a_success_count / a2aTotal) * 100 : 0;
+
+    // Compute individual endpoint health
+    const mcpHealth = mcpTotal > 0 ? this.computeEndpointHealth(mcpSuccessRate) : null;
+    const a2aHealth = a2aTotal > 0 ? this.computeEndpointHealth(a2aSuccessRate) : null;
+
+    // Compute overall health status
+    const overallStatus = this.computeOverallHealth(mcpHealth, a2aHealth);
+
+    // Compute uptime percentage as weighted average of active protocols
+    let uptimePercentage = 0;
+    let activeProtocols = 0;
+    if (mcpTotal > 0) {
+      uptimePercentage += mcpSuccessRate;
+      activeProtocols++;
+    }
+    if (a2aTotal > 0) {
+      uptimePercentage += a2aSuccessRate;
+      activeProtocols++;
+    }
+    if (activeProtocols > 0) {
+      uptimePercentage = Math.round(uptimePercentage / activeProtocols);
+    }
+
+    return {
+      status: overallStatus,
+      uptimePercentage,
+      mcp:
+        mcpTotal > 0
+          ? {
+              status: mcpHealth ?? 'unknown',
+              latencyMs: row.mcp_latency_ms,
+              successRate: Math.round(mcpSuccessRate),
+              lastChecked: row.mcp_last_check_at,
+            }
+          : null,
+      a2a:
+        a2aTotal > 0
+          ? {
+              status: a2aHealth ?? 'unknown',
+              latencyMs: row.a2a_latency_ms,
+              successRate: Math.round(a2aSuccessRate),
+              lastChecked: row.a2a_last_check_at,
+            }
+          : null,
+      lastCheckedAt: row.mcp_last_check_at || row.a2a_last_check_at,
+    };
+  }
+
+  /**
+   * Compute health status from success rate
+   */
+  private computeEndpointHealth(successRate: number): HealthStatus {
+    if (successRate >= 80) return 'healthy';
+    if (successRate >= 50) return 'degraded';
+    return 'unhealthy';
+  }
+
+  /**
+   * Compute overall health from individual endpoint health statuses
+   */
+  private computeOverallHealth(
+    mcpHealth: HealthStatus | null,
+    a2aHealth: HealthStatus | null
+  ): HealthStatus {
+    // If no data at all, unknown
+    if (!mcpHealth && !a2aHealth) return 'unknown';
+
+    // If only one protocol has data, use that status
+    if (!mcpHealth) return a2aHealth ?? 'unknown';
+    if (!a2aHealth) return mcpHealth;
+
+    // Both protocols have data - use the worse status
+    const statusPriority: Record<HealthStatus, number> = {
+      healthy: 3,
+      degraded: 2,
+      unhealthy: 1,
+      unknown: 0,
+    };
+
+    const mcpPriority = statusPriority[mcpHealth];
+    const a2aPriority = statusPriority[a2aHealth];
+
+    // Return the worse (lower priority) status
+    if (mcpPriority <= a2aPriority) return mcpHealth;
+    return a2aHealth;
   }
 
   /**

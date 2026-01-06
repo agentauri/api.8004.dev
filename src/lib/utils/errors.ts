@@ -79,8 +79,17 @@ export const errors = {
   validationError: (c: Context, message: string) =>
     errorResponse(c, 400, 'VALIDATION_ERROR', message),
 
+  unauthorized: (c: Context, message = 'Authentication required') =>
+    errorResponse(c, 401, 'UNAUTHORIZED', message),
+
+  forbidden: (c: Context, message = 'Access denied') =>
+    errorResponse(c, 403, 'FORBIDDEN', message),
+
   rateLimitExceeded: (c: Context) =>
     errorResponse(c, 429, 'RATE_LIMIT_EXCEEDED', 'Rate limit exceeded. Please try again later.'),
+
+  internal: (c: Context, message = 'An unexpected error occurred') =>
+    errorResponse(c, 500, 'INTERNAL_ERROR', message),
 
   internalError: (c: Context, message = 'An unexpected error occurred') =>
     errorResponse(c, 500, 'INTERNAL_ERROR', message),

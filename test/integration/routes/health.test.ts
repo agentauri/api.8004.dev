@@ -46,24 +46,7 @@ describe('GET /api/v1/health', () => {
     mockSearchConfig.healthCheckError = null;
   });
 
-  it('includes request ID header', async () => {
-    const response = await testRoute('/api/v1/health');
-    expect(response.headers.get('X-Request-ID')).toBeDefined();
-  });
-
-  it('uses provided request ID', async () => {
-    const requestId = 'test-request-id-123';
-    const response = await testRoute('/api/v1/health', {
-      headers: { 'X-Request-ID': requestId },
-    });
-    expect(response.headers.get('X-Request-ID')).toBe(requestId);
-  });
-
-  it('includes security headers', async () => {
-    const response = await testRoute('/api/v1/health');
-    expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
-    expect(response.headers.get('X-Frame-Options')).toBe('DENY');
-  });
+  // Note: Request ID and security headers are tested in index.test.ts
 
   it('returns degraded when classifier API key is invalid', async () => {
     // This test needs custom env, use the longer form

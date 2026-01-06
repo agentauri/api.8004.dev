@@ -12,6 +12,8 @@ export type ErrorCode =
   | 'INTERNAL_ERROR'
   | 'RATE_LIMIT_EXCEEDED'
   | 'BAD_REQUEST'
+  | 'UNAUTHORIZED'
+  | 'FORBIDDEN'
   | 'SERVICE_UNAVAILABLE';
 
 /**

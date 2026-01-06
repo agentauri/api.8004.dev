@@ -46,12 +46,13 @@ jobs:
         with:
           path: |
             ${{ env.STORE_PATH }}
-            node_modules/.cache
+            node_modules
+            ~/.wrangler
           key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: ${{ runner.os }}-pnpm-
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts --prefer-offline
 
       # Run lint and typecheck in parallel
       - name: Run quality checks
@@ -89,15 +90,16 @@ jobs:
         with:
           path: |
             ${{ env.STORE_PATH }}
-            node_modules/.cache
+            node_modules
+            ~/.wrangler
           key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: ${{ runner.os }}-pnpm-
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts --prefer-offline
 
       - name: Run tests (shard ${{ matrix.shard }}/3)
-        run: pnpm exec vitest run --shard=${{ matrix.shard }}/3
+        run: pnpm exec vitest run --shard=${{ matrix.shard }}/3 --reporter=github-actions --reporter=dot
 
   # Build verification - depends on all quality gates
   build:
@@ -123,12 +125,15 @@ jobs:
       - name: Setup pnpm cache
         uses: actions/cache@v4
         with:
-          path: ${{ env.STORE_PATH }}
+          path: |
+            ${{ env.STORE_PATH }}
+            node_modules
+            ~/.wrangler
           key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: ${{ runner.os }}-pnpm-
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts --prefer-offline
 
       - name: Build
         run: pnpm run build
@@ -167,12 +172,15 @@ jobs:
       - name: Setup pnpm cache
         uses: actions/cache@v4
         with:
-          path: ${{ env.STORE_PATH }}
+          path: |
+            ${{ env.STORE_PATH }}
+            node_modules
+            ~/.wrangler
           key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: ${{ runner.os }}-pnpm-
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts --prefer-offline
 
       - name: Verify E2E API key is configured
         run: |

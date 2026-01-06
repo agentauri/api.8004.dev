@@ -52,13 +52,7 @@ describe('GET /api/v1/taxonomy', () => {
     expect(body.code).toBe('VALIDATION_ERROR');
   });
 
-  it('includes rate limit headers', async () => {
-    const response = await testRoute('/api/v1/taxonomy');
-
-    expect(response.headers.get('X-RateLimit-Limit')).toBeDefined();
-    expect(response.headers.get('X-RateLimit-Remaining')).toBeDefined();
-    expect(response.headers.get('X-RateLimit-Reset')).toBeDefined();
-  });
+  // Note: Rate limit headers are tested in index.test.ts
 
   it('caches responses', async () => {
     // First request

@@ -50,6 +50,19 @@ max_batch_timeout = 30
 max_retries = 3
 dead_letter_queue = "classification-jobs-dlq"
 
+# Evaluation queue producer binding
+[[queues.producers]]
+binding = "EVALUATION_QUEUE"
+queue = "evaluation-jobs"
+
+# Evaluation queue consumer configuration
+[[queues.consumers]]
+queue = "evaluation-jobs"
+max_batch_size = 5
+max_batch_timeout = 60
+max_retries = 3
+dead_letter_queue = "evaluation-jobs-dlq"
+
 # Scheduled triggers (cron)
 [triggers]
 crons = [
@@ -92,4 +105,14 @@ queue = "classification-jobs-staging"
 queue = "classification-jobs-staging"
 max_batch_size = 10
 max_batch_timeout = 30
+max_retries = 3
+
+[[env.staging.queues.producers]]
+binding = "EVALUATION_QUEUE"
+queue = "evaluation-jobs-staging"
+
+[[env.staging.queues.consumers]]
+queue = "evaluation-jobs-staging"
+max_batch_size = 5
+max_batch_timeout = 60
 max_retries = 3

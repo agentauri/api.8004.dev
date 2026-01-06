@@ -10,7 +10,6 @@ import {
   getClassificationsBatch,
   getReputationsBatch,
 } from '@/db/queries';
-import type { FieldCondition } from '@/lib/qdrant/types';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import {
@@ -23,8 +22,6 @@ import {
 import { CACHE_KEYS, CACHE_TTL, createCacheService, hashQueryParams } from '@/services/cache';
 import { createIPFSService } from '@/services/ipfs';
 import { resolveClassification, toOASFClassification } from '@/services/oasf-resolver';
-import { createQdrantClient } from '@/services/qdrant';
-import { payloadToAgentSummary } from '@/services/qdrant-search';
 import { createReputationService } from '@/services/reputation';
 import { createSDKService } from '@/services/sdk';
 import { createSearchService } from '@/services/search';
@@ -1116,24 +1113,16 @@ agents.get('/:agentId/similar', async (c) => {
       });
     }
 
-    // Query Qdrant for agents with matching skills or domains (much faster than SDK)
-    // Build custom filter: agents must have ANY of the target skills OR ANY of the target domains
-    const qdrant = createQdrantClient(c.env);
-    const shouldConditions: FieldCondition[] = [];
-    if (targetSkills.length > 0) {
-      shouldConditions.push({ key: 'skills', match: { any: targetSkills } });
-    }
-    if (targetDomains.length > 0) {
-      shouldConditions.push({ key: 'domains', match: { any: targetDomains } });
-    }
+    // Query SDK for a small batch of agents (reduced from 100 to 30 for speed)
+    const sdk = createSDKService(c.env, c.env.CACHE);
+    const agentsResult = await sdk.getAgents({ limit: 30 });
+    const candidates = agentsResult.items.filter((a) => a.id !== agentId);
 
-    const qdrantResult = await qdrant.scroll({
-      qdrantFilter: { should: shouldConditions },
-      limit: 100,
-    });
+    // Get classifications for candidates to compute similarity
+    const candidateIds = candidates.map((a) => a.id);
+    const classifications = await getClassificationsBatch(c.env.DB, candidateIds);
 
-    // Convert Qdrant results to candidates (excluding target agent)
-    // Skills/domains are already in the Qdrant payload, no need for D1 batch query
+    // Compute similarity scores
     interface SimilarAgent extends AgentSummary {
       similarityScore: number;
       matchedSkills: string[];
@@ -1141,12 +1130,24 @@ agents.get('/:agentId/similar', async (c) => {
     }
 
     const similarAgents: SimilarAgent[] = [];
-    for (const item of qdrantResult.items) {
-      const payload = item.payload;
-      if (!payload || payload.agent_id === agentId) continue;
+    for (const agent of candidates) {
+      const agentClassification = classifications.get(agent.id);
+      if (!agentClassification) continue;
 
-      const agentSkills: string[] = payload.skills ?? [];
-      const agentDomains: string[] = payload.domains ?? [];
+      let agentSkills: string[] = [];
+      let agentDomains: string[] = [];
+      try {
+        const skills = JSON.parse(agentClassification.skills);
+        agentSkills = skills.map((s: { slug: string }) => s.slug);
+      } catch {
+        // Invalid skills JSON
+      }
+      try {
+        const domains = JSON.parse(agentClassification.domains);
+        agentDomains = domains.map((d: { slug: string }) => d.slug);
+      } catch {
+        // Invalid domains JSON
+      }
 
       // Calculate overlap
       const matchedSkills = targetSkills.filter((s) => agentSkills.includes(s));
@@ -1168,7 +1169,7 @@ agents.get('/:agentId/similar', async (c) => {
 
       if (similarityScore > 0) {
         similarAgents.push({
-          ...payloadToAgentSummary(payload),
+          ...agent,
           similarityScore,
           matchedSkills,
           matchedDomains,
@@ -1193,8 +1194,19 @@ agents.get('/:agentId/similar', async (c) => {
     await cache.set(cacheKey, similarResponse, CACHE_TTL.AGENTS);
     return c.json(similarResponse);
   } catch (error) {
-    console.error('Similar agents error:', error);
-    return errors.internalError(c, 'Failed to find similar agents');
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    console.error('Similar agents error:', errorMessage, error);
+    // Return detailed error for debugging
+    return c.json(
+      {
+        success: false,
+        error: `Failed to find similar agents: ${errorMessage}`,
+        code: 'INTERNAL_ERROR',
+        debug: { message: errorMessage, stack: errorStack },
+      },
+      500
+    );
   }
 });
 

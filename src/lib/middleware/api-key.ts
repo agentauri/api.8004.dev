@@ -21,6 +21,8 @@ export interface ApiKeyVariables extends Variables {
   apiKeyTier: ApiKeyTier;
   /** API key ID (for D1 keys) */
   apiKeyId?: string;
+  /** API key permissions (for D1 keys) */
+  apiKeyPermissions?: string[];
   /** Rate limit in requests per minute */
   rateLimitRpm: number;
 }
@@ -95,6 +97,9 @@ export function apiKeyAuth(): MiddlewareHandler<{
             if (validation.keyId) {
               c.set('apiKeyId', validation.keyId);
             }
+            if (validation.permissions) {
+              c.set('apiKeyPermissions', validation.permissions);
+            }
           } else if (validation.reason) {
             logger.debug('API key validation failed', { reason: validation.reason });
           }
@@ -157,6 +162,9 @@ export function requireApiKey(): MiddlewareHandler<{
           c.set('rateLimitRpm', validation.rateLimitRpm);
           if (validation.keyId) {
             c.set('apiKeyId', validation.keyId);
+          }
+          if (validation.permissions) {
+            c.set('apiKeyPermissions', validation.permissions);
           }
           await next();
           return;

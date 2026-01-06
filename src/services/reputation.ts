@@ -8,12 +8,22 @@ import {
   getAllFeedback,
   getRecentFeedback,
   getReputation,
+  getReputationHistory,
   getReputationsBatch,
   insertFeedback,
   upsertReputation,
 } from '@/db/queries';
 import type { AgentFeedbackRow, AgentReputationRow, NewFeedback } from '@/db/schema';
 import type { AgentFeedback, AgentReputation } from '@/types';
+
+/**
+ * Reputation history data point
+ */
+export interface ReputationHistoryDataPoint {
+  date: string;
+  reputationScore: number;
+  feedbackCount: number;
+}
 
 /**
  * Reputation service interface
@@ -54,6 +64,15 @@ export interface ReputationService {
    * @returns Number of agents recalculated
    */
   recalculateAll(): Promise<number>;
+
+  /**
+   * Get reputation history for an agent over a date range
+   */
+  getReputationHistory(
+    agentId: string,
+    startDate: string,
+    endDate: string
+  ): Promise<ReputationHistoryDataPoint[]>;
 }
 
 /**
@@ -286,6 +305,19 @@ export function createReputationService(db: D1Database): ReputationService {
 
       console.info(`Recalculated reputation for ${count} agents`);
       return count;
+    },
+
+    async getReputationHistory(
+      agentId: string,
+      startDate: string,
+      endDate: string
+    ): Promise<ReputationHistoryDataPoint[]> {
+      const rows = await getReputationHistory(db, agentId, startDate, endDate);
+      return rows.map((row) => ({
+        date: row.snapshot_date,
+        reputationScore: row.reputation_score,
+        feedbackCount: row.feedback_count,
+      }));
     },
   };
 }

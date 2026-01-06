@@ -49,6 +49,66 @@ reputation.get('/', async (c) => {
 });
 
 /**
+ * GET /api/v1/agents/:agentId/reputation/history
+ * Get reputation history over time for an agent
+ * Query params:
+ * - period: 7d, 30d, 90d, 1y (default: 30d)
+ */
+reputation.get('/history', async (c) => {
+  const agentId = c.req.param('agentId');
+
+  if (!agentId) {
+    return errors.validationError(c, 'Agent ID is required');
+  }
+
+  const periodParam = c.req.query('period') ?? '30d';
+  const validPeriods = ['7d', '30d', '90d', '1y'];
+
+  if (!validPeriods.includes(periodParam)) {
+    return errors.validationError(c, `Invalid period. Must be one of: ${validPeriods.join(', ')}`);
+  }
+
+  // Calculate date range based on period
+  const now = new Date();
+  let startDate: Date;
+  switch (periodParam) {
+    case '7d':
+      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      break;
+    case '30d':
+      startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      break;
+    case '90d':
+      startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+      break;
+    case '1y':
+      startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+      break;
+    default:
+      startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  }
+
+  const reputationService = createReputationService(c.env.DB);
+  const history = await reputationService.getReputationHistory(
+    agentId,
+    startDate.toISOString().split('T')[0] ?? '',
+    now.toISOString().split('T')[0] ?? ''
+  );
+
+  return c.json({
+    success: true,
+    data: history,
+    meta: {
+      agentId,
+      period: periodParam,
+      startDate: startDate.toISOString().split('T')[0],
+      endDate: now.toISOString().split('T')[0],
+      dataPoints: history.length,
+    },
+  });
+});
+
+/**
  * GET /api/v1/agents/:agentId/reputation/feedback
  * Get paginated feedback list for an agent
  */

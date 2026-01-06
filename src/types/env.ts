@@ -4,7 +4,7 @@
  */
 
 import type { Logger } from '@/lib/logger';
-import type { ClassificationJob } from './classification';
+import type { ClassificationJob, EvaluationJob } from './classification';
 
 /**
  * Cloudflare Workers environment bindings
@@ -14,6 +14,8 @@ export interface Env {
   DB: D1Database;
   CACHE: KVNamespace;
   CLASSIFICATION_QUEUE: Queue<ClassificationJob>;
+  /** Optional queue for async evaluation processing */
+  EVALUATION_QUEUE?: Queue<EvaluationJob>;
 
   // Required secrets
   ANTHROPIC_API_KEY: string;
@@ -93,4 +95,8 @@ export interface Variables {
   isAuthenticated?: boolean;
   /** API key tier for rate limiting */
   apiKeyTier?: 'anonymous' | 'standard' | 'premium';
+  /** API key ID for the current request */
+  apiKeyId?: string;
+  /** API key permissions array */
+  apiKeyPermissions?: string[];
 }

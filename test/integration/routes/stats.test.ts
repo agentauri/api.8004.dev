@@ -87,17 +87,7 @@ describe('GET /api/v1/stats', () => {
     expect(activeAgents).toBe(expectedActive);
   });
 
-  it('includes request ID header', async () => {
-    const response = await testRoute('/api/v1/stats');
-    expect(response.headers.get('X-Request-ID')).toBeDefined();
-  });
-
-  it('includes security headers', async () => {
-    const response = await testRoute('/api/v1/stats');
-
-    expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
-    expect(response.headers.get('X-Frame-Options')).toBe('DENY');
-  });
+  // Note: Request ID and security headers are tested in index.test.ts
 
   it('uses caching', async () => {
     // First request
