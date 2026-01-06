@@ -7,7 +7,7 @@ const API_BASE = process.env.API_BASE_URL || 'https://api.8004.dev/api/v1';
 const API_KEY = process.env.API_KEY || '';
 const MAX_RETRIES = 2;
 const RETRY_DELAY = 1000;
-const REQUEST_DELAY = 200; // Delay between requests to avoid rate limiting
+const REQUEST_DELAY = 50; // Reduced - test-runner has its own delay
 
 // Track last request time for rate limiting
 let lastRequestTime = 0;

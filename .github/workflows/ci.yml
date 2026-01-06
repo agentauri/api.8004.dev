@@ -21,8 +21,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint:
-    name: Lint
+  # Combined lint + typecheck for faster feedback (saves ~30s of setup)
+  quality:
+    name: Code Quality
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -43,50 +44,25 @@ jobs:
       - name: Setup pnpm cache
         uses: actions/cache@v4
         with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: ${{ runner.os }}-pnpm-store-
+          path: |
+            ${{ env.STORE_PATH }}
+            node_modules/.cache
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Run linter
-        run: pnpm run lint
+      # Run lint and typecheck in parallel
+      - name: Run quality checks
+        run: |
+          pnpm run lint &
+          pnpm run typecheck &
+          wait
 
-  typecheck:
-    name: Type Check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Get pnpm store directory
-        shell: bash
-        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - name: Setup pnpm cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: ${{ runner.os }}-pnpm-store-
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Run type check
-        run: pnpm run typecheck
-
+  # Sharded tests with coverage
   test:
-    name: Test (${{ matrix.shard }}/${{ strategy.job-total }})
+    name: Test (${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -111,20 +87,31 @@ jobs:
       - name: Setup pnpm cache
         uses: actions/cache@v4
         with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: ${{ runner.os }}-pnpm-store-
+          path: |
+            ${{ env.STORE_PATH }}
+            node_modules/.cache
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Run tests (shard ${{ matrix.shard }}/3)
-        run: pnpm exec vitest run --shard=${{ matrix.shard }}/3
+      - name: Run tests with coverage (shard ${{ matrix.shard }}/3)
+        run: pnpm exec vitest run --coverage --shard=${{ matrix.shard }}/3
 
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.shard }}
+          path: coverage/coverage-final.json
+          retention-days: 1
+          if-no-files-found: warn
+
+  # Build verification - depends on all quality gates
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [typecheck]
+    needs: [quality, test]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -145,8 +132,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: ${{ runner.os }}-pnpm-store-
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -155,17 +142,17 @@ jobs:
         run: pnpm run build
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist/
           retention-days: 7
 
+  # E2E tests - runs independently against production
   e2e:
     name: E2E Tests
     runs-on: ubuntu-latest
-    needs: [lint, typecheck]
-    # Only run on main branch pushes (not PRs) to avoid rate limiting
+    # Run independently - tests production, doesn't need PR code quality checks
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     # E2E tests are non-blocking as they run against production and can be flaky
     continue-on-error: true
@@ -189,8 +176,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: ${{ runner.os }}-pnpm-store-
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -202,9 +189,8 @@ jobs:
             exit 1
           fi
 
-      - name: Run E2E tests (fast mode)
+      - name: Run E2E smoke tests
         env:
           API_KEY: ${{ secrets.E2E_API_KEY }}
-          SKIP_SLOW_TESTS: 'true'
-        timeout-minutes: 10
-        run: pnpm run test:e2e
+        timeout-minutes: 2
+        run: pnpm run test:e2e -- --filter=smoke

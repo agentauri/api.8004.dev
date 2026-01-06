@@ -45,6 +45,7 @@ import { registerMcpConsistencyTests } from './tests/mcp-consistency';
 import { registerSearchTests } from './tests/search';
 import { registerSearchFallbackTests } from './tests/search-fallback';
 import { registerSecurityTests } from './tests/security';
+import { registerSmokeTests } from './tests/smoke';
 import { registerSourceVerificationTests } from './tests/source-verification';
 import { registerTaxonomyTests } from './tests/taxonomy';
 
@@ -88,7 +89,7 @@ function parseArgs(): {
   let json = false;
   let verbose = false;
   let local = false;
-  let delay = 150; // Default 150ms delay between tests to avoid rate limiting
+  let delay = 50; // Default 50ms delay between tests (api-client has 50ms too = 100ms total)
   let skipSlow = process.env.SKIP_SLOW_TESTS === 'true';
 
   for (const arg of args) {
@@ -101,7 +102,7 @@ function parseArgs(): {
     } else if (arg === '--local') {
       local = true;
     } else if (arg.startsWith('--delay=')) {
-      delay = Number.parseInt(arg.slice('--delay='.length), 10) || 150;
+      delay = Number.parseInt(arg.slice('--delay='.length), 10) || 50;
     } else if (arg === '--no-delay') {
       delay = 0;
     } else if (arg === '--skip-slow') {
@@ -114,6 +115,9 @@ function parseArgs(): {
 
 // Map filter strings to test registration functions
 const testSuites: Record<string, () => void> = {
+  // Smoke tests - critical paths for quick verification (~15 tests, <1 min)
+  smoke: registerSmokeTests,
+  // Full test suites
   health: registerHealthTests,
   basic: registerAgentsBasicTests,
   boolean: registerAgentsBooleanTests,
