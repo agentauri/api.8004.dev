@@ -43,7 +43,7 @@ import { reputation } from './reputation';
  * Convert SearchResultItem to AgentSummary for similar agents response
  */
 function searchResultToAgentSummary(result: SearchResultItem): AgentSummary {
-  const [chainIdStr, tokenId] = result.agentId.split(':');
+  const [, tokenId] = result.agentId.split(':');
   return {
     id: result.agentId,
     chainId: result.chainId,
@@ -111,6 +111,7 @@ agents.use('*', rateLimit(rateLimitConfigs.standard));
  * List agents with optional filters and search
  * All filtering, sorting, and pagination handled natively by Qdrant
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Main agent list endpoint handles 20+ filter types requiring extensive branching
 agents.get('/', async (c) => {
   // Parse and validate query parameters
   const rawQuery = c.req.query();
@@ -332,6 +333,7 @@ agents.get('/', async (c) => {
   const isFilteringByOasf = Boolean(query.skills || query.domains);
 
   // Transform results to AgentSummary format
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Search result transformation requires OASF source selection logic
   let agents: AgentSummary[] = searchResult.results.map((result) => {
     // Get classification from D1
     const classificationRow = classificationsMap.get(result.agentId);

@@ -105,6 +105,7 @@ search.post('/', async (c) => {
   const isFilteringByOasf = Boolean(body.filters?.skills || body.filters?.domains);
 
   // Transform results to AgentSummary format
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Search result transformation requires OASF source selection logic
   const agents: AgentSummary[] = searchResult.results.map((result) => {
     const tokenId = result.agentId.split(':')[1] ?? '0';
     const qdrantSkills = result.metadata?.skills ?? [];
