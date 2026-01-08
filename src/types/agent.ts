@@ -26,6 +26,17 @@ export type SupportedChainId = 11155111 | 84532 | 80002 | 59141 | 296 | 998 | 13
 export type TrustMethod = 'x402' | 'eas';
 
 /**
+ * OASF 0.8 capability definition
+ * Capabilities define what the agent can do (e.g., communication, payment)
+ */
+export interface AgentCapability {
+  /** Capability name (e.g., 'communication', 'payment', 'storage') */
+  name: string;
+  /** Optional version of the capability */
+  version?: string;
+}
+
+/**
  * Agent summary for list views
  */
 export interface AgentSummary {
@@ -229,6 +240,10 @@ export interface AgentDetail extends AgentSummary {
   warnings?: AgentWarning[];
   /** Aggregated health score and checks */
   healthScore?: AgentHealthScore;
+  /** OASF 0.8 capabilities (array format) */
+  capabilities?: AgentCapability[];
+  /** ERC-8004 registry contract address (CAIP-10 format) */
+  agentRegistry?: string;
 }
 
 /**
