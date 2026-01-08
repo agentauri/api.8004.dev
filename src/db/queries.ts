@@ -518,8 +518,8 @@ export async function insertFeedback(db: D1Database, feedback: NewFeedback): Pro
   await db
     .prepare(
       `INSERT INTO agent_feedback
-       (id, agent_id, chain_id, score, tags, context, feedback_uri, submitter, eas_uid, tx_id, submitted_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (id, agent_id, chain_id, score, tags, context, feedback_uri, submitter, eas_uid, tx_id, feedback_index, endpoint, submitted_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -532,6 +532,8 @@ export async function insertFeedback(db: D1Database, feedback: NewFeedback): Pro
       feedback.submitter,
       feedback.eas_uid ?? null,
       feedback.tx_id ?? null,
+      feedback.feedback_index ?? null,
+      feedback.endpoint ?? null,
       feedback.submitted_at
     )
     .run();

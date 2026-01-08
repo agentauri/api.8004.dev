@@ -947,6 +947,11 @@ function generateOpenAPISpec(): object {
             comment: { type: 'string' },
             attester: { type: 'string' },
             createdAt: { type: 'string', format: 'date-time' },
+            feedbackIndex: {
+              type: 'integer',
+              description: 'Per-client feedback index (ERC-8004 v1.0)',
+            },
+            endpoint: { type: 'string', description: 'Service endpoint reference (ERC-8004 v1.0)' },
           },
         },
         FeedbackListResponse: {

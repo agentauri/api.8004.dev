@@ -11,7 +11,8 @@
  * - score: Feedback score (0-100)
  * - tag1: Primary tag (e.g., "reachability_a2a", "reachability_mcp")
  * - tag2: Secondary tag (optional)
- * - feedbackUri: URI to additional feedback data
+ * - endpoint: Service endpoint reference (ERC-8004 v1.0)
+ * - feedbackIndex: Per-client feedback index (ERC-8004 v1.0)
  * - isRevoked: Whether the feedback has been revoked
  * - createdAt: Unix timestamp when feedback was created
  *
@@ -46,6 +47,7 @@ const SUPPORTED_CHAIN_IDS = [11155111, 84532, 80002, 59141, 296, 998, 1351057110
 /**
  * Raw Feedback entity from The Graph
  * Note: feedbackUri field was removed as it's not in the subgraph schema
+ * ERC-8004 v1.0 (Jan 26) added: endpoint, feedbackIndex
  */
 interface GraphFeedback {
   id: string;
@@ -58,6 +60,10 @@ interface GraphFeedback {
   score: string;
   tag1: string | null;
   tag2: string | null;
+  /** Service endpoint reference (ERC-8004 v1.0) - may not be present in older subgraph */
+  endpoint?: string | null;
+  /** Per-client feedback index (ERC-8004 v1.0) - may not be present in older subgraph */
+  feedbackIndex?: string | null;
   isRevoked: boolean;
   createdAt: string;
 }
@@ -86,6 +92,7 @@ interface GraphFeedbackSyncState {
 /**
  * GraphQL query for fetching feedback from The Graph
  * Orders by createdAt ascending to process oldest first and paginate efficiently
+ * ERC-8004 v1.0 (Jan 26) added: endpoint, feedbackIndex
  */
 const FEEDBACK_QUERY = `
   query GetFeedback($first: Int!, $skip: Int!, $createdAtGt: BigInt!) {
@@ -109,6 +116,8 @@ const FEEDBACK_QUERY = `
       score
       tag1
       tag2
+      endpoint
+      feedbackIndex
       isRevoked
       createdAt
     }
@@ -310,6 +319,9 @@ async function processFeedback(
     submitter: feedback.clientAddress,
     eas_uid: toGraphFeedbackUid(feedback.id), // Use eas_uid for dedup with "graph:" prefix
     tx_id: undefined, // Transaction hash not available from Graph
+    // ERC-8004 v1.0 fields
+    feedback_index: feedback.feedbackIndex ? Number.parseInt(feedback.feedbackIndex, 10) : undefined,
+    endpoint: feedback.endpoint ?? undefined,
     submitted_at: timestampToIso(feedback.createdAt),
   };
 

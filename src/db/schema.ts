@@ -103,6 +103,16 @@ export interface AgentFeedbackRow {
   eas_uid: string | null;
   /** Transaction hash from EAS attestation */
   tx_id: string | null;
+  /**
+   * Per-client feedback index (ERC-8004 v1.0)
+   * Tracks the index of this feedback for the specific client-agent pair
+   */
+  feedback_index: number | null;
+  /**
+   * Service endpoint reference (ERC-8004 v1.0)
+   * Optional endpoint that was used when submitting feedback
+   */
+  endpoint: string | null;
   submitted_at: string;
   created_at: string;
   updated_at: string;
@@ -170,6 +180,14 @@ export interface NewFeedback {
   eas_uid?: string;
   /** Transaction hash from EAS attestation */
   tx_id?: string;
+  /**
+   * Per-client feedback index (ERC-8004 v1.0)
+   */
+  feedback_index?: number;
+  /**
+   * Service endpoint reference (ERC-8004 v1.0)
+   */
+  endpoint?: string;
   submitted_at: string;
 }
 

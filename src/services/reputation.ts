@@ -111,6 +111,8 @@ function rowToFeedback(row: AgentFeedbackRow): AgentFeedback {
     submitter: row.submitter,
     timestamp: row.submitted_at,
     transactionHash: row.tx_id ?? undefined,
+    feedbackIndex: row.feedback_index ?? undefined,
+    endpoint: row.endpoint ?? undefined,
   };
 }
 

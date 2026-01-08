@@ -47,6 +47,10 @@ export interface AgentFeedback {
   timestamp: string;
   /** Transaction hash from EAS attestation */
   transactionHash?: string;
+  /** Per-client feedback index (ERC-8004 v1.0) */
+  feedbackIndex?: number;
+  /** Service endpoint reference (ERC-8004 v1.0) */
+  endpoint?: string;
 }
 
 /**

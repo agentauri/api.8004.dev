@@ -30,6 +30,8 @@ function transformFeedback(row: {
   submitter: string;
   eas_uid: string | null;
   tx_id: string | null;
+  feedback_index: number | null;
+  endpoint: string | null;
   submitted_at: string;
 }): {
   id: string;
@@ -41,6 +43,10 @@ function transformFeedback(row: {
   timestamp: string;
   chainId: number;
   txHash?: string;
+  /** Per-client feedback index (ERC-8004 v1.0) */
+  feedbackIndex?: number;
+  /** Service endpoint reference (ERC-8004 v1.0) */
+  endpoint?: string;
 } {
   let tags: string[] = [];
   try {
@@ -59,6 +65,8 @@ function transformFeedback(row: {
     timestamp: row.submitted_at,
     chainId: row.chain_id,
     txHash: row.tx_id ?? undefined,
+    feedbackIndex: row.feedback_index ?? undefined,
+    endpoint: row.endpoint ?? undefined,
   };
 }
 
