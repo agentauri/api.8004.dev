@@ -61,6 +61,8 @@ export interface AgentSummary {
   reputationScore?: number;
   /** Total feedback count */
   reputationCount?: number;
+  /** Owner wallet address (single address) */
+  owner?: string;
   /** Operator addresses (can manage the agent) */
   operators?: string[];
   /** ENS name */

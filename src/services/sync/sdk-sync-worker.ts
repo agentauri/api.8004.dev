@@ -83,6 +83,7 @@ function subgraphAgentToPayload(agent: SubgraphRawAgent): AgentPayload {
       ens: '',
       did: '',
       wallet_address: '',
+      owner: (agent.owner ?? '').toLowerCase(),
       operators: agent.operators ?? [],
       mcp_tools: [],
       mcp_prompts: [],
@@ -126,6 +127,7 @@ function subgraphAgentToPayload(agent: SubgraphRawAgent): AgentPayload {
     ens: regFile.ens ?? '',
     did: regFile.did ?? '',
     wallet_address: regFile.agentWallet ?? '',
+    owner: (agent.owner ?? '').toLowerCase(),
     operators: agent.operators ?? [],
     mcp_tools: regFile.mcpTools?.map((t) => t.name) ?? [],
     mcp_prompts: regFile.mcpPrompts?.map((p) => p.name) ?? [],
@@ -241,6 +243,7 @@ export async function syncFromSDK(
       chainId: String(agent.chainId),
       agentId: agent.tokenId,
       agentURI: null, // Not available from SDK summary
+      owner: agent.owner ?? agent.operators?.[0] ?? '', // Use owner or fallback to first operator
       operators: agent.operators ?? [],
       createdAt: '', // Not available from SDK summary
       updatedAt: '',

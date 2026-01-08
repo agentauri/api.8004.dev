@@ -12,6 +12,9 @@ interface ClassificationRow {
   agent_id: string;
   skills: string; // JSON string
   domains: string; // JSON string
+  confidence: number;
+  classified_at: string;
+  model_version: string;
   updated_at: string;
 }
 
@@ -24,11 +27,13 @@ interface ReputationRow {
 interface SkillOrDomain {
   slug: string;
   confidence: number;
+  reasoning?: string;
 }
 
 export interface D1SyncResult {
   classificationsUpdated: number;
   reputationUpdated: number;
+  agentsMarkedForReembed: number;
   errors: string[];
 }
 
@@ -43,6 +48,7 @@ export async function syncD1ToQdrant(
   const result: D1SyncResult = {
     classificationsUpdated: 0,
     reputationUpdated: 0,
+    agentsMarkedForReembed: 0,
     errors: [],
   };
 
@@ -54,10 +60,10 @@ export async function syncD1ToQdrant(
 
   const lastSync = syncState?.last_d1_sync ?? '1970-01-01T00:00:00Z';
 
-  // Fetch classifications updated since last sync
+  // Fetch classifications updated since last sync (including confidence metadata)
   const classifications = await db
     .prepare(
-      `SELECT agent_id, skills, domains, updated_at
+      `SELECT agent_id, skills, domains, confidence, classified_at, model_version, updated_at
        FROM agent_classifications
        WHERE updated_at > ?`
     )
@@ -74,29 +80,45 @@ export async function syncD1ToQdrant(
     .bind(lastSync)
     .all<ReputationRow>();
 
-  // Update classifications in Qdrant
+  // Update classifications in Qdrant (including full confidence data for Phase 2)
   for (const c of classifications.results ?? []) {
     try {
       const skillsData = JSON.parse(c.skills) as SkillOrDomain[];
       const domainsData = JSON.parse(c.domains) as SkillOrDomain[];
 
+      // Slugs only for filtering (indexed)
       const skills = skillsData.map((s) => s.slug);
       const domains = domainsData.map((d) => d.slug);
 
-      await qdrant.setPayloadByAgentId(c.agent_id, { skills, domains });
+      // Full data with confidence for Phase 2 (not indexed, for API response)
+      await qdrant.setPayloadByAgentId(c.agent_id, {
+        skills,
+        domains,
+        skills_with_confidence: skillsData,
+        domains_with_confidence: domainsData,
+        classification_confidence: c.confidence,
+        classification_at: c.classified_at,
+        classification_model: c.model_version,
+      });
       result.classificationsUpdated++;
 
-      // Update sync metadata
-      await db
+      // Update sync metadata and mark for re-embedding (OASF data changed)
+      const syncUpdate = await db
         .prepare(
-          `INSERT INTO agent_sync_metadata (agent_id, content_hash, d1_classification_at)
-           VALUES (?, '', ?)
+          `INSERT INTO agent_sync_metadata (agent_id, content_hash, d1_classification_at, needs_reembed)
+           VALUES (?, '', ?, 1)
            ON CONFLICT(agent_id) DO UPDATE SET
              d1_classification_at = excluded.d1_classification_at,
+             needs_reembed = 1,
              updated_at = datetime('now')`
         )
         .bind(c.agent_id, c.updated_at)
         .run();
+
+      // Track agents marked for re-embedding
+      if (syncUpdate.meta.changes && syncUpdate.meta.changes > 0) {
+        result.agentsMarkedForReembed++;
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       result.errors.push(`Classification ${c.agent_id}: ${message}`);

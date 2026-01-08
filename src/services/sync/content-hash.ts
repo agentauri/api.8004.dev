@@ -26,6 +26,7 @@ export interface ContentFields {
   skills: string[];
   domains: string[];
   reputation: number;
+  owner?: string;
 }
 
 /**
@@ -77,6 +78,7 @@ export async function computeContentHash(fields: ContentFields): Promise<string>
     (fields.skills ?? []).sort().join(','),
     (fields.domains ?? []).sort().join(','),
     String(fields.reputation ?? 0),
+    fields.owner ?? '',
   ].join('|');
 
   return computeHash(text);
@@ -127,6 +129,7 @@ export function computeContentHashSync(fields: ContentFields): string {
     (fields.skills ?? []).sort().join(','),
     (fields.domains ?? []).sort().join(','),
     String(fields.reputation ?? 0),
+    fields.owner ?? '',
   ].join('|');
 
   return computeHashSync(text);

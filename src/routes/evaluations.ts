@@ -67,7 +67,7 @@ evaluations.get('/', async (c) => {
   let offset = query.offset ?? 0;
   if (query.cursor) {
     try {
-      const decoded = JSON.parse(Buffer.from(query.cursor, 'base64').toString('utf-8')) as {
+      const decoded = JSON.parse(Buffer.from(query.cursor, 'base64url').toString('utf-8')) as {
         _global_offset?: number;
       };
       offset = decoded._global_offset ?? 0;
@@ -95,7 +95,7 @@ evaluations.get('/', async (c) => {
   let nextCursor: string | undefined;
   if (hasMore) {
     const nextOffset = offset + query.limit;
-    nextCursor = Buffer.from(JSON.stringify({ _global_offset: nextOffset })).toString('base64');
+    nextCursor = Buffer.from(JSON.stringify({ _global_offset: nextOffset })).toString('base64url');
   }
 
   const response = {

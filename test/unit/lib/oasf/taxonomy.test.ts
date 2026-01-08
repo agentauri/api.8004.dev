@@ -57,12 +57,12 @@ describe('getAllDomainSlugs', () => {
     const slugs = getAllDomainSlugs();
     expect(slugs.length).toBe(24);
 
-    // Check for expected flat categories
+    // Check for expected flat categories (using official OASF slugs with _and_)
     expect(slugs).toContain('technology');
-    expect(slugs).toContain('finance_business');
+    expect(slugs).toContain('finance_and_business');
     expect(slugs).toContain('healthcare');
     expect(slugs).toContain('education');
-    expect(slugs).toContain('media_entertainment');
+    expect(slugs).toContain('media_and_entertainment');
   });
 
   it('does not contain hierarchical slugs', () => {
@@ -91,9 +91,9 @@ describe('validateSkillSlug', () => {
 describe('validateDomainSlug', () => {
   it('validates correct domain slugs', () => {
     expect(validateDomainSlug('technology')).toBe(true);
-    expect(validateDomainSlug('finance_business')).toBe(true);
+    expect(validateDomainSlug('finance_and_business')).toBe(true);
     expect(validateDomainSlug('healthcare')).toBe(true);
-    expect(validateDomainSlug('media_entertainment')).toBe(true);
+    expect(validateDomainSlug('media_and_entertainment')).toBe(true);
   });
 
   it('rejects invalid domain slugs', () => {

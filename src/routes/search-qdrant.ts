@@ -6,14 +6,9 @@
 
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { getClassificationsBatch } from '@/db/queries';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
-import {
-  parseClassificationRow,
-  type SearchRequestBody,
-  searchRequestSchema,
-} from '@/lib/utils/validation';
+import { type SearchRequestBody, searchRequestSchema } from '@/lib/utils/validation';
 import { CACHE_TTL, createCacheService } from '@/services/cache';
 import { createQdrantSearchService, searchFiltersToAgentFilters } from '@/services/qdrant-search';
 import type { AgentSummary, Env, OASFSource, SearchResponse, Variables } from '@/types';
@@ -84,6 +79,13 @@ search.post('/', async (c) => {
         reachableMcp: body.filters.reachableMcp,
         // Registration file filter
         hasRegistrationFile: body.filters.hasRegistrationFile,
+        // Exact match filters (new)
+        ens: body.filters.ens,
+        did: body.filters.did,
+        // Exclusion filters (notIn)
+        excludeChainIds: body.filters.excludeChainIds,
+        excludeSkills: body.filters.excludeSkills,
+        excludeDomains: body.filters.excludeDomains,
       })
     : undefined;
 
@@ -97,39 +99,38 @@ search.post('/', async (c) => {
     filters,
   });
 
-  // Batch fetch classifications from D1 database
-  const agentIds = searchResult.results.map((r) => r.agentId);
-  const classificationsMap = await getClassificationsBatch(c.env.DB, agentIds);
-
-  // Check if filtering by skills/domains is active
-  const isFilteringByOasf = Boolean(body.filters?.skills || body.filters?.domains);
-
-  // Transform results to AgentSummary format
-  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Search result transformation requires OASF source selection logic
+  // Transform results to AgentSummary format using Qdrant payload directly
+  // Classifications are synced from D1 to Qdrant every 15 min via d1-sync-worker
+  // Phase 2 will add confidence scores to Qdrant payload
   const agents: AgentSummary[] = searchResult.results.map((result) => {
     const tokenId = result.agentId.split(':')[1] ?? '0';
     const qdrantSkills = result.metadata?.skills ?? [];
     const qdrantDomains = result.metadata?.domains ?? [];
 
-    // Get classification from D1
-    const classificationRow = classificationsMap.get(result.agentId);
-    const d1Oasf = parseClassificationRow(classificationRow);
+    // Use Qdrant payload directly - no D1 fetch needed
+    // Use enriched data (skills_with_confidence) when available, fallback to slugs
+    const hasEnrichedOasf = (result.metadata?.skills_with_confidence?.length ?? 0) > 0;
+    const hasOasf = hasEnrichedOasf || qdrantSkills.length > 0 || qdrantDomains.length > 0;
 
-    // Get classification from Qdrant metadata
-    const hasQdrantOasf = qdrantSkills.length > 0 || qdrantDomains.length > 0;
-    const qdrantOasf = hasQdrantOasf
+    const oasf = hasEnrichedOasf
       ? {
-          skills: qdrantSkills.map((slug) => ({ slug, confidence: 1 })),
-          domains: qdrantDomains.map((slug) => ({ slug, confidence: 1 })),
-          confidence: 1,
-          classifiedAt: new Date().toISOString(),
-          modelVersion: 'qdrant-indexed',
+          // Use enriched data with confidence scores
+          skills: result.metadata?.skills_with_confidence ?? [],
+          domains: result.metadata?.domains_with_confidence ?? [],
+          confidence: result.metadata?.classification_confidence ?? 1,
+          classifiedAt: result.metadata?.classification_at ?? new Date().toISOString(),
+          modelVersion: result.metadata?.classification_model ?? 'qdrant-indexed',
         }
-      : undefined;
-
-    // When filtering by skills/domains, prefer Qdrant metadata to ensure consistency
-    // between filter criteria and displayed results. Otherwise prefer D1 (more detailed).
-    const oasf = isFilteringByOasf ? (qdrantOasf ?? d1Oasf) : (d1Oasf ?? qdrantOasf);
+      : hasOasf
+        ? {
+            // Fallback to slugs with confidence: 1 (for agents not yet synced with Phase 2)
+            skills: qdrantSkills.map((slug) => ({ slug, confidence: 1 })),
+            domains: qdrantDomains.map((slug) => ({ slug, confidence: 1 })),
+            confidence: 1,
+            classifiedAt: new Date().toISOString(),
+            modelVersion: 'qdrant-indexed',
+          }
+        : undefined;
 
     return {
       id: result.agentId,
@@ -143,9 +144,11 @@ search.post('/', async (c) => {
       hasA2a: result.metadata?.hasA2a ?? false,
       x402Support: result.metadata?.x402Support ?? false,
       supportedTrust: result.metadata?.x402Support ? ['x402'] : [],
-      operators: [],
+      owner: result.metadata?.owner,
+      operators: result.metadata?.operators ?? [],
       ens: result.metadata?.ens,
       did: result.metadata?.did,
+      walletAddress: result.metadata?.walletAddress,
       oasf,
       oasfSource: (oasf ? 'llm-classification' : 'none') as OASFSource,
       searchScore: result.score,

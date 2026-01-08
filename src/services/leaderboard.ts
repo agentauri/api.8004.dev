@@ -185,7 +185,7 @@ export function createLeaderboardService(env: Env): LeaderboardService {
       let nextCursor: string | undefined;
       if (hasMore) {
         const nextOffset = offset + limit;
-        nextCursor = Buffer.from(JSON.stringify({ _global_offset: nextOffset })).toString('base64');
+        nextCursor = Buffer.from(JSON.stringify({ _global_offset: nextOffset })).toString('base64url');
       }
 
       return {

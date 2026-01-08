@@ -46,6 +46,7 @@ interface GraphAgent {
     agentWalletChainId?: string;
     supportedTrusts?: string[];
   } | null;
+  owner: string;
   operators: string[];
 }
 
@@ -158,6 +159,7 @@ async function fetchAgentsByIds(agentIds: string[], graphApiKey?: string): Promi
         agents(where: { agentId_in: $ids, registrationFile_not: null }) {
           chainId
           agentId
+          owner
           operators
           registrationFile {
             name
@@ -257,6 +259,7 @@ async function indexAgentsToQdrant(
         ens: reg.ens ?? '',
         did: reg.did ?? '',
         wallet_address: '',
+        owner: (agent.owner ?? '').toLowerCase(),
         operators: agent.operators ?? [],
         mcp_tools: reg.mcpTools?.map((t) => t.name) ?? [],
         mcp_prompts: [],

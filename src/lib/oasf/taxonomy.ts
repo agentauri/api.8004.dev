@@ -123,7 +123,7 @@ export const DOMAIN_TAXONOMY: TaxonomyCategory[] = [
   },
   {
     id: 2,
-    slug: 'finance_business',
+    slug: 'finance_and_business',
     name: 'Finance and Business',
     description: 'Financial services, banking, and business operations',
   },
@@ -135,7 +135,7 @@ export const DOMAIN_TAXONOMY: TaxonomyCategory[] = [
   },
   {
     id: 4,
-    slug: 'trust_safety',
+    slug: 'trust_and_safety',
     name: 'Trust and Safety',
     description: 'Content moderation, safety systems, and trust frameworks',
   },
@@ -189,7 +189,7 @@ export const DOMAIN_TAXONOMY: TaxonomyCategory[] = [
   },
   {
     id: 13,
-    slug: 'media_entertainment',
+    slug: 'media_and_entertainment',
     name: 'Media and Entertainment',
     description: 'Media production, entertainment, and creative industries',
   },
@@ -201,7 +201,7 @@ export const DOMAIN_TAXONOMY: TaxonomyCategory[] = [
   },
   {
     id: 15,
-    slug: 'hospitality_tourism',
+    slug: 'hospitality_and_tourism',
     name: 'Hospitality and Tourism',
     description: 'Hotels, travel, and tourism services',
   },
@@ -219,19 +219,19 @@ export const DOMAIN_TAXONOMY: TaxonomyCategory[] = [
   },
   {
     id: 18,
-    slug: 'government_public_sector',
+    slug: 'government_and_public_sector',
     name: 'Government and Public Sector',
     description: 'Government services, public administration, and civic operations',
   },
   {
     id: 19,
-    slug: 'research_development',
+    slug: 'research_and_development',
     name: 'Research and Development',
     description: 'Scientific research, R&D, and innovation',
   },
   {
     id: 20,
-    slug: 'retail_ecommerce',
+    slug: 'retail_and_ecommerce',
     name: 'Retail and E-commerce',
     description: 'Retail operations, e-commerce, and consumer services',
   },
@@ -243,7 +243,7 @@ export const DOMAIN_TAXONOMY: TaxonomyCategory[] = [
   },
   {
     id: 22,
-    slug: 'sports_fitness',
+    slug: 'sports_and_fitness',
     name: 'Sports and Fitness',
     description: 'Sports, athletics, and fitness services',
   },
@@ -255,7 +255,7 @@ export const DOMAIN_TAXONOMY: TaxonomyCategory[] = [
   },
   {
     id: 24,
-    slug: 'marketing_advertising',
+    slug: 'marketing_and_advertising',
     name: 'Marketing and Advertising',
     description: 'Marketing services, advertising, and brand management',
   },

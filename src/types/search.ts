@@ -47,6 +47,16 @@ export interface SearchFilters {
   reachableMcp?: boolean;
   /** Filter by registration file presence */
   hasRegistrationFile?: boolean;
+  /** Filter by exact ENS name */
+  ens?: string;
+  /** Filter by exact DID */
+  did?: string;
+  /** Exclude agents with these chain IDs */
+  excludeChainIds?: number[];
+  /** Exclude agents with these skills */
+  excludeSkills?: string[];
+  /** Exclude agents with these domains */
+  excludeDomains?: string[];
 }
 
 /**
@@ -101,6 +111,8 @@ export interface SearchResultMetadata {
   a2aSkills?: string[];
   /** Operators */
   operators?: string[];
+  /** Owner wallet address */
+  owner?: string;
   /** x402 support flag (alternate name) */
   x402support?: boolean;
   /** Supported trust methods */
@@ -111,6 +123,16 @@ export interface SearchResultMetadata {
   inputModes?: string[];
   /** Output modes (from A2A AgentCard) */
   outputModes?: string[];
+  /** OASF skills with confidence scores (Phase 2) */
+  skills_with_confidence?: Array<{ slug: string; confidence: number; reasoning?: string }>;
+  /** OASF domains with confidence scores (Phase 2) */
+  domains_with_confidence?: Array<{ slug: string; confidence: number; reasoning?: string }>;
+  /** Overall classification confidence (Phase 2) */
+  classification_confidence?: number;
+  /** Classification timestamp (Phase 2) */
+  classification_at?: string;
+  /** Classification model version (Phase 2) */
+  classification_model?: string;
 }
 
 /**

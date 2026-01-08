@@ -66,6 +66,49 @@ Retrieve a paginated list of agents with optional filtering and sorting.
 | `minRep` | number | Minimum reputation score (0-5) |
 | `maxRep` | number | Maximum reputation score (0-5) |
 
+#### Wallet Filters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `owner` | string | Owner wallet address (exact match, case-insensitive) |
+| `walletAddress` | string | Agent wallet address (exact match) |
+
+#### Identity Filters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `ens` | string | ENS name (exact match) |
+| `did` | string | DID identifier (exact match) |
+
+#### Trust Filters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `trustModels` | string | Comma-separated trust models (e.g., `x402,eas`) |
+| `hasTrusts` | boolean | Has any trust model configured |
+
+#### Reachability Filters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `reachableA2a` | boolean | A2A endpoint is reachable |
+| `reachableMcp` | boolean | MCP endpoint is reachable |
+
+#### Capability Filters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `mcpTools` | string | Comma-separated MCP tool names |
+| `a2aSkills` | string | Comma-separated A2A skill names |
+
+#### Exclusion Filters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `excludeChainIds` | string | Comma-separated chain IDs to exclude |
+| `excludeSkills` | string | Comma-separated OASF skills to exclude |
+| `excludeDomains` | string | Comma-separated OASF domains to exclude |
+
 #### Search
 
 | Parameter | Type | Description |
@@ -106,6 +149,7 @@ curl "https://api.8004.dev/api/v1/agents?chainId=11155111&mcp=true&limit=10" \
       "hasA2a": false,
       "x402Support": false,
       "supportedTrust": ["eas"],
+      "owner": "0xabc123...",
       "operators": ["0x123..."],
       "ens": "codereview.eth",
       "oasf": {
@@ -197,6 +241,7 @@ curl "https://api.8004.dev/api/v1/agents/11155111:1234" \
     "hasA2a": false,
     "x402Support": false,
     "supportedTrust": ["eas"],
+    "owner": "0xdef456...",
     "operators": ["0x123..."],
     "ens": "codereview.eth",
     "did": "did:web:example.com",

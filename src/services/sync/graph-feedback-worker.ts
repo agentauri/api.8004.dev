@@ -45,6 +45,7 @@ const SUPPORTED_CHAIN_IDS = [11155111, 84532, 80002, 59141, 296, 998, 1351057110
 
 /**
  * Raw Feedback entity from The Graph
+ * Note: feedbackUri field was removed as it's not in the subgraph schema
  */
 interface GraphFeedback {
   id: string;
@@ -57,7 +58,6 @@ interface GraphFeedback {
   score: string;
   tag1: string | null;
   tag2: string | null;
-  feedbackUri: string | null;
   isRevoked: boolean;
   createdAt: string;
 }
@@ -109,7 +109,6 @@ const FEEDBACK_QUERY = `
       score
       tag1
       tag2
-      feedbackUri
       isRevoked
       createdAt
     }
@@ -307,7 +306,7 @@ async function processFeedback(
     score: normalizeScore(feedback.score),
     tags: JSON.stringify(buildTags(feedback.tag1, feedback.tag2)),
     context: undefined, // Graph feedback doesn't have context field
-    feedback_uri: feedback.feedbackUri ?? undefined,
+    feedback_uri: undefined, // feedbackUri not available in Graph subgraph
     submitter: feedback.clientAddress,
     eas_uid: toGraphFeedbackUid(feedback.id), // Use eas_uid for dedup with "graph:" prefix
     tx_id: undefined, // Transaction hash not available from Graph

@@ -236,21 +236,29 @@ export function createMockSearchService(): SearchService {
       aboveThreshold.sort((a, b) => b.score - a.score);
 
       // Create result items
-      const results: SearchResultItem[] = aboveThreshold.map(({ agent, score }) => ({
-        agentId: agent.id,
-        chainId: agent.chainId,
-        name: agent.name,
-        description: agent.description,
-        score,
-        metadata: {
-          tokenId: agent.tokenId,
-          hasMcp: agent.hasMcp,
-          hasA2a: agent.hasA2a,
-          x402Support: agent.x402Support,
-          active: agent.active,
-        },
-        matchReasons: generateMatchReasons(query, agent.name, agent.description, agent),
-      }));
+      const results: SearchResultItem[] = aboveThreshold.map(({ agent, score }) => {
+        // Get classification for this agent to include skills/domains in metadata
+        const classification = MOCK_CLASSIFICATIONS.get(agent.id);
+
+        return {
+          agentId: agent.id,
+          chainId: agent.chainId,
+          name: agent.name,
+          description: agent.description,
+          score,
+          metadata: {
+            tokenId: agent.tokenId,
+            hasMcp: agent.hasMcp,
+            hasA2a: agent.hasA2a,
+            x402Support: agent.x402Support,
+            active: agent.active,
+            // Include skills/domains from classification (as Qdrant payload would have)
+            skills: classification?.skills.map((s) => s.slug) ?? [],
+            domains: classification?.domains.map((d) => d.slug) ?? [],
+          },
+          matchReasons: generateMatchReasons(query, agent.name, agent.description, agent),
+        };
+      });
 
       // Calculate byChain breakdown
       const byChain: Record<number, number> = {};

@@ -14,8 +14,12 @@
 /**
  * Embedding format version - increment when format changes
  * This allows tracking which agents need re-embedding after format updates
+ *
+ * Version history:
+ * - 1.0.0: Initial format (name, description, MCP tools/prompts/resources, A2A skills, I/O modes)
+ * - 2.0.0: Added OASF skills and domains for improved semantic search (Phase 3)
  */
-export const EMBEDDING_FORMAT_VERSION = '1.0.0';
+export const EMBEDDING_FORMAT_VERSION = '2.0.0';
 
 /**
  * Maximum text length for embedding (30KB buffer for tokenization)
@@ -43,6 +47,10 @@ export interface EmbedFields {
   inputModes?: string[];
   /** Output modes (e.g., 'text', 'json', 'image') */
   outputModes?: string[];
+  /** OASF skill slugs (Phase 3) - improves semantic search */
+  oasfSkills?: string[];
+  /** OASF domain slugs (Phase 3) - improves semantic search */
+  oasfDomains?: string[];
 }
 
 /**
@@ -67,6 +75,10 @@ export interface EmbedFields {
  * Input modes: text, image
  *
  * Output modes: text, json
+ *
+ * OASF Skills: natural_language_processing, trust_safety
+ *
+ * OASF Domains: technology, media_entertainment
  * ```
  *
  * @param fields - The agent fields to format
@@ -92,6 +104,8 @@ export function formatAgentText(fields: EmbedFields): string {
     a2aSkills,
     inputModes,
     outputModes,
+    oasfSkills,
+    oasfDomains,
   } = fields;
 
   // Build parts array, filtering out empty sections
@@ -132,6 +146,18 @@ export function formatAgentText(fields: EmbedFields): string {
   if (outputModes && outputModes.length > 0) {
     const uniqueOutputModes = [...new Set(outputModes)].sort();
     parts.push(`Output modes: ${uniqueOutputModes.join(', ')}`);
+  }
+
+  // Add OASF skills if present (Phase 3 - improves semantic search)
+  if (oasfSkills && oasfSkills.length > 0) {
+    const uniqueOasfSkills = [...new Set(oasfSkills)].sort();
+    parts.push(`OASF Skills: ${uniqueOasfSkills.join(', ')}`);
+  }
+
+  // Add OASF domains if present (Phase 3 - improves semantic search)
+  if (oasfDomains && oasfDomains.length > 0) {
+    const uniqueOasfDomains = [...new Set(oasfDomains)].sort();
+    parts.push(`OASF Domains: ${uniqueOasfDomains.join(', ')}`);
   }
 
   // Join with double newlines and truncate

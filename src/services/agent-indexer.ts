@@ -275,6 +275,7 @@ export class AgentIndexer {
       mcp_resources: [], // Will be populated from detail view
       reputation: agent.reputationScore ?? 0,
       created_at: new Date().toISOString(), // Will be populated from subgraph
+      owner: (agent.owner ?? agent.operators?.[0] ?? '').toLowerCase(),
       operators: agent.operators ?? [],
       ens: agent.ens ?? '',
       did: agent.did ?? '',

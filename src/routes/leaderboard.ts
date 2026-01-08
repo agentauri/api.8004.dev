@@ -53,7 +53,7 @@ leaderboard.get('/', async (c) => {
   let offset = query.offset ?? 0;
   if (query.cursor) {
     try {
-      const decoded = JSON.parse(Buffer.from(query.cursor, 'base64').toString('utf-8')) as {
+      const decoded = JSON.parse(Buffer.from(query.cursor, 'base64url').toString('utf-8')) as {
         _global_offset?: number;
       };
       offset = decoded._global_offset ?? 0;

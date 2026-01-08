@@ -26,10 +26,20 @@ export interface AgentPayload {
   x402_support: boolean;
   /** Whether the agent has a registration file */
   has_registration_file: boolean;
-  /** OASF skill slugs */
+  /** OASF skill slugs (for filtering) */
   skills: string[];
-  /** OASF domain slugs */
+  /** OASF domain slugs (for filtering) */
   domains: string[];
+  /** OASF skills with confidence scores (Phase 2) */
+  skills_with_confidence?: Array<{ slug: string; confidence: number; reasoning?: string }>;
+  /** OASF domains with confidence scores (Phase 2) */
+  domains_with_confidence?: Array<{ slug: string; confidence: number; reasoning?: string }>;
+  /** Overall classification confidence (Phase 2) */
+  classification_confidence?: number;
+  /** Classification timestamp ISO string (Phase 2) */
+  classification_at?: string;
+  /** Classification model version (Phase 2) */
+  classification_model?: string;
   /** MCP tool names */
   mcp_tools: string[];
   /** A2A skill names */
@@ -42,6 +52,8 @@ export interface AgentPayload {
   reputation: number;
   /** Creation timestamp (ISO string) */
   created_at: string;
+  /** Owner wallet address (single address, lowercase) */
+  owner: string;
   /** Operator wallet addresses */
   operators: string[];
   /** ENS name (empty string if none) */
@@ -387,10 +399,28 @@ export interface AgentFilterParams {
   trustModels?: string[];
 
   // Wallet filters
-  /** Filter by owner wallet address */
+  /** Filter by owner wallet address (exact match) */
   owner?: string;
   /** Filter by agent wallet address */
   walletAddress?: string;
+
+  // Exact match filters
+  /** Filter by exact ENS name */
+  ens?: string;
+  /** Filter by exact DID */
+  did?: string;
+
+  // Substring filters
+  /** Filter by description substring (case-insensitive) */
+  descriptionContains?: string;
+
+  // Exclusion filters (notIn)
+  /** Exclude agents with these chain IDs */
+  excludeChainIds?: number[];
+  /** Exclude agents with these skills */
+  excludeSkills?: string[];
+  /** Exclude agents with these domains */
+  excludeDomains?: string[];
 
   // Pagination
   limit?: number;

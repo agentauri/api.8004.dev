@@ -8,7 +8,7 @@ import { getAllCircuitStatus } from '@/lib/utils/circuit-breaker';
 import { getCacheMetrics } from '@/services/cache-metrics';
 import { createEASIndexerService } from '@/services/eas-indexer';
 import { createSearchService } from '@/services/search';
-import { syncD1ToQdrant, syncFromGraph, syncFromSDK } from '@/services/sync';
+import { syncD1ToQdrant, syncFeedbackFromGraph, syncFromGraph, syncFromSDK } from '@/services/sync';
 import type { Env, HealthResponse, ServiceStatus, Variables } from '@/types';
 
 const health = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -119,6 +119,41 @@ health.post('/sync-eas', async (c) => {
     data: summary,
     timestamp: new Date().toISOString(),
   });
+});
+
+/**
+ * POST /api/v1/health/sync-graph-feedback
+ * Manually trigger Graph feedback sync (admin only)
+ */
+health.post('/sync-graph-feedback', async (c) => {
+  const env = c.env;
+
+  try {
+    const result = await syncFeedbackFromGraph(env.DB, {
+      GRAPH_API_KEY: env.GRAPH_API_KEY,
+    });
+
+    return c.json({
+      success: true,
+      data: {
+        feedbackProcessed: result.feedbackProcessed,
+        newFeedbackCount: result.newFeedbackCount,
+        revokedCount: result.revokedCount,
+        lastCreatedAt: result.lastCreatedAt,
+        error: result.error,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    c.get('logger').logError('Graph feedback sync failed', error);
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      },
+      500
+    );
+  }
 });
 
 /**

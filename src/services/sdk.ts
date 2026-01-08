@@ -589,6 +589,7 @@ export interface SubgraphRawAgent {
   chainId: string;
   agentId: string;
   agentURI: string | null;
+  owner: string; // Single owner address
   operators: string[];
   createdAt: string;
   updatedAt: string;
@@ -661,6 +662,7 @@ export async function fetchAllAgentsFromSubgraph(
         chainId
         agentId
         agentURI
+        owner
         operators
         createdAt
         updatedAt

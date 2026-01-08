@@ -158,21 +158,41 @@ export const listAgentsQuerySchema = z.object({
   a2a: stringBooleanSchema.optional(),
   x402: stringBooleanSchema.optional(),
   hasRegistrationFile: stringBooleanSchema.optional(),
+  // Skills filter - supports both CSV (skills=a,b) and array notation (skills[]=a&skills[]=b)
   skills: z
     .string()
     .transform((val) => val.split(',').map((s) => s.trim()))
     .optional(),
+  'skills[]': z
+    .union([z.string(), z.array(z.string())])
+    .transform((val) => (Array.isArray(val) ? val : [val]))
+    .optional(),
+  // Domains filter - supports both CSV and array notation
   domains: z
     .string()
     .transform((val) => val.split(',').map((s) => s.trim()))
     .optional(),
+  'domains[]': z
+    .union([z.string(), z.array(z.string())])
+    .transform((val) => (Array.isArray(val) ? val : [val]))
+    .optional(),
+  // MCP tools filter - supports both CSV and array notation
   mcpTools: z
     .string()
     .transform((val) => val.split(',').map((s) => s.trim()))
     .optional(),
+  'mcpTools[]': z
+    .union([z.string(), z.array(z.string())])
+    .transform((val) => (Array.isArray(val) ? val : [val]))
+    .optional(),
+  // A2A skills filter - supports both CSV and array notation
   a2aSkills: z
     .string()
     .transform((val) => val.split(',').map((s) => s.trim()))
+    .optional(),
+  'a2aSkills[]': z
+    .union([z.string(), z.array(z.string())])
+    .transform((val) => (Array.isArray(val) ? val : [val]))
     .optional(),
   filterMode: z.enum(['AND', 'OR']).optional(),
   minScore: z.coerce.number().min(0).max(1).optional(),
@@ -187,6 +207,27 @@ export const listAgentsQuerySchema = z.object({
     .transform((val) => val.split(',').map((s) => s.trim()))
     .optional(),
   hasTrusts: stringBooleanSchema.optional(),
+  // Exact match filters (new)
+  ens: z.string().optional(),
+  did: z.string().optional(),
+  // Exclusion filters (notIn)
+  excludeChainIds: z
+    .string()
+    .transform((val) =>
+      val
+        .split(',')
+        .map((s) => Number.parseInt(s.trim(), 10))
+        .filter((n) => !Number.isNaN(n))
+    )
+    .optional(),
+  excludeSkills: z
+    .string()
+    .transform((val) => val.split(',').map((s) => s.trim()))
+    .optional(),
+  excludeDomains: z
+    .string()
+    .transform((val) => val.split(',').map((s) => s.trim()))
+    .optional(),
   // Reachability filters
   reachableA2a: stringBooleanSchema.optional(),
   reachableMcp: stringBooleanSchema.optional(),
@@ -240,6 +281,13 @@ export const searchRequestSchema = z.object({
       reachableMcp: z.boolean().optional(),
       // Registration file filter
       hasRegistrationFile: z.boolean().optional(),
+      // Exact match filters (new)
+      ens: z.string().optional(),
+      did: z.string().optional(),
+      // Exclusion filters (notIn)
+      excludeChainIds: z.array(z.number()).optional(),
+      excludeSkills: z.array(z.string()).optional(),
+      excludeDomains: z.array(z.string()).optional(),
     })
     .optional(),
   minScore: z.number().min(0).max(1).default(0.3),

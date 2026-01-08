@@ -52,7 +52,13 @@ import { createClassifierService } from '@/services/classifier';
 import { createEASIndexerService } from '@/services/eas-indexer';
 import { updateQueueItemStatus } from '@/services/evaluator';
 import { createSDKService } from '@/services/sdk';
-import { runReconciliation, syncD1ToQdrant, syncFromGraph } from '@/services/sync';
+import {
+  processReembedQueue,
+  runReconciliation,
+  syncD1ToQdrant,
+  syncFeedbackFromGraph,
+  syncFromGraph,
+} from '@/services/sync';
 import type { ClassificationJob, Env, EvaluationJob, Variables } from '@/types';
 
 /**
@@ -569,13 +575,38 @@ export default {
             });
             console.info(
               `D1 sync: ${d1Result.classificationsUpdated} classifications, ` +
-                `${d1Result.reputationUpdated} reputation, ${d1Result.errors.length} errors`
+                `${d1Result.reputationUpdated} reputation, ` +
+                `${d1Result.agentsMarkedForReembed} marked for re-embed, ` +
+                `${d1Result.errors.length} errors`
             );
           } catch (error) {
             console.error('D1 sync failed:', error instanceof Error ? error.message : error);
           }
         })()
       );
+
+      // Every 30 minutes: Process re-embedding queue (at minute 0 and 30)
+      if (minute === 0 || minute === 30) {
+        ctx.waitUntil(
+          (async () => {
+            console.info('Starting re-embedding queue processing...');
+            try {
+              const reembedResult = await processReembedQueue(env.DB, {
+                QDRANT_URL: qdrantUrl,
+                QDRANT_API_KEY: qdrantApiKey,
+                QDRANT_COLLECTION: qdrantCollection,
+                VENICE_API_KEY: veniceApiKey,
+              });
+              console.info(
+                `Re-embed: ${reembedResult.successful} success, ${reembedResult.failed} failed, ` +
+                  `${reembedResult.errors.length} errors`
+              );
+            } catch (error) {
+              console.error('Re-embed failed:', error instanceof Error ? error.message : error);
+            }
+          })()
+        );
+      }
 
       // Hourly only: Run reconciliation (at minute 0)
       if (minute === 0) {
@@ -605,10 +636,31 @@ export default {
       }
     }
 
-    // Hourly only (at minute 0): EAS + batch classification + analytics
+    // Hourly only (at minute 0): EAS + Graph feedback + batch classification + analytics
     if (minute === 0) {
       // Sync EAS attestations every hour
       ctx.waitUntil(syncEASAttestations(env));
+
+      // Sync Graph feedback every hour
+      ctx.waitUntil(
+        (async () => {
+          console.info('Starting Graph feedback sync...');
+          try {
+            const graphFeedbackResult = await syncFeedbackFromGraph(env.DB, {
+              GRAPH_API_KEY: graphApiKey,
+            });
+            console.info(
+              `Graph feedback sync: ${graphFeedbackResult.feedbackProcessed} processed, ` +
+                `${graphFeedbackResult.newFeedbackCount} new, ${graphFeedbackResult.revokedCount} revoked`
+            );
+          } catch (error) {
+            console.error(
+              'Graph feedback sync failed:',
+              error instanceof Error ? error.message : error
+            );
+          }
+        })()
+      );
 
       // Batch classify unclassified agents (50 per hour)
       ctx.waitUntil(batchClassifyAgents(env));

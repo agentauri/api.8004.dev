@@ -416,6 +416,7 @@ export class QdrantClient {
       { field: 'ens', type: 'keyword' },
       { field: 'did', type: 'keyword' },
       { field: 'wallet_address', type: 'keyword' },
+      { field: 'owner', type: 'keyword' },
       { field: 'skills', type: 'keyword' },
       { field: 'domains', type: 'keyword' },
       { field: 'mcp_tools', type: 'keyword' },

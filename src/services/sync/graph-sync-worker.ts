@@ -31,6 +31,7 @@ interface GraphAgent {
   chainId: string;
   agentId: string;
   agentURI: string | null;
+  owner: string;
   operators: string[];
   createdAt: string;
   updatedAt: string;
@@ -106,6 +107,7 @@ async function fetchAgentsFromGraph(
         chainId
         agentId
         agentURI
+        owner
         operators
         createdAt
         updatedAt
@@ -228,6 +230,7 @@ function agentToPayload(
     ens: reg.ens ?? '',
     did: reg.did ?? '',
     wallet_address: reg.agentWallet ?? '',
+    owner: (agent.owner ?? '').toLowerCase(),
     operators: agent.operators ?? [],
     mcp_tools: reg.mcpTools?.map((t) => t.name) ?? [],
     mcp_prompts: reg.mcpPrompts?.map((p) => p.name) ?? [],
@@ -287,6 +290,7 @@ function getContentFields(payload: AgentPayload): ContentFields {
     skills: payload.skills,
     domains: payload.domains,
     reputation: payload.reputation,
+    owner: payload.owner,
   };
 }
 
@@ -392,9 +396,10 @@ export async function syncFromGraph(
   console.info(`Graph sync: found ${existingMetadata.size} agents already synced`);
 
   // Identify agents that need syncing (new or changed)
-  // First pass: find agents without metadata (new agents) - limit to MAX_AGENTS_PER_SYNC
+  // Process both new agents and existing agents with changed content
   const toSync: AgentToSync[] = [];
   let skipped = 0;
+  let contentChanged = 0;
 
   for (const agent of agentsWithReg) {
     if (toSync.length >= MAX_AGENTS_PER_SYNC) {
@@ -409,13 +414,37 @@ export async function syncFromGraph(
       // New agent - needs full index with embedding
       toSync.push({ agent, needsEmbed: true });
     } else {
-      // Already synced - skip for now (we'll handle updates in a separate pass)
-      skipped++;
+      // Existing agent - check if content changed (e.g., owner field added)
+      // Compute content hash from Graph fields to compare (use async SHA-256 to match stored hashes)
+      const quickContentFields: ContentFields = {
+        agentId,
+        name: agent.registrationFile?.name ?? '',
+        description: agent.registrationFile?.description ?? '',
+        active: agent.registrationFile?.active ?? true,
+        hasMcp: Boolean(agent.registrationFile?.mcpEndpoint),
+        hasA2a: Boolean(agent.registrationFile?.a2aEndpoint),
+        skills: [], // D1 fields - use empty for Graph-only comparison
+        domains: [], // D1 fields - use empty for Graph-only comparison
+        reputation: 0, // D1 field - use 0 for Graph-only comparison
+        owner: (agent.owner ?? '').toLowerCase(),
+      };
+      const newHash = await computeContentHash(quickContentFields);
+
+      // If hash differs, content changed - needs payload update (no re-embedding)
+      // Note: After adding owner field to hash, all old agents will have different hashes
+      if (newHash !== existing.content_hash) {
+        toSync.push({ agent, needsEmbed: false });
+        contentChanged++;
+      } else {
+        skipped++;
+      }
     }
   }
 
   result.skipped = skipped;
-  console.info(`Graph sync: ${toSync.length} new agents to sync, ${skipped} already synced`);
+  console.info(
+    `Graph sync: ${toSync.length} agents to sync (${toSync.filter((a) => a.needsEmbed).length} new, ${contentChanged} changed), ${skipped} unchanged`
+  );
 
   if (toSync.length === 0) {
     console.info('Graph sync: no new agents to sync');

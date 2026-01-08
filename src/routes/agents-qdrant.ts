@@ -5,11 +5,7 @@
  */
 
 import { Hono } from 'hono';
-import {
-  enqueueClassificationsBatch,
-  getClassification,
-  getClassificationsBatch,
-} from '@/db/queries';
+import { enqueueClassificationsBatch, getClassification } from '@/db/queries';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import {
@@ -48,6 +44,31 @@ import { verification } from './verification';
  */
 function searchResultToAgentSummary(result: SearchResultItem): AgentSummary {
   const [, tokenId] = result.agentId.split(':');
+  const qdrantSkills = result.metadata?.skills ?? [];
+  const qdrantDomains = result.metadata?.domains ?? [];
+
+  // Use enriched data (skills_with_confidence) when available, fallback to slugs
+  const hasEnrichedOasf = (result.metadata?.skills_with_confidence?.length ?? 0) > 0;
+  const hasOasf = hasEnrichedOasf || qdrantSkills.length > 0 || qdrantDomains.length > 0;
+
+  const oasf = hasEnrichedOasf
+    ? {
+        skills: result.metadata?.skills_with_confidence ?? [],
+        domains: result.metadata?.domains_with_confidence ?? [],
+        confidence: result.metadata?.classification_confidence ?? 1,
+        classifiedAt: result.metadata?.classification_at ?? new Date().toISOString(),
+        modelVersion: result.metadata?.classification_model ?? 'qdrant-indexed',
+      }
+    : hasOasf
+      ? {
+          skills: qdrantSkills.map((slug) => ({ slug, confidence: 1 })),
+          domains: qdrantDomains.map((slug) => ({ slug, confidence: 1 })),
+          confidence: 1,
+          classifiedAt: new Date().toISOString(),
+          modelVersion: 'qdrant-indexed',
+        }
+      : undefined;
+
   return {
     id: result.agentId,
     chainId: result.chainId,
@@ -60,7 +81,15 @@ function searchResultToAgentSummary(result: SearchResultItem): AgentSummary {
     hasA2a: result.metadata?.hasA2a ?? false,
     x402Support: result.metadata?.x402Support ?? false,
     supportedTrust: [],
+    oasf,
+    oasfSource: (oasf ? 'llm-classification' : 'none') as OASFSource,
     searchScore: result.score,
+    reputationScore: result.metadata?.reputation,
+    owner: result.metadata?.owner,
+    operators: result.metadata?.operators ?? [],
+    ens: result.metadata?.ens,
+    did: result.metadata?.did,
+    walletAddress: result.metadata?.walletAddress,
   };
 }
 
@@ -121,9 +150,12 @@ agents.get('/', async (c) => {
   const rawQuery = c.req.query();
   const rawQueries = c.req.queries();
 
-  // Merge array values for chainIds[]
-  if (rawQueries['chainIds[]'] && rawQueries['chainIds[]'].length > 1) {
-    (rawQuery as Record<string, unknown>)['chainIds[]'] = rawQueries['chainIds[]'];
+  // Merge array values for bracket notation (chainIds[], skills[], domains[], etc.)
+  const arrayParams = ['chainIds[]', 'skills[]', 'domains[]', 'mcpTools[]', 'a2aSkills[]'];
+  for (const param of arrayParams) {
+    if (rawQueries[param] && rawQueries[param].length > 1) {
+      (rawQuery as Record<string, unknown>)[param] = rawQueries[param];
+    }
   }
 
   const queryResult = listAgentsQuerySchema.safeParse(rawQuery);
@@ -158,7 +190,7 @@ agents.get('/', async (c) => {
   } else if (query.cursor) {
     // Decode cursor to extract offset
     try {
-      const decoded = Buffer.from(query.cursor, 'base64').toString('utf-8');
+      const decoded = Buffer.from(query.cursor, 'base64url').toString('utf-8');
       const cursorData = JSON.parse(decoded) as { _global_offset?: number };
       offset = cursorData._global_offset ?? 0;
     } catch {
@@ -170,6 +202,12 @@ agents.get('/', async (c) => {
   // Create Qdrant search service
   const searchService = createQdrantSearchService(c.env);
 
+  // Resolve array filters (merge CSV and bracket notation)
+  const skills = query['skills[]'] ?? query.skills;
+  const domains = query['domains[]'] ?? query.domains;
+  const mcpTools = query['mcpTools[]'] ?? query.mcpTools;
+  const a2aSkills = query['a2aSkills[]'] ?? query.a2aSkills;
+
   // Build filters for Qdrant (ALL filters supported natively!)
   const filters = searchFiltersToAgentFilters({
     chainIds,
@@ -177,12 +215,12 @@ agents.get('/', async (c) => {
     mcp: query.mcp,
     a2a: query.a2a,
     x402: query.x402,
-    skills: query.skills,
-    domains: query.domains,
+    skills,
+    domains,
     filterMode: query.filterMode,
     // Extended filters
-    mcpTools: query.mcpTools,
-    a2aSkills: query.a2aSkills,
+    mcpTools,
+    a2aSkills,
     minRep: query.minRep,
     maxRep: query.maxRep,
     // Wallet filters
@@ -196,6 +234,13 @@ agents.get('/', async (c) => {
     reachableMcp: query.reachableMcp,
     // Registration file filter
     hasRegistrationFile: query.hasRegistrationFile,
+    // Exact match filters (new)
+    ens: query.ens,
+    did: query.did,
+    // Exclusion filters (notIn)
+    excludeChainIds: query.excludeChainIds,
+    excludeSkills: query.excludeSkills,
+    excludeDomains: query.excludeDomains,
   });
 
   // Perform search with Qdrant
@@ -301,7 +346,7 @@ agents.get('/', async (c) => {
         // Generate cursor for next page based on offset
         const nextOffset = effectiveOffset + query.limit;
         const nextCursor = hasMore
-          ? Buffer.from(JSON.stringify({ _global_offset: nextOffset })).toString('base64')
+          ? Buffer.from(JSON.stringify({ _global_offset: nextOffset })).toString('base64url')
           : undefined;
 
         const fallbackResponse: AgentListResponse = {
@@ -329,35 +374,37 @@ agents.get('/', async (c) => {
     }
   }
 
-  // Batch fetch classifications from D1 database
-  const agentIds = searchResult.results.map((r) => r.agentId);
-  const classificationsMap = await getClassificationsBatch(c.env.DB, agentIds);
-
-  // Check if filtering by skills/domains is active
-  const isFilteringByOasf = Boolean(query.skills || query.domains);
-
-  // Transform results to AgentSummary format
-  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Search result transformation requires OASF source selection logic
+  // Transform results to AgentSummary format using Qdrant payload directly
+  // Classifications are synced from D1 to Qdrant every 15 min via d1-sync-worker
+  // Phase 2 will add confidence scores to Qdrant payload
   let agents: AgentSummary[] = searchResult.results.map((result) => {
-    // Get classification from D1
-    const classificationRow = classificationsMap.get(result.agentId);
-    const d1Oasf = parseClassificationRow(classificationRow);
+    const qdrantSkills = result.metadata?.skills ?? [];
+    const qdrantDomains = result.metadata?.domains ?? [];
 
-    // Get classification from Qdrant metadata
-    const hasQdrantOasf = result.metadata?.skills?.length || result.metadata?.domains?.length;
-    const qdrantOasf = hasQdrantOasf
+    // Use Qdrant payload directly - no D1 fetch needed
+    // Use enriched data (skills_with_confidence) when available, fallback to slugs
+    const hasEnrichedOasf = (result.metadata?.skills_with_confidence?.length ?? 0) > 0;
+    const hasOasf = hasEnrichedOasf || qdrantSkills.length > 0 || qdrantDomains.length > 0;
+
+    const oasf = hasEnrichedOasf
       ? {
-          skills: (result.metadata?.skills ?? []).map((slug) => ({ slug, confidence: 1 })),
-          domains: (result.metadata?.domains ?? []).map((slug) => ({ slug, confidence: 1 })),
-          confidence: 1,
-          classifiedAt: new Date().toISOString(),
-          modelVersion: 'qdrant-indexed',
+          // Use enriched data with confidence scores
+          skills: result.metadata?.skills_with_confidence ?? [],
+          domains: result.metadata?.domains_with_confidence ?? [],
+          confidence: result.metadata?.classification_confidence ?? 1,
+          classifiedAt: result.metadata?.classification_at ?? new Date().toISOString(),
+          modelVersion: result.metadata?.classification_model ?? 'qdrant-indexed',
         }
-      : undefined;
-
-    // When filtering by skills/domains, prefer Qdrant metadata to ensure consistency
-    // between filter criteria and displayed results. Otherwise prefer D1 (more detailed).
-    const oasf = isFilteringByOasf ? (qdrantOasf ?? d1Oasf) : (d1Oasf ?? qdrantOasf);
+      : hasOasf
+        ? {
+            // Fallback to slugs with confidence: 1 (for agents not yet synced with Phase 2)
+            skills: qdrantSkills.map((slug) => ({ slug, confidence: 1 })),
+            domains: qdrantDomains.map((slug) => ({ slug, confidence: 1 })),
+            confidence: 1,
+            classifiedAt: new Date().toISOString(),
+            modelVersion: 'qdrant-indexed',
+          }
+        : undefined;
 
     return {
       id: result.agentId,
@@ -371,9 +418,11 @@ agents.get('/', async (c) => {
       hasA2a: result.metadata?.hasA2a ?? false,
       x402Support: result.metadata?.x402Support ?? false,
       supportedTrust: result.metadata?.x402Support ? ['x402'] : [],
-      operators: [],
+      owner: result.metadata?.owner,
+      operators: result.metadata?.operators ?? [],
       ens: result.metadata?.ens,
       did: result.metadata?.did,
+      walletAddress: result.metadata?.walletAddress,
       oasf,
       oasfSource: (oasf ? 'llm-classification' : 'none') as OASFSource,
       searchScore: result.score,
@@ -382,18 +431,8 @@ agents.get('/', async (c) => {
     };
   });
 
-  // Apply reputation filtering (not yet in Qdrant index)
-  if (query.minRep !== undefined || query.maxRep !== undefined) {
-    agents = agents.filter((agent) => {
-      const score = agent.reputationScore;
-      if (score === undefined || score === null) {
-        return query.minRep === undefined || query.minRep === 0;
-      }
-      if (query.minRep !== undefined && score < query.minRep) return false;
-      if (query.maxRep !== undefined && score > query.maxRep) return false;
-      return true;
-    });
-  }
+  // NOTE: Reputation filtering is now handled natively by Qdrant via filter-builder.ts
+  // No client-side filtering needed - Qdrant's reputation range filter is applied in searchFiltersToAgentFilters
 
   // Apply custom sorting if requested (Qdrant returns by score, we need to re-sort for name/createdAt)
   if (query.sort && query.sort !== 'relevance') {
@@ -606,6 +645,7 @@ agents.get('/:agentId', async (c) => {
     success: true,
     data: {
       ...agent,
+      owner: agent.registration?.owner,
       oasf,
       oasfSource: resolvedClassification.source,
       reputation: reputationData ?? undefined,
@@ -940,7 +980,7 @@ agents.get('/:agentId/evaluations', async (c) => {
   let offset = query.offset ?? 0;
   if (query.cursor) {
     try {
-      const decoded = JSON.parse(Buffer.from(query.cursor, 'base64').toString('utf-8')) as {
+      const decoded = JSON.parse(Buffer.from(query.cursor, 'base64url').toString('utf-8')) as {
         _global_offset?: number;
       };
       offset = decoded._global_offset ?? 0;
@@ -957,7 +997,7 @@ agents.get('/:agentId/evaluations', async (c) => {
   let nextCursor: string | undefined;
   if (hasMore) {
     const nextOffset = offset + query.limit;
-    nextCursor = Buffer.from(JSON.stringify({ _global_offset: nextOffset })).toString('base64');
+    nextCursor = Buffer.from(JSON.stringify({ _global_offset: nextOffset })).toString('base64url');
   }
 
   const response = {

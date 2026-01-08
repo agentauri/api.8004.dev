@@ -523,8 +523,17 @@ export class QdrantSearchService {
         image: payload.image,
         ens: payload.ens,
         did: payload.did,
+        owner: payload.owner,
+        operators: payload.operators,
+        walletAddress: payload.wallet_address,
         inputModes: payload.input_modes,
         outputModes: payload.output_modes,
+        // Phase 2 enriched OASF data
+        skills_with_confidence: payload.skills_with_confidence,
+        domains_with_confidence: payload.domains_with_confidence,
+        classification_confidence: payload.classification_confidence,
+        classification_at: payload.classification_at,
+        classification_model: payload.classification_model,
       },
       matchReasons: this.generateMatchReasons(payload, score),
     };

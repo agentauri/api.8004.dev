@@ -60,6 +60,8 @@ Search for agents using natural language. The API uses vector embeddings for sem
 
 ### Filter Options
 
+#### Basic Filters
+
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `chainIds` | integer[] | Filter by chain IDs |
@@ -70,6 +72,47 @@ Search for agents using natural language. The API uses vector embeddings for sem
 | `filterMode` | string | `AND` or `OR` for boolean filters |
 | `skills` | string[] | Filter by OASF skill slugs |
 | `domains` | string[] | Filter by OASF domain slugs |
+
+#### Wallet & Identity Filters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `owner` | string | Owner wallet address (exact match, case-insensitive) |
+| `walletAddress` | string | Agent wallet address (exact match) |
+| `ens` | string | ENS name (exact match) |
+| `did` | string | DID identifier (exact match) |
+
+#### Reputation Filters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `minRep` | number | Minimum reputation score (0-5) |
+| `maxRep` | number | Maximum reputation score (0-5) |
+
+#### Trust & Reachability Filters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `trustModels` | string[] | Filter by trust models (e.g., `["x402", "eas"]`) |
+| `hasTrusts` | boolean | Has any trust model configured |
+| `reachableA2a` | boolean | A2A endpoint is reachable |
+| `reachableMcp` | boolean | MCP endpoint is reachable |
+
+#### Capability Filters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `mcpTools` | string[] | Filter by MCP tool names |
+| `a2aSkills` | string[] | Filter by A2A skill names |
+| `hasRegistrationFile` | boolean | Has registration metadata file |
+
+#### Exclusion Filters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `excludeChainIds` | integer[] | Chain IDs to exclude |
+| `excludeSkills` | string[] | OASF skills to exclude |
+| `excludeDomains` | string[] | OASF domains to exclude |
 
 ### Example Request
 
@@ -104,6 +147,7 @@ curl -X POST "https://api.8004.dev/api/v1/search" \
       "hasA2a": false,
       "x402Support": false,
       "supportedTrust": ["eas"],
+      "owner": "0xabc123...",
       "operators": ["0x123..."],
       "oasf": {
         "skills": [

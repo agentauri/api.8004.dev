@@ -309,13 +309,13 @@ export function buildFilter(params: AgentFilterParams): QdrantFilter | undefined
     });
   }
 
-  // --- Missing filters (P1C) ---
+  // --- Owner & Wallet filters ---
 
-  // Owner filter (owners array contains the specified address)
+  // Owner filter (exact match on owner address)
   if (params.owner) {
     mustConditions.push({
-      key: 'operators',
-      match: { any: [params.owner.toLowerCase()] },
+      key: 'owner',
+      match: { value: params.owner.toLowerCase() },
     });
   }
 
@@ -348,6 +348,50 @@ export function buildFilter(params: AgentFilterParams): QdrantFilter | undefined
         values_count: { lte: 0 },
       });
     }
+  }
+
+  // --- Exact match filters ---
+
+  // ENS exact match filter
+  if (params.ens) {
+    mustConditions.push({
+      key: 'ens',
+      match: { value: params.ens.toLowerCase() },
+    });
+  }
+
+  // DID exact match filter
+  if (params.did) {
+    mustConditions.push({
+      key: 'did',
+      match: { value: params.did },
+    });
+  }
+
+  // --- Exclusion filters (notIn / except) ---
+
+  // Exclude chain IDs
+  if (params.excludeChainIds && params.excludeChainIds.length > 0) {
+    mustNotConditions.push({
+      key: 'chain_id',
+      match: { any: params.excludeChainIds },
+    });
+  }
+
+  // Exclude skills
+  if (params.excludeSkills && params.excludeSkills.length > 0) {
+    mustNotConditions.push({
+      key: 'skills',
+      match: { any: params.excludeSkills },
+    });
+  }
+
+  // Exclude domains
+  if (params.excludeDomains && params.excludeDomains.length > 0) {
+    mustNotConditions.push({
+      key: 'domains',
+      match: { any: params.excludeDomains },
+    });
   }
 
   // Build final filter
