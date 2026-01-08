@@ -73,9 +73,10 @@ async function fetchAgentIdsFromChain(chainId: number, graphApiKey?: string): Pr
   }
 
   while (true) {
+    // Fetch ALL agents (including those without registrationFile)
     const query = `
       query GetAgentIds($first: Int!, $skip: Int!) {
-        agents(first: $first, skip: $skip, where: { registrationFile_not: null }) {
+        agents(first: $first, skip: $skip) {
           chainId
           agentId
         }
@@ -154,9 +155,10 @@ async function fetchAgentsByIds(agentIds: string[], graphApiKey?: string): Promi
       headers.Authorization = `Bearer ${graphApiKey}`;
     }
 
+    // Fetch ALL agents (including those without registrationFile)
     const query = `
       query GetAgentsByIds($ids: [String!]!) {
-        agents(where: { agentId_in: $ids, registrationFile_not: null }) {
+        agents(where: { agentId_in: $ids }) {
           chainId
           agentId
           owner
@@ -199,6 +201,7 @@ async function fetchAgentsByIds(agentIds: string[], graphApiKey?: string): Promi
 
 /**
  * Index missing agents to Qdrant
+ * Handles both agents with and without registrationFile
  */
 async function indexAgentsToQdrant(
   agents: GraphAgent[],
@@ -213,20 +216,20 @@ async function indexAgentsToQdrant(
   let indexed = 0;
 
   for (const agent of agents) {
-    if (!agent.registrationFile) continue;
-
     const agentId = `${agent.chainId}:${agent.agentId}`;
     const reg = agent.registrationFile;
+    const hasReg = !!reg;
 
     try {
       // Generate embedding using unified formatAgentText
+      // For agents without registrationFile, use placeholder name
       const text = formatAgentText({
-        name: reg.name ?? '',
-        description: reg.description ?? '',
-        mcpTools: reg.mcpTools?.map((t) => t.name) ?? [],
+        name: reg?.name ?? (hasReg ? '' : `Agent #${agent.agentId}`),
+        description: reg?.description ?? '',
+        mcpTools: reg?.mcpTools?.map((t) => t.name) ?? [],
         mcpPrompts: [],
         mcpResources: [],
-        a2aSkills: reg.a2aSkills?.map((s) => s.name) ?? [],
+        a2aSkills: reg?.a2aSkills?.map((s) => s.name) ?? [],
         inputModes: [],
         outputModes: [],
       });
@@ -235,41 +238,41 @@ async function indexAgentsToQdrant(
 
       // NOTE: agentWalletChainId was removed in ERC-8004 v1.0
 
-      // Create payload
+      // Create payload - supports agents with or without registrationFile
       const payload: AgentPayload = {
         agent_id: agentId,
         chain_id: Number(agent.chainId),
         token_id: agent.agentId,
-        name: reg.name ?? '',
-        description: reg.description ?? '',
-        image: reg.image ?? '',
-        active: reg.active ?? false,
-        has_mcp: !!reg.mcpEndpoint,
-        has_a2a: !!reg.a2aEndpoint,
-        x402_support: reg.x402support ?? false,
-        has_registration_file: true,
-        ens: reg.ens ?? '',
-        did: reg.did ?? '',
+        name: reg?.name ?? (hasReg ? '' : `Agent #${agent.agentId}`),
+        description: reg?.description ?? '',
+        image: reg?.image ?? '',
+        active: reg?.active ?? false,
+        has_mcp: !!reg?.mcpEndpoint,
+        has_a2a: !!reg?.a2aEndpoint,
+        x402_support: reg?.x402support ?? false,
+        has_registration_file: hasReg,
+        ens: reg?.ens ?? '',
+        did: reg?.did ?? '',
         wallet_address: '',
         owner: (agent.owner ?? '').toLowerCase(),
         operators: agent.operators ?? [],
-        mcp_tools: reg.mcpTools?.map((t) => t.name) ?? [],
+        mcp_tools: reg?.mcpTools?.map((t) => t.name) ?? [],
         mcp_prompts: [],
         mcp_resources: [],
-        a2a_skills: reg.a2aSkills?.map((s) => s.name) ?? [],
+        a2a_skills: reg?.a2aSkills?.map((s) => s.name) ?? [],
         skills: [],
         domains: [],
         reputation: 0,
         input_modes: [],
         output_modes: [],
-        created_at: reg.createdAt ?? new Date().toISOString(),
+        created_at: reg?.createdAt ?? new Date().toISOString(),
         is_reachable_a2a: false, // Will be populated from feedback data during regular sync
         is_reachable_mcp: false, // Will be populated from feedback data during regular sync
         // New fields from subgraph schema
-        mcp_version: reg.mcpVersion ?? '',
-        a2a_version: reg.a2aVersion ?? '',
+        mcp_version: reg?.mcpVersion ?? '',
+        a2a_version: reg?.a2aVersion ?? '',
         agent_wallet_chain_id: 0, // NOTE: agentWalletChainId removed in ERC-8004 v1.0
-        supported_trusts: reg.supportedTrusts ?? [],
+        supported_trusts: reg?.supportedTrusts ?? [],
         agent_uri: '', // Not available in reconciliation context
         updated_at: '', // Not available in reconciliation context
         trust_score: 0,

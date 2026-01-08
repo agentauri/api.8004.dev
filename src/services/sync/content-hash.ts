@@ -27,6 +27,7 @@ export interface ContentFields {
   domains: string[];
   reputation: number;
   owner?: string;
+  hasRegistrationFile?: boolean;
 }
 
 /**
@@ -79,6 +80,7 @@ export async function computeContentHash(fields: ContentFields): Promise<string>
     (fields.domains ?? []).sort().join(','),
     String(fields.reputation ?? 0),
     fields.owner ?? '',
+    String(fields.hasRegistrationFile ?? false),
   ].join('|');
 
   return computeHash(text);
@@ -130,6 +132,7 @@ export function computeContentHashSync(fields: ContentFields): string {
     (fields.domains ?? []).sort().join(','),
     String(fields.reputation ?? 0),
     fields.owner ?? '',
+    String(fields.hasRegistrationFile ?? false),
   ].join('|');
 
   return computeHashSync(text);

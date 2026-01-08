@@ -101,7 +101,7 @@ async function fetchAgentsFromGraph(
 
   const query = `
     query GetAgents($first: Int!, $skip: Int!) {
-      agents(first: $first, skip: $skip, orderBy: agentId, where: { registrationFile_not: null }) {
+      agents(first: $first, skip: $skip, orderBy: agentId) {
         id
         chainId
         agentId
@@ -199,9 +199,7 @@ function agentToPayload(
   reachability?: AgentReachability
 ): AgentPayload {
   const reg = agent.registrationFile;
-  if (!reg) {
-    throw new Error(`Agent ${agent.id} has no registration file`);
-  }
+  const hasReg = !!reg;
 
   // NOTE: agentWallet and agentWalletChainId were removed in ERC-8004 v1.0
 
@@ -209,36 +207,37 @@ function agentToPayload(
     agent_id: `${agent.chainId}:${agent.agentId}`,
     chain_id: Number(agent.chainId),
     token_id: agent.agentId,
-    name: reg.name ?? '',
-    description: reg.description ?? '',
-    image: reg.image ?? '',
-    active: reg.active ?? false,
-    has_mcp: !!reg.mcpEndpoint,
-    has_a2a: !!reg.a2aEndpoint,
-    x402_support: reg.x402support ?? false,
-    has_registration_file: true,
-    ens: reg.ens ?? '',
-    did: reg.did ?? '',
+    // For agents without registrationFile, use a placeholder name
+    name: reg?.name ?? (hasReg ? '' : `Agent #${agent.agentId}`),
+    description: reg?.description ?? '',
+    image: reg?.image ?? '',
+    active: reg?.active ?? false,
+    has_mcp: !!reg?.mcpEndpoint,
+    has_a2a: !!reg?.a2aEndpoint,
+    x402_support: reg?.x402support ?? false,
+    has_registration_file: hasReg,
+    ens: reg?.ens ?? '',
+    did: reg?.did ?? '',
     wallet_address: '', // NOTE: agentWallet removed in ERC-8004 v1.0
     owner: (agent.owner ?? '').toLowerCase(),
     operators: agent.operators ?? [],
-    mcp_tools: reg.mcpTools?.map((t) => t.name) ?? [],
-    mcp_prompts: reg.mcpPrompts?.map((p) => p.name) ?? [],
-    mcp_resources: reg.mcpResources?.map((r) => r.name) ?? [],
-    a2a_skills: reg.a2aSkills?.map((s) => s.name) ?? [],
+    mcp_tools: reg?.mcpTools?.map((t) => t.name) ?? [],
+    mcp_prompts: reg?.mcpPrompts?.map((p) => p.name) ?? [],
+    mcp_resources: reg?.mcpResources?.map((r) => r.name) ?? [],
+    a2a_skills: reg?.a2aSkills?.map((s) => s.name) ?? [],
     skills: [], // Will be populated from D1
     domains: [], // Will be populated from D1
     reputation: 0, // Will be populated from D1
     input_modes: ioModes?.inputModes ?? [],
     output_modes: ioModes?.outputModes ?? [],
-    created_at: reg.createdAt ?? new Date().toISOString(),
+    created_at: reg?.createdAt ?? new Date().toISOString(),
     is_reachable_a2a: reachability?.a2a ?? false,
     is_reachable_mcp: reachability?.mcp ?? false,
     // New fields from subgraph schema
-    mcp_version: reg.mcpVersion ?? '',
-    a2a_version: reg.a2aVersion ?? '',
+    mcp_version: reg?.mcpVersion ?? '',
+    a2a_version: reg?.a2aVersion ?? '',
     agent_wallet_chain_id: 0, // NOTE: agentWalletChainId removed in ERC-8004 v1.0
-    supported_trusts: reg.supportedTrusts ?? [],
+    supported_trusts: reg?.supportedTrusts ?? [],
     agent_uri: agent.agentURI ?? '',
     updated_at: agent.updatedAt
       ? new Date(Number.parseInt(agent.updatedAt, 10) * 1000).toISOString()
@@ -281,6 +280,7 @@ function getContentFields(payload: AgentPayload): ContentFields {
     domains: payload.domains,
     reputation: payload.reputation,
     owner: payload.owner,
+    hasRegistrationFile: payload.has_registration_file,
   };
 }
 
@@ -353,16 +353,16 @@ export async function syncFromGraph(
     hasMore: false,
   };
 
-  // Fetch all agents from Graph
+  // Fetch all agents from Graph (including those without registrationFile)
   const agents = await fetchAllAgentsFromGraph(env.GRAPH_API_KEY);
-  console.info(`Graph sync: fetched ${agents.length} agents from Graph`);
-
-  // Filter to agents with registration files
   const agentsWithReg = agents.filter((a) => a.registrationFile);
-  console.info(`Graph sync: ${agentsWithReg.length} agents have registration files`);
+  const agentsWithoutReg = agents.length - agentsWithReg.length;
+  console.info(
+    `Graph sync: fetched ${agents.length} agents from Graph (${agentsWithReg.length} with registrationFile, ${agentsWithoutReg} without)`
+  );
 
   // Get existing sync metadata for all agents (to identify which need syncing)
-  const agentIds = agentsWithReg.map((a) => `${a.chainId}:${a.agentId}`);
+  const agentIds = agents.map((a) => `${a.chainId}:${a.agentId}`);
 
   // Query existing metadata in batches
   const existingMetadata = new Map<string, { content_hash: string; embed_hash: string }>();
@@ -386,12 +386,12 @@ export async function syncFromGraph(
   console.info(`Graph sync: found ${existingMetadata.size} agents already synced`);
 
   // Identify agents that need syncing (new or changed)
-  // Process both new agents and existing agents with changed content
+  // Process ALL agents (with or without registrationFile)
   const toSync: AgentToSync[] = [];
   let skipped = 0;
   let contentChanged = 0;
 
-  for (const agent of agentsWithReg) {
+  for (const agent of agents) {
     if (toSync.length >= MAX_AGENTS_PER_SYNC) {
       result.hasMore = true;
       break;
@@ -404,19 +404,20 @@ export async function syncFromGraph(
       // New agent - needs full index with embedding
       toSync.push({ agent, needsEmbed: true });
     } else {
-      // Existing agent - check if content changed (e.g., owner field added)
+      // Existing agent - check if content changed (e.g., owner field added, registrationFile added)
       // Compute content hash from Graph fields to compare (use async SHA-256 to match stored hashes)
       const quickContentFields: ContentFields = {
         agentId,
         name: agent.registrationFile?.name ?? '',
         description: agent.registrationFile?.description ?? '',
-        active: agent.registrationFile?.active ?? true,
+        active: agent.registrationFile?.active ?? false,
         hasMcp: Boolean(agent.registrationFile?.mcpEndpoint),
         hasA2a: Boolean(agent.registrationFile?.a2aEndpoint),
         skills: [], // D1 fields - use empty for Graph-only comparison
         domains: [], // D1 fields - use empty for Graph-only comparison
         reputation: 0, // D1 field - use 0 for Graph-only comparison
         owner: (agent.owner ?? '').toLowerCase(),
+        hasRegistrationFile: !!agent.registrationFile,
       };
       const newHash = await computeContentHash(quickContentFields);
 
