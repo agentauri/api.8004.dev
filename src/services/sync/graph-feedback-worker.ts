@@ -46,8 +46,7 @@ const SUPPORTED_CHAIN_IDS = [11155111, 84532, 80002, 59141, 296, 998, 1351057110
 
 /**
  * Raw Feedback entity from The Graph
- * Note: feedbackUri field was removed as it's not in the subgraph schema
- * ERC-8004 v1.0 (Jan 26) added: endpoint, feedbackIndex
+ * ERC-8004 v1.0 (Jan 26) fields: endpoint, feedbackIndex, feedbackURI, feedbackHash
  */
 interface GraphFeedback {
   id: string;
@@ -60,10 +59,14 @@ interface GraphFeedback {
   score: string;
   tag1: string | null;
   tag2: string | null;
-  /** Service endpoint reference (ERC-8004 v1.0) - may not be present in older subgraph */
-  endpoint?: string | null;
-  /** Per-client feedback index (ERC-8004 v1.0) - may not be present in older subgraph */
-  feedbackIndex?: string | null;
+  /** Service endpoint reference (ERC-8004 v1.0) */
+  endpoint: string | null;
+  /** Per-client feedback index (ERC-8004 v1.0) */
+  feedbackIndex: string | null;
+  /** URI to off-chain feedback content (IPFS or HTTPS) */
+  feedbackURI: string | null;
+  /** KECCAK-256 hash of feedback content */
+  feedbackHash: string | null;
   isRevoked: boolean;
   createdAt: string;
 }
@@ -92,7 +95,7 @@ interface GraphFeedbackSyncState {
 /**
  * GraphQL query for fetching feedback from The Graph
  * Orders by createdAt ascending to process oldest first and paginate efficiently
- * ERC-8004 v1.0 (Jan 26) added: endpoint, feedbackIndex
+ * ERC-8004 v1.0 (Jan 26) fields: endpoint, feedbackIndex, feedbackURI, feedbackHash
  */
 const FEEDBACK_QUERY = `
   query GetFeedback($first: Int!, $skip: Int!, $createdAtGt: BigInt!) {
@@ -118,6 +121,8 @@ const FEEDBACK_QUERY = `
       tag2
       endpoint
       feedbackIndex
+      feedbackURI
+      feedbackHash
       isRevoked
       createdAt
     }
@@ -315,7 +320,8 @@ async function processFeedback(
     score: normalizeScore(feedback.score),
     tags: JSON.stringify(buildTags(feedback.tag1, feedback.tag2)),
     context: undefined, // Graph feedback doesn't have context field
-    feedback_uri: undefined, // feedbackUri not available in Graph subgraph
+    feedback_uri: feedback.feedbackURI ?? undefined,
+    feedback_hash: feedback.feedbackHash ?? undefined,
     submitter: feedback.clientAddress,
     eas_uid: toGraphFeedbackUid(feedback.id), // Use eas_uid for dedup with "graph:" prefix
     tx_id: undefined, // Transaction hash not available from Graph

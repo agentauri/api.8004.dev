@@ -99,6 +99,8 @@ export interface AgentFeedbackRow {
   tags: string;
   context: string | null;
   feedback_uri: string | null;
+  /** KECCAK-256 hash of feedback content (ERC-8004 v1.0) */
+  feedback_hash: string | null;
   submitter: string;
   eas_uid: string | null;
   /** Transaction hash from EAS attestation */
@@ -176,6 +178,8 @@ export interface NewFeedback {
   tags: string;
   context?: string;
   feedback_uri?: string;
+  /** KECCAK-256 hash of feedback content (ERC-8004 v1.0) */
+  feedback_hash?: string;
   submitter: string;
   eas_uid?: string;
   /** Transaction hash from EAS attestation */

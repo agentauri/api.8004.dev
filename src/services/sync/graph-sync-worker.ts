@@ -35,6 +35,8 @@ interface GraphAgent {
   operators: string[];
   createdAt: string;
   updatedAt: string;
+  /** On-chain agent wallet set via setAgentWallet() with EIP-712 signature */
+  agentWallet: string | null;
   registrationFile: {
     name: string;
     description: string;
@@ -106,6 +108,7 @@ async function fetchAgentsFromGraph(
         chainId
         agentId
         agentURI
+        agentWallet
         owner
         operators
         createdAt
@@ -218,7 +221,7 @@ function agentToPayload(
     has_registration_file: hasReg,
     ens: reg?.ens ?? '',
     did: reg?.did ?? '',
-    wallet_address: '', // NOTE: agentWallet removed in ERC-8004 v1.0
+    wallet_address: agent.agentWallet ?? '', // On-chain agentWallet (set via setAgentWallet)
     owner: (agent.owner ?? '').toLowerCase(),
     operators: agent.operators ?? [],
     mcp_tools: reg?.mcpTools?.map((t) => t.name) ?? [],

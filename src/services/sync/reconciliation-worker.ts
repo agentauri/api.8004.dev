@@ -28,6 +28,8 @@ const GRAPH_ENDPOINTS: Record<number, string> = {
 interface GraphAgent {
   chainId: string;
   agentId: string;
+  /** On-chain agent wallet set via setAgentWallet() with EIP-712 signature */
+  agentWallet: string | null;
   registrationFile: {
     name: string;
     description: string;
@@ -161,6 +163,7 @@ async function fetchAgentsByIds(agentIds: string[], graphApiKey?: string): Promi
         agents(where: { agentId_in: $ids }) {
           chainId
           agentId
+          agentWallet
           owner
           operators
           registrationFile {
@@ -253,7 +256,7 @@ async function indexAgentsToQdrant(
         has_registration_file: hasReg,
         ens: reg?.ens ?? '',
         did: reg?.did ?? '',
-        wallet_address: '',
+        wallet_address: agent.agentWallet ?? '', // On-chain agentWallet (set via setAgentWallet)
         owner: (agent.owner ?? '').toLowerCase(),
         operators: agent.operators ?? [],
         mcp_tools: reg?.mcpTools?.map((t) => t.name) ?? [],
