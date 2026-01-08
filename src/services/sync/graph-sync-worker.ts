@@ -17,13 +17,13 @@ import { type AgentReachability, createReachabilityService } from '../reachabili
 import { type ContentFields, computeContentHash, computeEmbedHash } from './content-hash';
 
 // Graph endpoints per chain (using gateway.thegraph.com with subgraph IDs)
+// NOTE: Base Sepolia and Polygon Amoy subgraphs were deprecated after ERC-8004 v1.0 update
+// TODO: Add new subgraph IDs when they are deployed
 const GRAPH_ENDPOINTS: Record<number, string> = {
   11155111:
     'https://gateway.thegraph.com/api/subgraphs/id/6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT',
-  84532:
-    'https://gateway.thegraph.com/api/subgraphs/id/GjQEDgEKqoh5Yc8MUgxoQoRATEJdEiH7HbocfR1aFiHa',
-  80002:
-    'https://gateway.thegraph.com/api/subgraphs/id/2A1JB18r1mF2VNP4QBH4mmxd74kbHoM6xLXC8ABAKf7j',
+  // 84532: Deprecated - waiting for new subgraph deployment
+  // 80002: Deprecated - waiting for new subgraph deployment
 };
 
 interface GraphAgent {
@@ -45,8 +45,7 @@ interface GraphAgent {
     x402support: boolean;
     ens: string | null;
     did: string | null;
-    agentWallet: string | null;
-    agentWalletChainId: string | null;
+    // NOTE: agentWallet and agentWalletChainId removed in ERC-8004 v1.0
     mcpVersion: string | null;
     a2aVersion: string | null;
     supportedTrusts: string[] | null;
@@ -121,8 +120,6 @@ async function fetchAgentsFromGraph(
           x402support
           ens
           did
-          agentWallet
-          agentWalletChainId
           mcpVersion
           a2aVersion
           supportedTrusts
@@ -206,14 +203,7 @@ function agentToPayload(
     throw new Error(`Agent ${agent.id} has no registration file`);
   }
 
-  // Parse agentWalletChainId from BigInt string to number
-  let agentWalletChainId = 0;
-  if (reg.agentWalletChainId) {
-    const parsed = Number.parseInt(reg.agentWalletChainId, 10);
-    if (!Number.isNaN(parsed)) {
-      agentWalletChainId = parsed;
-    }
-  }
+  // NOTE: agentWallet and agentWalletChainId were removed in ERC-8004 v1.0
 
   return {
     agent_id: `${agent.chainId}:${agent.agentId}`,
@@ -229,7 +219,7 @@ function agentToPayload(
     has_registration_file: true,
     ens: reg.ens ?? '',
     did: reg.did ?? '',
-    wallet_address: reg.agentWallet ?? '',
+    wallet_address: '', // NOTE: agentWallet removed in ERC-8004 v1.0
     owner: (agent.owner ?? '').toLowerCase(),
     operators: agent.operators ?? [],
     mcp_tools: reg.mcpTools?.map((t) => t.name) ?? [],
@@ -247,7 +237,7 @@ function agentToPayload(
     // New fields from subgraph schema
     mcp_version: reg.mcpVersion ?? '',
     a2a_version: reg.a2aVersion ?? '',
-    agent_wallet_chain_id: agentWalletChainId,
+    agent_wallet_chain_id: 0, // NOTE: agentWalletChainId removed in ERC-8004 v1.0
     supported_trusts: reg.supportedTrusts ?? [],
     agent_uri: agent.agentURI ?? '',
     updated_at: agent.updatedAt

@@ -16,13 +16,13 @@ import { createQdrantClient } from '../qdrant';
 
 // Graph endpoints per chain (using gateway.thegraph.com with subgraph IDs)
 // Must match graph-sync-worker.ts endpoints
+// NOTE: Base Sepolia and Polygon Amoy subgraphs were deprecated after ERC-8004 v1.0 update
+// TODO: Add new subgraph IDs when they are deployed
 const GRAPH_ENDPOINTS: Record<number, string> = {
   11155111:
     'https://gateway.thegraph.com/api/subgraphs/id/6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT',
-  84532:
-    'https://gateway.thegraph.com/api/subgraphs/id/GjQEDgEKqoh5Yc8MUgxoQoRATEJdEiH7HbocfR1aFiHa',
-  80002:
-    'https://gateway.thegraph.com/api/subgraphs/id/2A1JB18r1mF2VNP4QBH4mmxd74kbHoM6xLXC8ABAKf7j',
+  // 84532: Deprecated - waiting for new subgraph deployment
+  // 80002: Deprecated - waiting for new subgraph deployment
 };
 
 interface GraphAgent {
@@ -43,7 +43,7 @@ interface GraphAgent {
     createdAt?: string;
     mcpVersion?: string;
     a2aVersion?: string;
-    agentWalletChainId?: string;
+    // NOTE: agentWalletChainId removed in ERC-8004 v1.0
     supportedTrusts?: string[];
   } | null;
   owner: string;
@@ -176,7 +176,6 @@ async function fetchAgentsByIds(agentIds: string[], graphApiKey?: string): Promi
             createdAt
             mcpVersion
             a2aVersion
-            agentWalletChainId
             supportedTrusts
           }
         }
@@ -234,14 +233,7 @@ async function indexAgentsToQdrant(
 
       const vector = await generateEmbedding(text, env.VENICE_API_KEY);
 
-      // Parse agentWalletChainId from BigInt string to number
-      let agentWalletChainId = 0;
-      if (reg.agentWalletChainId) {
-        const parsed = Number.parseInt(reg.agentWalletChainId, 10);
-        if (!Number.isNaN(parsed)) {
-          agentWalletChainId = parsed;
-        }
-      }
+      // NOTE: agentWalletChainId was removed in ERC-8004 v1.0
 
       // Create payload
       const payload: AgentPayload = {
@@ -276,7 +268,7 @@ async function indexAgentsToQdrant(
         // New fields from subgraph schema
         mcp_version: reg.mcpVersion ?? '',
         a2a_version: reg.a2aVersion ?? '',
-        agent_wallet_chain_id: agentWalletChainId,
+        agent_wallet_chain_id: 0, // NOTE: agentWalletChainId removed in ERC-8004 v1.0
         supported_trusts: reg.supportedTrusts ?? [],
         agent_uri: '', // Not available in reconciliation context
         updated_at: '', // Not available in reconciliation context
