@@ -7,6 +7,8 @@ The Search API provides semantic search capabilities for finding AI agents using
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/api/v1/search` | Semantic search for agents |
+| POST | `/api/v1/search/stream` | Streaming search via SSE |
+| GET | `/api/v1/search/stream/info` | Streaming endpoint information |
 
 ## Semantic Search
 
@@ -86,8 +88,8 @@ Search for agents using natural language. The API uses vector embeddings for sem
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `minRep` | number | Minimum reputation score (0-5) |
-| `maxRep` | number | Maximum reputation score (0-5) |
+| `minRep` | number | Minimum reputation score (0-100) |
+| `maxRep` | number | Maximum reputation score (0-100) |
 
 #### Trust & Reachability Filters
 
@@ -160,7 +162,8 @@ curl -X POST "https://api.8004.dev/api/v1/search" \
       },
       "oasfSource": "llm-classification",
       "searchScore": 0.92,
-      "matchReasons": ["semantic_match", "skill_match"]
+      "matchReasons": ["semantic_match", "skill_match"],
+      "reputationScore": 82.5
     }
   ],
   "meta": {
@@ -197,6 +200,150 @@ The `meta.searchMode` field indicates which search was used:
 | `vector` | Semantic vector search was used |
 | `name` | Name substring search was used |
 | `fallback` | Vector search returned 0 results, fell back to name search |
+
+---
+
+## Streaming Search (SSE)
+
+```
+POST /api/v1/search/stream
+```
+
+Stream search results via Server-Sent Events (SSE). Results are streamed progressively as they are processed, providing real-time updates.
+
+### Request Body
+
+Same as the standard search endpoint.
+
+### Example Request
+
+```bash
+curl -X POST "https://api.8004.dev/api/v1/search/stream" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  -d '{
+    "query": "AI coding assistant",
+    "limit": 5
+  }'
+```
+
+### SSE Event Types
+
+| Event Type | Description |
+|------------|-------------|
+| `search_started` | Search initiated with query and filters |
+| `vector_results` | Initial vector search results count |
+| `enrichment_progress` | Progress updates during agent enrichment |
+| `agent_enriched` | Individual enriched agent data (streamed one by one) |
+| `rerank_started` | Reranking phase started (if enabled) |
+| `rerank_progress` | Reranking progress updates |
+| `search_complete` | Final results with all agents and metadata |
+| `error` | Error occurred during search |
+
+### Example SSE Response
+
+```
+event: search_started
+data: {"type":"search_started","timestamp":"2024-01-15T10:00:00Z","data":{"query":"AI coding assistant","limit":5}}
+
+event: vector_results
+data: {"type":"vector_results","timestamp":"2024-01-15T10:00:01Z","data":{"count":25,"total":25,"hasMore":false}}
+
+event: enrichment_progress
+data: {"type":"enrichment_progress","timestamp":"2024-01-15T10:00:01Z","data":{"total":25,"phase":"classifications_loaded"}}
+
+event: agent_enriched
+data: {"type":"agent_enriched","timestamp":"2024-01-15T10:00:02Z","data":{"index":1,"total":25,"agent":{"id":"11155111:1234","name":"CodeAssist Pro",...}}}
+
+event: agent_enriched
+data: {"type":"agent_enriched","timestamp":"2024-01-15T10:00:02Z","data":{"index":2,"total":25,"agent":{"id":"11155111:5678","name":"DevHelper AI",...}}}
+
+event: search_complete
+data: {"type":"search_complete","timestamp":"2024-01-15T10:00:05Z","data":{"query":"AI coding assistant","total":5,"returned":5,"hasMore":false,"agents":[...]}}
+```
+
+### JavaScript Client Example
+
+```javascript
+const eventSource = new EventSource('/api/v1/search/stream', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-API-Key': 'your-api-key'
+  },
+  body: JSON.stringify({
+    query: 'AI coding assistant',
+    limit: 5
+  })
+});
+
+eventSource.addEventListener('agent_enriched', (event) => {
+  const data = JSON.parse(event.data);
+  console.log(`Agent ${data.data.index}/${data.data.total}:`, data.data.agent);
+});
+
+eventSource.addEventListener('search_complete', (event) => {
+  const data = JSON.parse(event.data);
+  console.log('Search complete:', data.data.agents);
+  eventSource.close();
+});
+
+eventSource.addEventListener('error', (event) => {
+  console.error('Search error:', event);
+  eventSource.close();
+});
+```
+
+---
+
+## Streaming Search Info
+
+```
+GET /api/v1/search/stream/info
+```
+
+Get information about the streaming search endpoint.
+
+### Example Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "description": "Streaming search results via Server-Sent Events (SSE)",
+    "endpoint": "POST /api/v1/search/stream",
+    "eventTypes": [
+      {
+        "type": "search_started",
+        "description": "Search initiated with query and filters"
+      },
+      {
+        "type": "vector_results",
+        "description": "Initial vector search results count"
+      },
+      {
+        "type": "agent_enriched",
+        "description": "Individual enriched agent data (streamed one by one)"
+      },
+      {
+        "type": "search_complete",
+        "description": "Final results with all agents and metadata"
+      },
+      {
+        "type": "error",
+        "description": "Error occurred during search"
+      }
+    ],
+    "notes": [
+      "Use EventSource API or SSE client library",
+      "Each event contains timestamp and typed data",
+      "agent_enriched events stream individual results as they're processed",
+      "search_complete contains the final aggregated results"
+    ]
+  }
+}
+```
 
 ---
 
@@ -278,6 +425,21 @@ curl -X POST "https://api.8004.dev/api/v1/search" \
       "mcp": true,
       "a2a": true,
       "filterMode": "OR"
+    }
+  }'
+```
+
+### Reputation Filtering
+
+```bash
+# Find high-reputation agents (score >= 70)
+curl -X POST "https://api.8004.dev/api/v1/search" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "data analysis",
+    "filters": {
+      "minRep": 70
     }
   }'
 ```

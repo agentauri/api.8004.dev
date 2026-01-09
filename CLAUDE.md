@@ -73,20 +73,26 @@ This project is designed to be open source (MIT License). All contributions must
 api.8004.dev/
 ├── src/
 │   ├── index.ts                    # Main entry, queue/scheduled handlers
-│   ├── routes/                     # API route handlers (17 files)
+│   ├── routes/                     # API route handlers (28 files)
 │   │   ├── agents-qdrant.ts        # /api/v1/agents (Qdrant-based)
-│   │   ├── search-qdrant.ts        # /api/v1/search (vector search)
+│   │   ├── analytics.ts            # /api/v1/analytics
 │   │   ├── chains.ts               # /api/v1/chains
 │   │   ├── classify.ts             # /api/v1/agents/:id/classify
 │   │   ├── compose.ts              # /api/v1/compose (team building)
 │   │   ├── events.ts               # /api/v1/events (SSE)
+│   │   ├── feedbacks.ts            # /api/v1/feedbacks
 │   │   ├── health.ts               # /api/v1/health
 │   │   ├── intents.ts              # /api/v1/intents (workflows)
+│   │   ├── keys.ts                 # /api/v1/keys (API key management)
+│   │   ├── leaderboard.ts          # /api/v1/leaderboard
 │   │   ├── openapi.ts              # /api/v1/openapi
 │   │   ├── reputation.ts           # /api/v1/agents/:id/reputation
 │   │   ├── scripts.ts              # Public scripts
+│   │   ├── search-qdrant.ts        # /api/v1/search (vector search)
 │   │   ├── stats.ts                # /api/v1/stats
 │   │   ├── taxonomy.ts             # /api/v1/taxonomy
+│   │   ├── verification.ts         # /api/v1/verification
+│   │   ├── webhooks.ts             # /api/v1/webhooks
 │   │   └── validations.ts          # Request validation schemas
 │   ├── services/                   # Business logic (30+ services)
 │   │   ├── qdrant.ts               # Qdrant Cloud client
@@ -123,7 +129,7 @@ api.8004.dev/
 │   │   └── utils/                  # Errors, validation, rate-limit
 │   ├── mcp/                        # Model Context Protocol
 │   └── types/                      # TypeScript type definitions
-├── migrations/                     # D1 database migrations (13 files)
+├── migrations/                     # D1 database migrations (24 files)
 ├── test/                           # Unit & integration tests
 └── scripts/                        # E2E tests, utilities
 ```
@@ -176,6 +182,10 @@ VENICE_API_KEY             # Venice AI for embeddings
 SEPOLIA_RPC_URL            # Ethereum Sepolia
 BASE_SEPOLIA_RPC_URL       # Base Sepolia
 POLYGON_AMOY_RPC_URL       # Polygon Amoy
+LINEA_SEPOLIA_RPC_URL      # Linea Sepolia
+HEDERA_TESTNET_RPC_URL     # Hedera Testnet
+HYPEREVM_TESTNET_RPC_URL   # HyperEVM Testnet
+SKALE_BASE_SEPOLIA_RPC_URL # SKALE Base Sepolia
 ```
 
 ### Optional
@@ -252,7 +262,7 @@ agent_classifications (agent_id, skills, domains, confidence, model_version)
 classification_queue (agent_id, status, attempts, error)
 
 -- Feedback & reputation
-agent_feedback (agent_id, score, tags, submitter, eas_uid, tx_id)
+agent_feedback (agent_id, score, tags, submitter, eas_uid, tx_id, feedback_index, endpoint, feedback_hash)
 agent_reputation (agent_id, average_score, feedback_count, distribution)
 
 -- Sync state
@@ -366,6 +376,10 @@ intent_template_steps (template_id, step_order, role, required_skills)
 | Ethereum Sepolia | 11155111 | Testnet |
 | Base Sepolia | 84532 | Testnet |
 | Polygon Amoy | 80002 | Testnet |
+| Linea Sepolia | 59141 | Testnet |
+| Hedera Testnet | 296 | Testnet |
+| HyperEVM Testnet | 998 | Testnet |
+| SKALE Base Sepolia | 1351057110 | Testnet |
 
 ---
 

@@ -25,7 +25,7 @@ Backend service for [8004.dev](https://8004.dev) - the ERC-8004 Agent Explorer.
 - Trust Graph with PageRank scoring
 - Intent Templates for multi-agent orchestration
 - I/O compatibility matching for agent discovery
-- Multi-chain support (Ethereum Sepolia, Base Sepolia, Polygon Amoy)
+- Multi-chain support (Ethereum Sepolia, Base Sepolia, Polygon Amoy, Linea Sepolia, Hedera Testnet, HyperEVM Testnet, SKALE Base Sepolia)
 - Rate limiting and caching
 - 70% branch coverage minimum (enforced by CI)
 
@@ -67,6 +67,7 @@ pnpm run lint         # Lint
 | GET | `/api/v1/agents/:agentId/classify` | Get OASF classification |
 | POST | `/api/v1/agents/:agentId/classify` | Request classification |
 | GET | `/api/v1/agents/:agentId/compatible` | Find I/O compatible agents |
+| GET | `/api/v1/agents/:agentId/reputation` | Get agent reputation |
 | POST | `/api/v1/search` | Semantic search |
 | GET | `/api/v1/chains` | Chain statistics |
 | GET | `/api/v1/stats` | Platform statistics |
@@ -74,7 +75,13 @@ pnpm run lint         # Lint
 | GET | `/api/v1/intents` | List intent templates |
 | POST | `/api/v1/intents/:id/match` | Match agents to template |
 | GET | `/api/v1/events` | Agent lifecycle events |
-| GET | `/api/v1/compose` | Multi-agent workflow composition |
+| POST | `/api/v1/compose` | Multi-agent workflow composition |
+| GET | `/api/v1/feedbacks` | List feedbacks |
+| GET | `/api/v1/leaderboard` | Agent leaderboard |
+| GET | `/api/v1/analytics` | Analytics data |
+| POST | `/api/v1/keys` | API key management |
+| POST | `/api/v1/webhooks` | Webhook management |
+| POST | `/api/v1/verification` | Agent verification |
 | GET | `/api/v1/openapi` | OpenAPI specification |
 
 ### Example Requests

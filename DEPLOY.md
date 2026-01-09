@@ -130,6 +130,18 @@ wrangler secret put BASE_SEPOLIA_RPC_URL
 wrangler secret put POLYGON_AMOY_RPC_URL
 # Enter: https://polygon-amoy.g.alchemy.com/v2/your-key
 
+wrangler secret put LINEA_SEPOLIA_RPC_URL
+# Enter: https://linea-sepolia.infura.io/v3/your-key
+
+wrangler secret put HEDERA_TESTNET_RPC_URL
+# Enter: https://testnet.hashio.io/api
+
+wrangler secret put HYPEREVM_TESTNET_RPC_URL
+# Enter: https://api.hyperliquid-testnet.xyz/evm
+
+wrangler secret put SKALE_BASE_SEPOLIA_RPC_URL
+# Enter: https://testnet.skalenodes.com/v1/your-key
+
 # Qdrant Cloud
 wrangler secret put QDRANT_URL
 # Enter: https://your-cluster.region.gcp.cloud.qdrant.io
@@ -172,6 +184,48 @@ wrangler d1 execute 8004-backend-db --file=./migrations/0006_trust_graph.sql --r
 # Intent templates
 wrangler d1 execute 8004-backend-db --file=./migrations/0007_intent_templates.sql --remote
 
+# Qdrant sync state
+wrangler d1 execute 8004-backend-db --file=./migrations/0008_qdrant_sync_state.sql --remote
+
+# Graph feedback sync
+wrangler d1 execute 8004-backend-db --file=./migrations/0009_graph_feedback_sync.sql --remote
+
+# Normalize EAS scores
+wrangler d1 execute 8004-backend-db --file=./migrations/0010_normalize_eas_scores.sql --remote
+
+# Agent evaluations
+wrangler d1 execute 8004-backend-db --file=./migrations/0010_agent_evaluations.sql --remote
+
+# API keys
+wrangler d1 execute 8004-backend-db --file=./migrations/0011_api_keys.sql --remote
+
+# Phase 1 endpoints
+wrangler d1 execute 8004-backend-db --file=./migrations/0012_phase1_endpoints.sql --remote
+
+# Evaluations queue
+wrangler d1 execute 8004-backend-db --file=./migrations/0013_evaluations_queue.sql --remote
+
+# Webhooks
+wrangler d1 execute 8004-backend-db --file=./migrations/0014_webhooks.sql --remote
+
+# Verification
+wrangler d1 execute 8004-backend-db --file=./migrations/0015_verification.sql --remote
+
+# API key enhancements
+wrangler d1 execute 8004-backend-db --file=./migrations/0016_api_key_enhancements.sql --remote
+
+# Analytics
+wrangler d1 execute 8004-backend-db --file=./migrations/0017_analytics.sql --remote
+
+# Embedding version
+wrangler d1 execute 8004-backend-db --file=./migrations/0018_embedding_version.sql --remote
+
+# ERC-8004 v1 feedback fields
+wrangler d1 execute 8004-backend-db --file=./migrations/0019_erc8004_v1_feedback_fields.sql --remote
+
+# Feedback hash
+wrangler d1 execute 8004-backend-db --file=./migrations/0020_feedback_hash.sql --remote
+
 # Verify tables were created
 wrangler d1 execute 8004-backend-db --remote \
   --command="SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
@@ -179,17 +233,25 @@ wrangler d1 execute 8004-backend-db --remote \
 
 Expected tables:
 - `agent_classifications`
+- `agent_evaluations`
 - `agent_feedback`
 - `agent_reliability`
 - `agent_reputation`
 - `agent_trust_scores`
+- `agent_verification`
+- `analytics_events`
+- `api_keys`
 - `classification_queue`
 - `eas_sync_state`
+- `evaluations_queue`
+- `graph_feedback_sync`
 - `intent_template_steps`
 - `intent_templates`
+- `qdrant_sync_state`
 - `trust_edges`
 - `trust_graph_state`
 - `wallet_trust_scores`
+- `webhooks`
 
 ## Step 6: Deploy
 

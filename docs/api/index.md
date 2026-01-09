@@ -30,6 +30,43 @@ See [Authentication](/guide/authentication) for details.
 | [Classification](/api/classification) | OASF skill/domain classification |
 | [Reputation](/api/reputation) | Agent feedback and reputation scores |
 
+### Agent Discovery
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/agents` | List agents with 27+ filters |
+| GET | `/api/v1/agents/batch` | Batch fetch multiple agents |
+| GET | `/api/v1/agents/:agentId` | Get single agent details |
+| GET | `/api/v1/agents/:agentId/similar` | Find similar agents |
+| GET | `/api/v1/agents/:agentId/complementary` | Find complementary agents |
+| GET | `/api/v1/agents/:agentId/compatible` | Find I/O compatible agents |
+
+### Agent Evaluation
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/agents/:agentId/health` | Agent health status |
+| GET | `/api/v1/agents/:agentId/evaluations` | Evaluation history |
+| GET | `/api/v1/agents/:agentId/verification` | Verification status |
+| GET | `/api/v1/agents/:agentId/reputation` | Reputation and feedback |
+| GET | `/api/v1/agents/:agentId/reputation/history` | Reputation over time |
+| GET | `/api/v1/agents/:agentId/reputation/feedback` | Feedback list |
+
+### Search
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/search` | Semantic vector search |
+| POST | `/api/v1/search/stream` | Streaming search via SSE |
+| GET | `/api/v1/search/stream/info` | Streaming endpoint info |
+
+### Classification
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/agents/:agentId/classify` | Get OASF classification |
+| POST | `/api/v1/agents/:agentId/classify` | Request classification |
+
 ### Advanced Features
 
 | Endpoint | Description |
@@ -38,6 +75,21 @@ See [Authentication](/guide/authentication) for details.
 | [Compose](/api/compose) | Build teams of complementary agents |
 | [Intents](/api/intents) | Intent templates for multi-agent workflows |
 | [Events](/api/events) | Real-time updates via SSE |
+
+### Reputation & Leaderboard
+
+| Endpoint | Description |
+|----------|-------------|
+| [Feedbacks](/api/feedbacks) | Global feedback list across all agents |
+| [Leaderboard](/api/leaderboard) | Agents ranked by reputation score |
+
+### Platform Management
+
+| Endpoint | Description |
+|----------|-------------|
+| [Webhooks](/api/webhooks) | Subscribe to real-time events |
+| [API Keys](/api/keys) | Manage API keys and quotas |
+| [Analytics](/api/analytics) | Platform metrics and usage statistics |
 
 ### Data Endpoints
 
@@ -96,6 +148,7 @@ See [Error Handling](/guide/error-handling) for error codes.
 | `mcp` | boolean | Filter by MCP support |
 | `a2a` | boolean | Filter by A2A support |
 | `active` | boolean | Filter by active status |
+| `hasRegistrationFile` | boolean | Filter by registration file |
 
 ### Sorting
 
@@ -126,3 +179,15 @@ See [Error Handling](/guide/error-handling) for error codes.
 | Evaluation | 30 req/min |
 
 See [Rate Limiting](/guide/rate-limiting) for details.
+
+## Reputation Scores
+
+All reputation scores use a **0-100 scale**:
+
+| Range | Category | Description |
+|-------|----------|-------------|
+| 0-33 | Low | Poor experience |
+| 34-66 | Medium | Average experience |
+| 67-100 | High | Excellent experience |
+
+Filter agents by reputation using `minRep` and `maxRep` parameters.

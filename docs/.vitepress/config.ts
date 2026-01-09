@@ -75,7 +75,14 @@ export default defineConfig({
             { text: 'Agents', link: '/api/agents' },
             { text: 'Search', link: '/api/search' },
             { text: 'Classification', link: '/api/classification' },
+          ],
+        },
+        {
+          text: 'Reputation & Feedback',
+          items: [
             { text: 'Reputation', link: '/api/reputation' },
+            { text: 'Feedbacks', link: '/api/feedbacks' },
+            { text: 'Leaderboard', link: '/api/leaderboard' },
           ],
         },
         {
@@ -94,6 +101,14 @@ export default defineConfig({
             { text: 'Stats', link: '/api/stats' },
             { text: 'Taxonomy', link: '/api/taxonomy' },
             { text: 'Health', link: '/api/health' },
+          ],
+        },
+        {
+          text: 'Platform Management',
+          items: [
+            { text: 'API Keys', link: '/api/keys' },
+            { text: 'Webhooks', link: '/api/webhooks' },
+            { text: 'Analytics', link: '/api/analytics' },
           ],
         },
       ],
