@@ -20,7 +20,5 @@ export type { GraphSyncResult } from './graph-sync-worker';
 export { syncFromGraph } from './graph-sync-worker';
 export type { ReconciliationResult } from './reconciliation-worker';
 export { runReconciliation } from './reconciliation-worker';
-export type { SDKSyncOptions, SDKSyncResult } from './sdk-sync-worker';
-export { syncFromSDK } from './sdk-sync-worker';
 export type { ReembedOptions, ReembedResult } from './reembed-worker';
 export { getReembedQueueCount, markAgentsForReembed, processReembedQueue } from './reembed-worker';

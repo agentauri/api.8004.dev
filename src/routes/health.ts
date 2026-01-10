@@ -8,7 +8,7 @@ import { getAllCircuitStatus } from '@/lib/utils/circuit-breaker';
 import { getCacheMetrics } from '@/services/cache-metrics';
 import { createEASIndexerService } from '@/services/eas-indexer';
 import { createSearchService } from '@/services/search';
-import { syncD1ToQdrant, syncFeedbackFromGraph, syncFromGraph, syncFromSDK } from '@/services/sync';
+import { syncD1ToQdrant, syncFeedbackFromGraph, syncFromGraph } from '@/services/sync';
 import type { Env, HealthResponse, ServiceStatus, Variables } from '@/types';
 
 const health = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -160,22 +160,13 @@ health.post('/sync-graph-feedback', async (c) => {
  * POST /api/v1/health/sync-qdrant
  * Manually trigger Qdrant sync from Graph and D1 (admin only)
  * Query params:
- *   - limit: Max agents to sync (default: 5000)
- *   - batchSize: Agents per batch (default: 10)
  *   - skipD1: Skip D1 sync (default: false)
- *   - includeAll: Include agents without registration files (default: false)
  */
 health.post('/sync-qdrant', async (c) => {
   const env = c.env;
 
   // Parse query parameters
-  const limitParam = c.req.query('limit');
-  const batchSizeParam = c.req.query('batchSize');
   const skipD1 = c.req.query('skipD1') === 'true';
-  const includeAll = c.req.query('includeAll') === 'true';
-
-  const limit = limitParam ? Number.parseInt(limitParam, 10) : 5000;
-  const batchSize = batchSizeParam ? Number.parseInt(batchSizeParam, 10) : 10;
 
   // Check required env vars
   if (!env.QDRANT_URL || !env.QDRANT_API_KEY || !env.VENICE_API_KEY) {
@@ -198,24 +189,10 @@ health.post('/sync-qdrant', async (c) => {
   };
 
   try {
-    // Use SDK sync if no Graph API key, otherwise use Graph sync
-    const useSDK = !env.GRAPH_API_KEY;
     const logger = c.get('logger');
+    logger.info('Starting Graph sync');
 
-    let agentSyncResult: {
-      newAgents: number;
-      updatedAgents: number;
-      errors: string[];
-      reembedded?: number;
-    };
-
-    if (useSDK) {
-      logger.info('Starting SDK sync', { limit, batchSize, includeAll });
-      agentSyncResult = await syncFromSDK(env, qdrantEnv, { limit, batchSize, includeAll });
-    } else {
-      logger.info('Starting Graph sync');
-      agentSyncResult = await syncFromGraph(env.DB, qdrantEnv);
-    }
+    const agentSyncResult = await syncFromGraph(env.DB, qdrantEnv);
 
     // Run D1 sync (optional)
     let d1Result = { classificationsUpdated: 0, reputationUpdated: 0, errors: [] as string[] };
@@ -226,12 +203,14 @@ health.post('/sync-qdrant', async (c) => {
     return c.json({
       success: true,
       data: {
-        source: useSDK ? 'sdk' : 'graph',
-        options: { limit, batchSize, skipD1, includeAll },
+        source: 'graph',
+        options: { skipD1 },
         agents: {
           newAgents: agentSyncResult.newAgents,
           updatedAgents: agentSyncResult.updatedAgents,
           reembedded: agentSyncResult.reembedded ?? 0,
+          skipped: agentSyncResult.skipped ?? 0,
+          hasMore: agentSyncResult.hasMore ?? false,
           errors: agentSyncResult.errors.slice(0, 10),
         },
         d1: skipD1
