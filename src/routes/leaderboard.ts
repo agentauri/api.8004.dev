@@ -79,9 +79,11 @@ leaderboard.get('/', async (c) => {
     data: result.entries,
     meta: {
       total: result.total,
+      limit: result.limit,
       hasMore: result.hasMore,
       nextCursor: result.nextCursor,
       period: result.period,
+      generatedAt: result.generatedAt,
     },
   };
 

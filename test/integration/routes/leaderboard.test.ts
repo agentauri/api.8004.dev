@@ -42,16 +42,15 @@ describe('GET /api/v1/leaderboard', () => {
     expect(body.success).toBe(true);
     expect(body.data.length).toBe(2);
 
-    // Check structure
+    // Check flat structure (matches FE BackendLeaderboardEntry)
     const entry = body.data[0];
-    expect(entry).toHaveProperty('rank');
-    expect(entry).toHaveProperty('agent');
-    expect(entry).toHaveProperty('reputation');
+    expect(entry).toHaveProperty('agentId');
+    expect(entry).toHaveProperty('chainId');
+    expect(entry).toHaveProperty('tokenId');
+    expect(entry).toHaveProperty('name');
+    expect(entry).toHaveProperty('score');
     expect(entry).toHaveProperty('feedbackCount');
     expect(entry).toHaveProperty('trend');
-    expect(entry.agent).toHaveProperty('id');
-    expect(entry.agent).toHaveProperty('name');
-    expect(entry.agent).toHaveProperty('chainId');
   });
 
   it('ranks agents by reputation score descending', async () => {
@@ -62,11 +61,13 @@ describe('GET /api/v1/leaderboard', () => {
     const response = await testRoute('/api/v1/leaderboard');
 
     const body = await response.json();
-    expect(body.data[0].reputation).toBeGreaterThanOrEqual(body.data[1].reputation);
-    expect(body.data[1].reputation).toBeGreaterThanOrEqual(body.data[2].reputation);
-    expect(body.data[0].rank).toBe(1);
-    expect(body.data[1].rank).toBe(2);
-    expect(body.data[2].rank).toBe(3);
+    // Sorted by score descending (90 > 70 > 50)
+    expect(body.data[0].score).toBeGreaterThanOrEqual(body.data[1].score);
+    expect(body.data[1].score).toBeGreaterThanOrEqual(body.data[2].score);
+    // Verify correct order
+    expect(body.data[0].agentId).toBe('11155111:2'); // score 90
+    expect(body.data[1].agentId).toBe('11155111:3'); // score 70
+    expect(body.data[2].agentId).toBe('11155111:1'); // score 50
   });
 
   it('calculates trend from historical data', async () => {

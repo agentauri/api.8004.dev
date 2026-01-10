@@ -45,11 +45,16 @@ trending.get('/', async (c) => {
     limit: query.limit,
   });
 
+  // Response structure matches FE BackendTrendingResponse
   const response = {
     success: true as const,
-    data: result.entries,
-    meta: {
+    data: {
+      agents: result.agents,
       period: result.period,
+      generatedAt: result.generatedAt,
+      nextRefreshAt: result.nextRefreshAt,
+    },
+    meta: {
       dataAvailable: result.dataAvailable,
       message: result.message,
     },

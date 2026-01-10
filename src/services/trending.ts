@@ -13,29 +13,52 @@ import type { AgentReputationRow } from '@/db/schema';
 import type { Env } from '@/types';
 
 /**
- * Trending entry for API response
+ * Trending agent entry for API response
+ * Matches FE BackendTrendingAgent interface
  */
-export interface TrendingEntry {
-  agent: {
-    id: string;
-    name: string;
-    image?: string;
-    chainId: number;
-  };
+export interface TrendingAgent {
+  /** Agent identifier (format: "chainId:tokenId") */
+  agentId: string;
+  /** Chain ID */
+  chainId: number;
+  /** Token ID */
+  tokenId: string;
+  /** Agent display name */
+  name: string;
+  /** Agent image URL */
+  image?: string;
+  /** Current reputation score (0-100) */
   currentScore: number;
+  /** Previous reputation score (before period) */
   previousScore: number;
-  change: number;
-  changePercent: number;
+  /** Absolute score change */
+  scoreChange: number;
+  /** Percentage change */
+  percentageChange: number;
+  /** Trend direction */
   trend: 'up' | 'down' | 'stable';
+  /** Whether agent is active */
+  active: boolean | null;
+  /** MCP protocol support */
+  hasMcp: boolean | null;
+  /** A2A protocol support */
+  hasA2a: boolean | null;
+  /** x402 payment support */
+  x402Support: boolean | null;
 }
 
 /**
  * Trending result
+ * Matches FE BackendTrendingResponse.data structure
  */
 export interface TrendingResult {
-  entries: TrendingEntry[];
-  period: string;
+  agents: TrendingAgent[];
+  period: '24h' | '7d' | '30d';
+  generatedAt: string;
+  nextRefreshAt?: string;
+  /** Whether historical data is available for calculation */
   dataAvailable: boolean;
+  /** Message when data not available */
   message?: string;
 }
 
@@ -113,13 +136,15 @@ export function createTrendingService(env: Env): TrendingService {
     async getTrending(params: TrendingQueryParams): Promise<TrendingResult> {
       const { period, limit } = params;
       const days = periodToDays(period);
+      const generatedAt = new Date().toISOString();
 
       // Check if we have historical data
       const snapshotState = await getSnapshotState(env.DB);
       if (!snapshotState?.last_snapshot_date) {
         return {
-          entries: [],
+          agents: [],
           period,
+          generatedAt,
           dataAvailable: false,
           message: 'Trending data not yet available. Historical snapshots start from today.',
         };
@@ -134,8 +159,9 @@ export function createTrendingService(env: Env): TrendingService {
       // If no historical data for this period, return graceful message
       if (historicalData.size === 0) {
         return {
-          entries: [],
+          agents: [],
           period,
+          generatedAt,
           dataAvailable: false,
           message: `No historical data available for ${period} period. Trending will be available after ${days} days.`,
         };
@@ -155,60 +181,64 @@ export function createTrendingService(env: Env): TrendingService {
       const changes: Array<{
         agentId: string;
         chainId: number;
+        tokenId: string;
         current: number;
         previous: number;
-        change: number;
-        changePercent: number;
+        scoreChange: number;
+        percentageChange: number;
       }> = [];
 
       for (const rep of currentReputations) {
         const previousData = historicalData.get(rep.agent_id);
         if (previousData) {
-          const change = rep.average_score - previousData.score;
-          const changePercent = previousData.score > 0 ? (change / previousData.score) * 100 : 0;
+          const scoreChange = rep.average_score - previousData.score;
+          const percentageChange = previousData.score > 0 ? (scoreChange / previousData.score) * 100 : 0;
+          const [, tokenId] = rep.agent_id.split(':');
 
           changes.push({
             agentId: rep.agent_id,
             chainId: rep.chain_id,
+            tokenId: tokenId ?? '0',
             current: rep.average_score,
             previous: previousData.score,
-            change,
-            changePercent,
+            scoreChange,
+            percentageChange,
           });
         }
       }
 
       // Sort by absolute change (biggest movers first)
-      changes.sort((a, b) => Math.abs(b.change) - Math.abs(a.change));
+      changes.sort((a, b) => Math.abs(b.scoreChange) - Math.abs(a.scoreChange));
 
       // Take top N
       const topChanges = changes.slice(0, limit);
 
-      // Build entries
-      const entries: TrendingEntry[] = topChanges.map((change) => {
-        const [chainIdStr, tokenId] = change.agentId.split(':');
-        const chainId = Number.parseInt(chainIdStr ?? '0', 10);
-
+      // Build agents array with flat structure
+      const agents: TrendingAgent[] = topChanges.map((change) => {
         let trend: 'up' | 'down' | 'stable' = 'stable';
-        if (change.change > 1) trend = 'up';
-        else if (change.change < -1) trend = 'down';
+        if (change.scoreChange > 1) trend = 'up';
+        else if (change.scoreChange < -1) trend = 'down';
 
         return {
-          agent: {
-            id: change.agentId,
-            name: `Agent ${tokenId}`,
-            chainId,
-          },
+          agentId: change.agentId,
+          chainId: change.chainId,
+          tokenId: change.tokenId,
+          name: `Agent #${change.tokenId}`,
+          image: undefined,
           currentScore: Math.round(change.current * 100) / 100,
           previousScore: Math.round(change.previous * 100) / 100,
-          change: Math.round(change.change * 100) / 100,
-          changePercent: Math.round(change.changePercent * 10) / 10,
+          scoreChange: Math.round(change.scoreChange * 100) / 100,
+          percentageChange: Math.round(change.percentageChange * 10) / 10,
           trend,
+          active: null,
+          hasMcp: null,
+          hasA2a: null,
+          x402Support: null,
         };
       });
 
-      // Enrich with agent names from Qdrant
-      if (env.QDRANT_URL && env.QDRANT_API_KEY && entries.length > 0) {
+      // Enrich with agent data from Qdrant
+      if (env.QDRANT_URL && env.QDRANT_API_KEY && agents.length > 0) {
         try {
           const { createQdrantClient } = await import('./qdrant');
           const qdrant = createQdrantClient({
@@ -217,26 +247,33 @@ export function createTrendingService(env: Env): TrendingService {
             QDRANT_COLLECTION: env.QDRANT_COLLECTION || 'agents',
           });
 
-          const agentIds = entries.map((e) => e.agent.id);
+          const agentIds = agents.map((a) => a.agentId);
           const points = await qdrant.getByIds(agentIds);
 
+          // Create lookup map with all relevant fields
+          interface QdrantTrendingPayload {
+            name?: string;
+            image?: string;
+            active?: boolean;
+            hasMcp?: boolean;
+            hasA2a?: boolean;
+            x402Support?: boolean;
+          }
+
           const agentDataMap = new Map(
-            points.map((p) => [
-              p.id as string,
-              {
-                name: (p.payload as { name?: string })?.name,
-                image: (p.payload as { image?: string })?.image,
-              },
-            ])
+            points.map((p) => [p.id as string, p.payload as QdrantTrendingPayload])
           );
 
-          for (const entry of entries) {
-            const data = agentDataMap.get(entry.agent.id);
-            if (data?.name) {
-              entry.agent.name = data.name;
-            }
-            if (data?.image) {
-              entry.agent.image = data.image;
+          // Enrich agents with Qdrant data
+          for (const agent of agents) {
+            const data = agentDataMap.get(agent.agentId);
+            if (data) {
+              if (data.name) agent.name = data.name;
+              if (data.image) agent.image = data.image;
+              if (data.active !== undefined) agent.active = data.active;
+              if (data.hasMcp !== undefined) agent.hasMcp = data.hasMcp;
+              if (data.hasA2a !== undefined) agent.hasA2a = data.hasA2a;
+              if (data.x402Support !== undefined) agent.x402Support = data.x402Support;
             }
           }
         } catch (error) {
@@ -245,8 +282,9 @@ export function createTrendingService(env: Env): TrendingService {
       }
 
       return {
-        entries,
+        agents,
         period,
+        generatedAt,
         dataAvailable: true,
       };
     },

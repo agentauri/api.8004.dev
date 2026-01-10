@@ -36,16 +36,18 @@ describe('GET /api/v1/feedbacks', () => {
     expect(body.success).toBe(true);
     expect(body.data.length).toBe(2);
     expect(body.meta.total).toBe(2);
+    expect(body.meta.limit).toBeDefined();
 
-    // Check feedback structure
+    // Check feedback structure (matches FE BackendGlobalFeedback)
     const feedback = body.data[0];
     expect(feedback).toHaveProperty('id');
     expect(feedback).toHaveProperty('agentId');
-    expect(feedback).toHaveProperty('chainId');
+    expect(feedback).toHaveProperty('agentName');
+    expect(feedback).toHaveProperty('agentChainId');
     expect(feedback).toHaveProperty('score');
     expect(feedback).toHaveProperty('tags');
     expect(feedback).toHaveProperty('submitter');
-    expect(feedback).toHaveProperty('timestamp');
+    expect(feedback).toHaveProperty('submittedAt');
   });
 
   it('filters by scoreCategory=positive (score >= 70)', async () => {
@@ -97,7 +99,7 @@ describe('GET /api/v1/feedbacks', () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.data.length).toBe(1);
-    expect(body.data[0].chainId).toBe(11155111);
+    expect(body.data[0].agentChainId).toBe(11155111);
   });
 
   it('respects limit parameter', async () => {
@@ -138,7 +140,7 @@ describe('GET /api/v1/feedbacks', () => {
 
   // Note: Request ID and security headers are tested in index.test.ts
 
-  it('includes meta stats', async () => {
+  it('includes stats at root level', async () => {
     await insertMockFeedback('11155111:1', { score: 85 });
     await insertMockFeedback('11155111:2', { score: 55 });
     await insertMockFeedback('11155111:3', { score: 25 });
@@ -147,10 +149,12 @@ describe('GET /api/v1/feedbacks', () => {
 
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body.meta.stats).toBeDefined();
-    expect(body.meta.stats.positive).toBe(1);
-    expect(body.meta.stats.neutral).toBe(1);
-    expect(body.meta.stats.negative).toBe(1);
+    // Stats at root level (matches FE BackendGlobalFeedbacksResponse)
+    expect(body.stats).toBeDefined();
+    expect(body.stats.total).toBe(3);
+    expect(body.stats.positive).toBe(1);
+    expect(body.stats.neutral).toBe(1);
+    expect(body.stats.negative).toBe(1);
   });
 
   it('returns validation error for invalid scoreCategory', async () => {

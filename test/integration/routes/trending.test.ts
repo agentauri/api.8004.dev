@@ -27,7 +27,7 @@ describe('GET /api/v1/trending', () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.success).toBe(true);
-    expect(body.data).toEqual([]);
+    expect(body.data.agents).toEqual([]);
     expect(body.meta.dataAvailable).toBe(false);
     expect(body.meta.message).toBeDefined();
   });
@@ -58,19 +58,19 @@ describe('GET /api/v1/trending', () => {
     const body = await response.json();
     expect(body.success).toBe(true);
     expect(body.meta.dataAvailable).toBe(true);
-    expect(body.data.length).toBeGreaterThan(0);
+    expect(body.data.agents.length).toBeGreaterThan(0);
 
-    // Check structure
-    const entry = body.data[0];
-    expect(entry).toHaveProperty('agent');
+    // Check flat structure (matches FE BackendTrendingAgent)
+    const entry = body.data.agents[0];
+    expect(entry).toHaveProperty('agentId');
+    expect(entry).toHaveProperty('chainId');
+    expect(entry).toHaveProperty('tokenId');
+    expect(entry).toHaveProperty('name');
     expect(entry).toHaveProperty('currentScore');
     expect(entry).toHaveProperty('previousScore');
-    expect(entry).toHaveProperty('change');
-    expect(entry).toHaveProperty('changePercent');
+    expect(entry).toHaveProperty('scoreChange');
+    expect(entry).toHaveProperty('percentageChange');
     expect(entry).toHaveProperty('trend');
-    expect(entry.agent).toHaveProperty('id');
-    expect(entry.agent).toHaveProperty('name');
-    expect(entry.agent).toHaveProperty('chainId');
   });
 
   it('sorts by absolute change (biggest movers first)', async () => {
@@ -91,7 +91,9 @@ describe('GET /api/v1/trending', () => {
     const body = await response.json();
 
     // Agent 2 had bigger absolute change (-30) than agent 1 (+25)
-    expect(Math.abs(body.data[0].change)).toBeGreaterThanOrEqual(Math.abs(body.data[1].change));
+    expect(Math.abs(body.data.agents[0].scoreChange)).toBeGreaterThanOrEqual(
+      Math.abs(body.data.agents[1].scoreChange)
+    );
   });
 
   it('calculates trend direction correctly', async () => {
@@ -114,9 +116,9 @@ describe('GET /api/v1/trending', () => {
     const response = await testRoute('/api/v1/trending?period=7d');
     const body = await response.json();
 
-    const agent1 = body.data.find((e: { agent: { id: string } }) => e.agent.id === '11155111:1');
-    const agent2 = body.data.find((e: { agent: { id: string } }) => e.agent.id === '11155111:2');
-    const agent3 = body.data.find((e: { agent: { id: string } }) => e.agent.id === '11155111:3');
+    const agent1 = body.data.agents.find((e: { agentId: string }) => e.agentId === '11155111:1');
+    const agent2 = body.data.agents.find((e: { agentId: string }) => e.agentId === '11155111:2');
+    const agent3 = body.data.agents.find((e: { agentId: string }) => e.agentId === '11155111:3');
 
     expect(agent1.trend).toBe('up');
     expect(agent2.trend).toBe('down');
@@ -127,21 +129,21 @@ describe('GET /api/v1/trending', () => {
     const response = await testRoute('/api/v1/trending?period=24h');
 
     const body = await response.json();
-    expect(body.meta.period).toBe('24h');
+    expect(body.data.period).toBe('24h');
   });
 
   it('supports period=7d (default)', async () => {
     const response = await testRoute('/api/v1/trending');
 
     const body = await response.json();
-    expect(body.meta.period).toBe('7d');
+    expect(body.data.period).toBe('7d');
   });
 
   it('supports period=30d', async () => {
     const response = await testRoute('/api/v1/trending?period=30d');
 
     const body = await response.json();
-    expect(body.meta.period).toBe('30d');
+    expect(body.data.period).toBe('30d');
   });
 
   it('respects limit parameter', async () => {
@@ -162,7 +164,7 @@ describe('GET /api/v1/trending', () => {
     const response = await testRoute('/api/v1/trending?period=7d&limit=2');
 
     const body = await response.json();
-    expect(body.data.length).toBe(2);
+    expect(body.data.agents.length).toBe(2);
   });
 
   it('returns 401 without API key', async () => {

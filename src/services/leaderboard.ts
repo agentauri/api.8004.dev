@@ -7,25 +7,43 @@ import { getAgentsRankedByReputation, getReputationAtDate } from '@/db/queries';
 import type { Env } from '@/types';
 
 /**
- * Trend direction type
+ * Trend direction type (matches FE BackendLeaderboardEntry)
  */
-export type LeaderboardTrend = 'up' | 'down' | 'stable' | 'new';
+export type LeaderboardTrend = 'up' | 'down' | 'stable';
 
 /**
  * Leaderboard entry for API response
+ * Matches FE BackendLeaderboardEntry interface
  */
 export interface LeaderboardEntry {
-  rank: number;
-  agent: {
-    id: string;
-    name: string;
-    image?: string;
-    chainId: number;
-  };
-  reputation: number;
+  /** Agent identifier (format: "chainId:tokenId") */
+  agentId: string;
+  /** Chain ID */
+  chainId: number;
+  /** Token ID */
+  tokenId: string;
+  /** Agent display name */
+  name: string;
+  /** Agent description */
+  description: string;
+  /** Agent image URL */
+  image?: string;
+  /** Reputation score (0-100) */
+  score: number;
+  /** Number of feedback entries */
   feedbackCount: number;
-  previousRank?: number;
+  /** Reputation trend direction */
   trend: LeaderboardTrend;
+  /** Whether agent is active */
+  active: boolean | null;
+  /** MCP protocol support */
+  hasMcp: boolean | null;
+  /** A2A protocol support */
+  hasA2a: boolean | null;
+  /** x402 payment support */
+  x402Support: boolean | null;
+  /** Registration timestamp */
+  registeredAt?: string;
 }
 
 /**
@@ -34,9 +52,11 @@ export interface LeaderboardEntry {
 export interface LeaderboardResult {
   entries: LeaderboardEntry[];
   total: number;
+  limit: number;
   hasMore: boolean;
   nextCursor?: string;
-  period: string;
+  period: 'all' | '30d' | '7d' | '24h';
+  generatedAt: string;
 }
 
 /**
@@ -50,6 +70,21 @@ export interface LeaderboardQueryParams {
   x402?: boolean;
   limit: number;
   offset: number;
+}
+
+/**
+ * Qdrant payload structure for agent data
+ */
+interface QdrantAgentPayload {
+  name?: string;
+  description?: string;
+  image?: string;
+  active?: boolean;
+  hasMcp?: boolean;
+  hasA2a?: boolean;
+  x402Support?: boolean;
+  registeredAt?: string;
+  createdAt?: string;
 }
 
 /**
@@ -73,10 +108,11 @@ function getDateForPeriod(period: '30d' | '7d' | '24h'): string {
 
 /**
  * Calculate trend by comparing current vs previous score
+ * Returns 'stable' for new agents (FE expects only 'up' | 'down' | 'stable')
  */
 function calculateTrend(currentScore: number, previousScore: number | undefined): LeaderboardTrend {
   if (previousScore === undefined) {
-    return 'new';
+    return 'stable'; // New agents show as stable
   }
   const diff = currentScore - previousScore;
   if (Math.abs(diff) < 1) {
@@ -117,10 +153,8 @@ export function createLeaderboardService(env: Env): LeaderboardService {
         previousScores = await getReputationAtDate(env.DB, previousDate);
       }
 
-      // Get agent details from Qdrant for names/images
-      // For now, we'll use the agent_id format and extract chain info
-      // In a full implementation, we would batch fetch from Qdrant
-      const entries: LeaderboardEntry[] = reputations.map((rep, index) => {
+      // Build initial entries with basic data
+      const entries: LeaderboardEntry[] = reputations.map((rep) => {
         const [chainIdStr, tokenId] = rep.agent_id.split(':');
         const chainId = Number.parseInt(chainIdStr ?? '0', 10);
 
@@ -128,20 +162,25 @@ export function createLeaderboardService(env: Env): LeaderboardService {
         const trend = calculateTrend(rep.average_score, previousData?.score);
 
         return {
-          rank: offset + index + 1,
-          agent: {
-            id: rep.agent_id,
-            name: `Agent ${tokenId}`, // Will be enriched with Qdrant data
-            chainId,
-          },
-          reputation: Math.round(rep.average_score * 100) / 100,
+          agentId: rep.agent_id,
+          chainId,
+          tokenId: tokenId ?? '0',
+          name: `Agent #${tokenId}`,
+          description: '',
+          image: undefined,
+          score: Math.round(rep.average_score * 100) / 100,
           feedbackCount: rep.feedback_count,
           trend,
+          active: null,
+          hasMcp: null,
+          hasA2a: null,
+          x402Support: null,
+          registeredAt: undefined,
         };
       });
 
-      // Try to enrich with agent names from Qdrant
-      if (env.QDRANT_URL && env.QDRANT_API_KEY) {
+      // Enrich with agent data from Qdrant
+      if (env.QDRANT_URL && env.QDRANT_API_KEY && entries.length > 0) {
         try {
           const { createQdrantClient } = await import('./qdrant');
           const qdrant = createQdrantClient({
@@ -150,28 +189,27 @@ export function createLeaderboardService(env: Env): LeaderboardService {
             QDRANT_COLLECTION: env.QDRANT_COLLECTION || 'agents',
           });
 
-          const agentIds = entries.map((e) => e.agent.id);
+          const agentIds = entries.map((e) => e.agentId);
           const points = await qdrant.getByIds(agentIds);
 
           // Create lookup map
           const agentDataMap = new Map(
-            points.map((p) => [
-              p.id as string,
-              {
-                name: (p.payload as { name?: string })?.name,
-                image: (p.payload as { image?: string })?.image,
-              },
-            ])
+            points.map((p) => [p.id as string, p.payload as QdrantAgentPayload])
           );
 
-          // Enrich entries
+          // Enrich entries with Qdrant data
           for (const entry of entries) {
-            const data = agentDataMap.get(entry.agent.id);
-            if (data?.name) {
-              entry.agent.name = data.name;
-            }
-            if (data?.image) {
-              entry.agent.image = data.image;
+            const data = agentDataMap.get(entry.agentId);
+            if (data) {
+              if (data.name) entry.name = data.name;
+              if (data.description) entry.description = data.description;
+              if (data.image) entry.image = data.image;
+              if (data.active !== undefined) entry.active = data.active;
+              if (data.hasMcp !== undefined) entry.hasMcp = data.hasMcp;
+              if (data.hasA2a !== undefined) entry.hasA2a = data.hasA2a;
+              if (data.x402Support !== undefined) entry.x402Support = data.x402Support;
+              // Use registeredAt or fallback to createdAt
+              entry.registeredAt = data.registeredAt ?? data.createdAt;
             }
           }
         } catch (error) {
@@ -191,9 +229,11 @@ export function createLeaderboardService(env: Env): LeaderboardService {
       return {
         entries,
         total,
+        limit,
         hasMore,
         nextCursor,
         period,
+        generatedAt: new Date().toISOString(),
       };
     },
   };
