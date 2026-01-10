@@ -28,29 +28,24 @@ import { createReputationService } from '../reputation';
 /** ERC-8004 spec version */
 type ERC8004Version = 'v0.4' | 'v1.0';
 
+// The Graph API key from agent0-sdk (public key for ERC-8004 subgraphs)
+const GRAPH_API_KEY = '00a452ad3cd1900273ea62c1bf283f93';
+
 /**
  * Graph endpoints for v1.0 feedback (Jan 2026 update)
- * Only ETH Sepolia has v1.0 contracts deployed
+ * Only ETH Sepolia has v1.0 contracts deployed currently
  */
 const GRAPH_ENDPOINTS_V1_0: Record<number, string> = {
-  11155111:
-    'https://gateway.thegraph.com/api/subgraphs/id/6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT',
+  11155111: `https://gateway.thegraph.com/api/${GRAPH_API_KEY}/subgraphs/id/6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT`,
 };
 
 /**
  * Graph endpoints for v0.4 feedback (pre-v1.0 backward compatibility)
+ * NOTE: These subgraphs no longer exist after v1.0 spec update
+ * Contracts for these chains are pending deployment
  */
 const GRAPH_ENDPOINTS_V0_4: Record<number, string> = {
-  84532:
-    'https://gateway.thegraph.com/api/subgraphs/id/GjQEDgEKqoh5Yc8MUgxoQoRATEJdEiH7HbocfR1aFiHa',
-  80002:
-    'https://gateway.thegraph.com/api/subgraphs/id/2A1JB18r1mF2VNP4QBH4mmxd74kbHoM6xLXC8ABAKf7j',
-  59141:
-    'https://gateway.thegraph.com/api/subgraphs/id/7GyxsUkWZ5aDNEqZQhFnMQk8CDxCDgT9WZKqFkNJ7YPx',
-  296: 'https://gateway.thegraph.com/api/subgraphs/id/5GwJ2UKQK3WQhJNqvCqV9EFKBYD6wPYJvFqEPmBKcFsP',
-  998: 'https://gateway.thegraph.com/api/subgraphs/id/3L8DKCwQwpLEYF7m3mE8PCvr8qJcJBvXTk3a9f9sLQrP',
-  1351057110:
-    'https://gateway.thegraph.com/api/subgraphs/id/HvYWvsPKqWrSzV8VT4mjLGwPNMgVFgRiNMZFdJUg8BPf',
+  // All v0.4 subgraphs deprecated - chains pending v1.0 contract deployment
 };
 
 /**
