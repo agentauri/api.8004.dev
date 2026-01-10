@@ -133,6 +133,8 @@ export interface SearchResultMetadata {
   classification_at?: string;
   /** Classification model version (Phase 2) */
   classification_model?: string;
+  /** ERC-8004 spec version ('v0.4' for pre-v1.0, 'v1.0' for current) */
+  erc8004Version?: string;
 }
 
 /**

@@ -289,11 +289,12 @@ export class AgentIndexer {
       // New fields from subgraph schema
       mcp_version: agent.mcpVersion ?? '',
       a2a_version: agent.a2aVersion ?? '',
-      agent_wallet_chain_id: agent.agentWalletChainId ?? 0,
+      agent_wallet_chain_id: 0, // NOTE: agentWalletChainId removed in ERC-8004 v1.0
       supported_trusts: agent.supportedTrusts ?? [],
       agent_uri: '', // Will be populated from subgraph during full sync
       updated_at: '', // Will be populated from subgraph during full sync
       trust_score: 0, // Will be populated from PageRank computation
+      erc_8004_version: 'v1.0', // Default to v1.0 for SDK-sourced agents
     };
   }
 

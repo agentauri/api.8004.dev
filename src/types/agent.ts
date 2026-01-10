@@ -92,10 +92,11 @@ export interface AgentSummary {
   mcpVersion?: string;
   /** A2A protocol version */
   a2aVersion?: string;
-  /** Chain ID of agent's wallet */
-  agentWalletChainId?: number;
+  // NOTE: agentWalletChainId removed in ERC-8004 v1.0
   /** Supported trust models (from subgraph) */
   supportedTrusts?: string[];
+  /** ERC-8004 spec version ('v0.4' for pre-v1.0, 'v1.0' for current) */
+  erc8004Version?: string;
 }
 
 /**
@@ -130,10 +131,9 @@ export interface AgentEndpoints {
   ens?: string;
   /** DID identifier */
   did?: string;
-  /** Agent wallet address */
+  /** Agent wallet address (v1.0: now on-chain verified) */
   agentWallet?: string;
-  /** Chain ID of agent's wallet */
-  agentWalletChainId?: number;
+  // NOTE: agentWalletChainId removed in ERC-8004 v1.0
   /** OASF endpoint with creator-defined skills/domains */
   oasf?: OASFEndpoint;
 }

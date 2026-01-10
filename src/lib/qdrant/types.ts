@@ -88,6 +88,8 @@ export interface AgentPayload {
   updated_at: string;
   /** Trust score from PageRank algorithm (0-100, 0 if not computed) */
   trust_score: number;
+  /** ERC-8004 spec version ('v0.4' for pre-v1.0, 'v1.0' for current) */
+  erc_8004_version: string;
 }
 
 /**

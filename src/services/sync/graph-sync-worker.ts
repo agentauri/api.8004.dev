@@ -16,17 +16,42 @@ import { createQdrantClient, type QdrantClient } from '../qdrant';
 import { type AgentReachability, createReachabilityService } from '../reachability';
 import { type ContentFields, computeContentHash, computeEmbedHash } from './content-hash';
 
-// Graph endpoints per chain (using gateway.thegraph.com with subgraph IDs)
-// NOTE: Base Sepolia and Polygon Amoy subgraphs were deprecated after ERC-8004 v1.0 update
-// TODO: Add new subgraph IDs when they are deployed
-const GRAPH_ENDPOINTS: Record<number, string> = {
+// ERC-8004 spec version types
+type ERC8004Version = 'v0.4' | 'v1.0';
+
+// Graph endpoints for v1.0 (Jan 2026 update - new contracts)
+// Only ETH Sepolia has v1.0 contracts deployed
+const GRAPH_ENDPOINTS_V1_0: Record<number, string> = {
   11155111:
     'https://gateway.thegraph.com/api/subgraphs/id/6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT',
-  // 84532: Deprecated - waiting for new subgraph deployment
-  // 80002: Deprecated - waiting for new subgraph deployment
 };
 
-interface GraphAgent {
+// Graph endpoints for v0.4 (pre-v1.0 - backward compatibility)
+// These chains have pre-v1.0 agents that should still be searchable
+const GRAPH_ENDPOINTS_V0_4: Record<number, string> = {
+  84532:
+    'https://gateway.thegraph.com/api/subgraphs/id/GjQEDgEKqoh5Yc8MUgxoQoRATEJdEiH7HbocfR1aFiHa',
+  80002:
+    'https://gateway.thegraph.com/api/subgraphs/id/2A1JB18r1mF2VNP4QBH4mmxd74kbHoM6xLXC8ABAKf7j',
+  59141:
+    'https://gateway.thegraph.com/api/subgraphs/id/7GyxsUkWZ5aDNEqZQhFnMQk8CDxCDgT9WZKqFkNJ7YPx',
+  296: 'https://gateway.thegraph.com/api/subgraphs/id/5GwJ2UKQK3WQhJNqvCqV9EFKBYD6wPYJvFqEPmBKcFsP',
+  998: 'https://gateway.thegraph.com/api/subgraphs/id/3L8DKCwQwpLEYF7m3mE8PCvr8qJcJBvXTk3a9f9sLQrP',
+  1351057110:
+    'https://gateway.thegraph.com/api/subgraphs/id/HvYWvsPKqWrSzV8VT4mjLGwPNMgVFgRiNMZFdJUg8BPf',
+};
+
+// Combined endpoints for legacy compatibility (used by fetchAllAgentsFromGraph)
+const GRAPH_ENDPOINTS: Record<number, string> = {
+  ...GRAPH_ENDPOINTS_V1_0,
+  ...GRAPH_ENDPOINTS_V0_4,
+};
+
+/**
+ * Graph agent structure for v1.0 (current spec)
+ * In v1.0, agentWallet is on the Agent entity (set via setAgentWallet with EIP-712)
+ */
+interface GraphAgentV1_0 {
   id: string;
   chainId: string;
   agentId: string;
@@ -35,7 +60,7 @@ interface GraphAgent {
   operators: string[];
   createdAt: string;
   updatedAt: string;
-  /** On-chain agent wallet set via setAgentWallet() with EIP-712 signature */
+  /** On-chain agent wallet set via setAgentWallet() with EIP-712 signature (v1.0) */
   agentWallet: string | null;
   registrationFile: {
     name: string;
@@ -47,7 +72,6 @@ interface GraphAgent {
     x402support: boolean;
     ens: string | null;
     did: string | null;
-    // NOTE: agentWallet and agentWalletChainId removed in ERC-8004 v1.0
     mcpVersion: string | null;
     a2aVersion: string | null;
     supportedTrusts: string[] | null;
@@ -57,6 +81,52 @@ interface GraphAgent {
     a2aSkills?: Array<{ name: string }>;
     createdAt?: string;
   } | null;
+}
+
+/**
+ * Graph agent structure for v0.4 (pre-v1.0 backward compatibility)
+ * In v0.4, agentWallet is inside registrationFile (off-chain)
+ */
+interface GraphAgentV0_4 {
+  id: string;
+  chainId: string;
+  agentId: string;
+  agentURI: string | null;
+  owner: string;
+  operators: string[];
+  createdAt: string;
+  updatedAt: string;
+  registrationFile: {
+    name: string;
+    description: string;
+    image: string | null;
+    active: boolean;
+    mcpEndpoint: string | null;
+    a2aEndpoint: string | null;
+    x402support: boolean;
+    ens: string | null;
+    did: string | null;
+    /** Off-chain agent wallet (v0.4 only - inside registrationFile) */
+    agentWallet: string | null;
+    /** Chain ID for agent wallet (v0.4 only) */
+    agentWalletChainId: string | null;
+    mcpVersion: string | null;
+    a2aVersion: string | null;
+    supportedTrusts: string[] | null;
+    mcpTools?: Array<{ name: string }>;
+    mcpPrompts?: Array<{ name: string }>;
+    mcpResources?: Array<{ name: string }>;
+    a2aSkills?: Array<{ name: string }>;
+    createdAt?: string;
+  } | null;
+}
+
+/** Union type for agents from any version */
+type GraphAgent = GraphAgentV1_0 | GraphAgentV0_4;
+
+/** Type guard to check if agent has v1.0 structure */
+function isV1_0Agent(agent: GraphAgent): agent is GraphAgentV1_0 {
+  return 'agentWallet' in agent && agent.agentWallet !== undefined;
 }
 
 export interface GraphSyncResult {
@@ -83,25 +153,17 @@ const MAX_AGENTS_PER_SYNC = 100;
 
 interface AgentToSync {
   agent: GraphAgent;
+  version: ERC8004Version;
   needsEmbed: boolean;
   ioModes?: ExtractedIOModes;
 }
 
 /**
- * Fetch all agents from a single chain's Graph endpoint
+ * Build GraphQL query for v1.0 agents
+ * In v1.0, agentWallet is on the Agent entity (set via setAgentWallet with EIP-712)
  */
-async function fetchAgentsFromGraph(
-  chainId: number,
-  graphApiKey?: string,
-  first = 1000,
-  skip = 0
-): Promise<GraphAgent[]> {
-  const endpoint = GRAPH_ENDPOINTS[chainId];
-  if (!endpoint) {
-    throw new Error(`No Graph endpoint for chain ${chainId}`);
-  }
-
-  const query = `
+function buildAgentQueryV1_0(): string {
+  return `
     query GetAgents($first: Int!, $skip: Int!) {
       agents(first: $first, skip: $skip, orderBy: agentId) {
         id
@@ -135,6 +197,80 @@ async function fetchAgentsFromGraph(
       }
     }
   `;
+}
+
+/**
+ * Build GraphQL query for v0.4 agents (pre-v1.0 backward compatibility)
+ * In v0.4, agentWallet is inside registrationFile (off-chain)
+ */
+function buildAgentQueryV0_4(): string {
+  return `
+    query GetAgents($first: Int!, $skip: Int!) {
+      agents(first: $first, skip: $skip, orderBy: agentId) {
+        id
+        chainId
+        agentId
+        agentURI
+        owner
+        operators
+        createdAt
+        updatedAt
+        registrationFile {
+          name
+          description
+          image
+          active
+          mcpEndpoint
+          a2aEndpoint
+          x402support
+          ens
+          did
+          agentWallet
+          agentWalletChainId
+          mcpVersion
+          a2aVersion
+          supportedTrusts
+          mcpTools { name }
+          mcpPrompts { name }
+          mcpResources { name }
+          a2aSkills { name }
+          createdAt
+        }
+      }
+    }
+  `;
+}
+
+/**
+ * Determine which ERC-8004 version a chain uses
+ */
+function getChainVersion(chainId: number): ERC8004Version {
+  if (chainId in GRAPH_ENDPOINTS_V1_0) {
+    return 'v1.0';
+  }
+  if (chainId in GRAPH_ENDPOINTS_V0_4) {
+    return 'v0.4';
+  }
+  // Default to v1.0 for unknown chains
+  return 'v1.0';
+}
+
+/**
+ * Fetch all agents from a single chain's Graph endpoint
+ */
+async function fetchAgentsFromGraph(
+  chainId: number,
+  graphApiKey?: string,
+  first = 1000,
+  skip = 0
+): Promise<{ agents: GraphAgent[]; version: ERC8004Version }> {
+  const endpoint = GRAPH_ENDPOINTS[chainId];
+  if (!endpoint) {
+    throw new Error(`No Graph endpoint for chain ${chainId}`);
+  }
+
+  const version = getChainVersion(chainId);
+  const query = version === 'v1.0' ? buildAgentQueryV1_0() : buildAgentQueryV0_4();
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (graphApiKey) {
@@ -161,14 +297,22 @@ async function fetchAgentsFromGraph(
     throw new Error(`Graph query error: ${data.errors[0]?.message}`);
   }
 
-  return data.data?.agents ?? [];
+  return { agents: data.data?.agents ?? [], version };
+}
+
+/** Agent with version metadata */
+interface AgentWithVersion {
+  agent: GraphAgent;
+  version: ERC8004Version;
 }
 
 /**
- * Fetch all agents from all chains
+ * Fetch all agents from all chains with version tracking
  */
-async function fetchAllAgentsFromGraph(graphApiKey?: string): Promise<GraphAgent[]> {
-  const allAgents: GraphAgent[] = [];
+async function fetchAllAgentsFromGraph(
+  graphApiKey?: string
+): Promise<AgentWithVersion[]> {
+  const allAgents: AgentWithVersion[] = [];
 
   for (const chainId of Object.keys(GRAPH_ENDPOINTS)) {
     const chain = Number(chainId);
@@ -176,10 +320,13 @@ async function fetchAllAgentsFromGraph(graphApiKey?: string): Promise<GraphAgent
     const first = 1000;
 
     while (true) {
-      const batch = await fetchAgentsFromGraph(chain, graphApiKey, first, skip);
+      const { agents: batch, version } = await fetchAgentsFromGraph(chain, graphApiKey, first, skip);
       if (batch.length === 0) break;
 
-      allAgents.push(...batch);
+      // Add version metadata to each agent
+      for (const agent of batch) {
+        allAgents.push({ agent, version });
+      }
       skip += first;
 
       // Safety limit
@@ -193,18 +340,36 @@ async function fetchAllAgentsFromGraph(graphApiKey?: string): Promise<GraphAgent
 /**
  * Convert Graph agent to Qdrant payload
  * @param agent - Graph agent data
+ * @param version - ERC-8004 spec version
  * @param ioModes - Optional IO modes from A2A AgentCard
  * @param reachability - Optional reachability status from feedback
  */
 function agentToPayload(
   agent: GraphAgent,
+  version: ERC8004Version,
   ioModes?: ExtractedIOModes,
   reachability?: AgentReachability
 ): AgentPayload {
   const reg = agent.registrationFile;
   const hasReg = !!reg;
 
-  // NOTE: agentWallet and agentWalletChainId were removed in ERC-8004 v1.0
+  // Handle agentWallet differently based on version:
+  // - v1.0: agentWallet is on Agent entity (on-chain verified)
+  // - v0.4: agentWallet is in registrationFile (off-chain)
+  let walletAddress = '';
+  let agentWalletChainId = 0;
+
+  if (version === 'v1.0' && isV1_0Agent(agent)) {
+    // v1.0: agentWallet is on the agent entity
+    walletAddress = agent.agentWallet ?? '';
+  } else if (version === 'v0.4' && reg) {
+    // v0.4: agentWallet is inside registrationFile
+    const regV04 = reg as GraphAgentV0_4['registrationFile'];
+    walletAddress = regV04?.agentWallet ?? '';
+    agentWalletChainId = regV04?.agentWalletChainId
+      ? Number.parseInt(regV04.agentWalletChainId, 10)
+      : 0;
+  }
 
   return {
     agent_id: `${agent.chainId}:${agent.agentId}`,
@@ -221,7 +386,7 @@ function agentToPayload(
     has_registration_file: hasReg,
     ens: reg?.ens ?? '',
     did: reg?.did ?? '',
-    wallet_address: agent.agentWallet ?? '', // On-chain agentWallet (set via setAgentWallet)
+    wallet_address: walletAddress,
     owner: (agent.owner ?? '').toLowerCase(),
     operators: agent.operators ?? [],
     mcp_tools: reg?.mcpTools?.map((t) => t.name) ?? [],
@@ -239,13 +404,15 @@ function agentToPayload(
     // New fields from subgraph schema
     mcp_version: reg?.mcpVersion ?? '',
     a2a_version: reg?.a2aVersion ?? '',
-    agent_wallet_chain_id: 0, // NOTE: agentWalletChainId removed in ERC-8004 v1.0
+    agent_wallet_chain_id: agentWalletChainId,
     supported_trusts: reg?.supportedTrusts ?? [],
     agent_uri: agent.agentURI ?? '',
     updated_at: agent.updatedAt
       ? new Date(Number.parseInt(agent.updatedAt, 10) * 1000).toISOString()
       : '',
     trust_score: 0,
+    // Version tracking
+    erc_8004_version: version,
   };
 }
 
@@ -357,15 +524,19 @@ export async function syncFromGraph(
   };
 
   // Fetch all agents from Graph (including those without registrationFile)
-  const agents = await fetchAllAgentsFromGraph(env.GRAPH_API_KEY);
-  const agentsWithReg = agents.filter((a) => a.registrationFile);
-  const agentsWithoutReg = agents.length - agentsWithReg.length;
+  const agentsWithVersions = await fetchAllAgentsFromGraph(env.GRAPH_API_KEY);
+  const agentsWithReg = agentsWithVersions.filter((a) => a.agent.registrationFile);
+  const agentsWithoutReg = agentsWithVersions.length - agentsWithReg.length;
+
+  // Count agents by version
+  const v1Count = agentsWithVersions.filter((a) => a.version === 'v1.0').length;
+  const v04Count = agentsWithVersions.filter((a) => a.version === 'v0.4').length;
   console.info(
-    `Graph sync: fetched ${agents.length} agents from Graph (${agentsWithReg.length} with registrationFile, ${agentsWithoutReg} without)`
+    `Graph sync: fetched ${agentsWithVersions.length} agents from Graph (${agentsWithReg.length} with registrationFile, ${agentsWithoutReg} without) - v1.0: ${v1Count}, v0.4: ${v04Count}`
   );
 
   // Get existing sync metadata for all agents (to identify which need syncing)
-  const agentIds = agents.map((a) => `${a.chainId}:${a.agentId}`);
+  const agentIds = agentsWithVersions.map((a) => `${a.agent.chainId}:${a.agent.agentId}`);
 
   // Query existing metadata in batches
   const existingMetadata = new Map<string, { content_hash: string; embed_hash: string }>();
@@ -394,7 +565,7 @@ export async function syncFromGraph(
   let skipped = 0;
   let contentChanged = 0;
 
-  for (const agent of agents) {
+  for (const { agent, version } of agentsWithVersions) {
     if (toSync.length >= MAX_AGENTS_PER_SYNC) {
       result.hasMore = true;
       break;
@@ -405,7 +576,7 @@ export async function syncFromGraph(
 
     if (!existing) {
       // New agent - needs full index with embedding
-      toSync.push({ agent, needsEmbed: true });
+      toSync.push({ agent, version, needsEmbed: true });
     } else {
       // Existing agent - check if content changed (e.g., owner field added, registrationFile added)
       // Compute content hash from Graph fields to compare (use async SHA-256 to match stored hashes)
@@ -427,7 +598,7 @@ export async function syncFromGraph(
       // If hash differs, content changed - needs payload update (no re-embedding)
       // Note: After adding owner field to hash, all old agents will have different hashes
       if (newHash !== existing.content_hash) {
-        toSync.push({ agent, needsEmbed: false });
+        toSync.push({ agent, version, needsEmbed: false });
         contentChanged++;
       } else {
         skipped++;
@@ -469,13 +640,13 @@ export async function syncFromGraph(
   console.info(`Graph sync: processing ${toSync.length} agents...`);
 
   // Process agents that need syncing
-  for (const { agent, needsEmbed, ioModes } of toSync) {
+  for (const { agent, version, needsEmbed, ioModes } of toSync) {
     const agentId = `${agent.chainId}:${agent.agentId}`;
 
     try {
       // Get reachability status for this agent
       const reachability = reachabilityMap.get(agentId);
-      const payload = agentToPayload(agent, ioModes, reachability);
+      const payload = agentToPayload(agent, version, ioModes, reachability);
       const embedFields = getEmbedFields(agent, ioModes);
       const contentFields = getContentFields(payload);
 

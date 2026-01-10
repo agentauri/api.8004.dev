@@ -534,6 +534,8 @@ export class QdrantSearchService {
         classification_confidence: payload.classification_confidence,
         classification_at: payload.classification_at,
         classification_model: payload.classification_model,
+        // ERC-8004 version tracking
+        erc8004Version: payload.erc_8004_version,
       },
       matchReasons: this.generateMatchReasons(payload, score),
     };

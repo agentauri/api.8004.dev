@@ -25,24 +25,50 @@ import { fetchWithTimeout } from '@/lib/utils/fetch';
 import type { ReputationService } from '../reputation';
 import { createReputationService } from '../reputation';
 
-/**
- * The Graph gateway endpoint for ERC-8004 Reputation Registry
- * API key is passed via Authorization header, not in URL
- */
-const GRAPH_GATEWAY_URL =
-  'https://gateway.thegraph.com/api/subgraphs/id/6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT';
+/** ERC-8004 spec version */
+type ERC8004Version = 'v0.4' | 'v1.0';
 
 /**
- * Supported chain IDs
- * - 11155111: Ethereum Sepolia
- * - 84532: Base Sepolia
- * - 80002: Polygon Amoy
- * - 59141: Linea Sepolia
- * - 296: Hedera Testnet
- * - 998: HyperEVM Testnet
- * - 1351057110: SKALE Base Sepolia
+ * Graph endpoints for v1.0 feedback (Jan 2026 update)
+ * Only ETH Sepolia has v1.0 contracts deployed
  */
-const SUPPORTED_CHAIN_IDS = [11155111, 84532, 80002, 59141, 296, 998, 1351057110] as const;
+const GRAPH_ENDPOINTS_V1_0: Record<number, string> = {
+  11155111:
+    'https://gateway.thegraph.com/api/subgraphs/id/6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT',
+};
+
+/**
+ * Graph endpoints for v0.4 feedback (pre-v1.0 backward compatibility)
+ */
+const GRAPH_ENDPOINTS_V0_4: Record<number, string> = {
+  84532:
+    'https://gateway.thegraph.com/api/subgraphs/id/GjQEDgEKqoh5Yc8MUgxoQoRATEJdEiH7HbocfR1aFiHa',
+  80002:
+    'https://gateway.thegraph.com/api/subgraphs/id/2A1JB18r1mF2VNP4QBH4mmxd74kbHoM6xLXC8ABAKf7j',
+  59141:
+    'https://gateway.thegraph.com/api/subgraphs/id/7GyxsUkWZ5aDNEqZQhFnMQk8CDxCDgT9WZKqFkNJ7YPx',
+  296: 'https://gateway.thegraph.com/api/subgraphs/id/5GwJ2UKQK3WQhJNqvCqV9EFKBYD6wPYJvFqEPmBKcFsP',
+  998: 'https://gateway.thegraph.com/api/subgraphs/id/3L8DKCwQwpLEYF7m3mE8PCvr8qJcJBvXTk3a9f9sLQrP',
+  1351057110:
+    'https://gateway.thegraph.com/api/subgraphs/id/HvYWvsPKqWrSzV8VT4mjLGwPNMgVFgRiNMZFdJUg8BPf',
+};
+
+/**
+ * All Graph endpoints (combined)
+ */
+const ALL_GRAPH_ENDPOINTS: Record<number, { url: string; version: ERC8004Version }> = {
+  ...Object.fromEntries(
+    Object.entries(GRAPH_ENDPOINTS_V1_0).map(([k, v]) => [k, { url: v, version: 'v1.0' as const }])
+  ),
+  ...Object.fromEntries(
+    Object.entries(GRAPH_ENDPOINTS_V0_4).map(([k, v]) => [k, { url: v, version: 'v0.4' as const }])
+  ),
+};
+
+/**
+ * Supported chain IDs (all chains with Graph endpoints)
+ */
+const SUPPORTED_CHAIN_IDS = Object.keys(ALL_GRAPH_ENDPOINTS).map(Number);
 
 /**
  * Raw Feedback entity from The Graph
@@ -93,11 +119,9 @@ interface GraphFeedbackSyncState {
 }
 
 /**
- * GraphQL query for fetching feedback from The Graph
- * Orders by createdAt ascending to process oldest first and paginate efficiently
- * ERC-8004 v1.0 (Jan 26) fields: endpoint, feedbackIndex, feedbackURI, feedbackHash
+ * GraphQL query for v1.0 feedback (includes endpoint, feedbackIndex, feedbackURI, feedbackHash)
  */
-const FEEDBACK_QUERY = `
+const FEEDBACK_QUERY_V1_0 = `
   query GetFeedback($first: Int!, $skip: Int!, $createdAtGt: BigInt!) {
     feedbacks(
       first: $first
@@ -130,14 +154,59 @@ const FEEDBACK_QUERY = `
 `;
 
 /**
+ * GraphQL query for v0.4 feedback (no endpoint, feedbackIndex fields)
+ */
+const FEEDBACK_QUERY_V0_4 = `
+  query GetFeedback($first: Int!, $skip: Int!, $createdAtGt: BigInt!) {
+    feedbacks(
+      first: $first
+      skip: $skip
+      orderBy: createdAt
+      orderDirection: asc
+      where: {
+        createdAt_gt: $createdAtGt
+        isRevoked: false
+      }
+    ) {
+      id
+      agent {
+        id
+        chainId
+        agentId
+      }
+      clientAddress
+      score
+      tag1
+      tag2
+      isRevoked
+      createdAt
+    }
+  }
+`;
+
+/**
  * Fetch feedback from The Graph with pagination
+ * @param chainId - Chain ID to fetch feedback for
+ * @param first - Number of items to fetch
+ * @param skip - Number of items to skip
+ * @param createdAtGt - Minimum createdAt timestamp
+ * @param graphApiKey - Optional Graph API key
  */
 async function fetchFeedbackFromGraph(
+  chainId: number,
   first: number,
   skip: number,
   createdAtGt: number,
   graphApiKey?: string
 ): Promise<GraphFeedback[]> {
+  const endpoint = ALL_GRAPH_ENDPOINTS[chainId];
+  if (!endpoint) {
+    console.warn(`No Graph endpoint for chain ${chainId}, skipping feedback sync`);
+    return [];
+  }
+
+  const query = endpoint.version === 'v1.0' ? FEEDBACK_QUERY_V1_0 : FEEDBACK_QUERY_V0_4;
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
@@ -146,12 +215,12 @@ async function fetchFeedbackFromGraph(
   }
 
   const response = await fetchWithTimeout(
-    GRAPH_GATEWAY_URL,
+    endpoint.url,
     {
       method: 'POST',
       headers,
       body: JSON.stringify({
-        query: FEEDBACK_QUERY,
+        query,
         variables: {
           first,
           skip,
@@ -163,7 +232,7 @@ async function fetchFeedbackFromGraph(
   );
 
   if (!response.ok) {
-    throw new Error(`Graph API error: ${response.status} ${response.statusText}`);
+    throw new Error(`Graph API error for chain ${chainId}: ${response.status} ${response.statusText}`);
   }
 
   const result = (await response.json()) as {
@@ -173,7 +242,7 @@ async function fetchFeedbackFromGraph(
 
   if (result.errors?.length) {
     const firstError = result.errors[0];
-    throw new Error(`Graph query error: ${firstError?.message ?? 'Unknown error'}`);
+    throw new Error(`Graph query error for chain ${chainId}: ${firstError?.message ?? 'Unknown error'}`);
   }
 
   return result.data?.feedbacks ?? [];
@@ -402,44 +471,58 @@ export async function syncFeedbackFromGraph(
       ? Math.floor(new Date(syncState.last_feedback_created_at).getTime() / 1000)
       : 0;
 
-    let hasMore = true;
-    let skip = 0;
-    const first = 1000;
     let latestCreatedAt = lastCreatedAt;
 
     console.info(`Graph feedback sync: starting from createdAt > ${lastCreatedAt}`);
 
-    while (hasMore) {
-      // Fetch batch of feedback
-      const feedbackBatch = await fetchFeedbackFromGraph(
-        first,
-        skip,
-        lastCreatedAt,
-        env?.GRAPH_API_KEY
-      );
+    // Sync feedback from all chains
+    for (const chainId of SUPPORTED_CHAIN_IDS) {
+      const endpoint = ALL_GRAPH_ENDPOINTS[chainId];
+      if (!endpoint) continue;
 
-      if (feedbackBatch.length === 0) {
-        hasMore = false;
-        break;
+      console.info(`Graph feedback sync: syncing chain ${chainId} (${endpoint.version})...`);
+
+      let hasMore = true;
+      let skip = 0;
+      const first = 1000;
+      let chainFeedbackCount = 0;
+
+      while (hasMore) {
+        // Fetch batch of feedback for this chain
+        const feedbackBatch = await fetchFeedbackFromGraph(
+          chainId,
+          first,
+          skip,
+          lastCreatedAt,
+          env?.GRAPH_API_KEY
+        );
+
+        if (feedbackBatch.length === 0) {
+          hasMore = false;
+          break;
+        }
+
+        console.info(
+          `Graph feedback sync: chain ${chainId} - processing batch of ${feedbackBatch.length} feedback entries`
+        );
+
+        const batchLatest = await processBatch(db, reputationService, feedbackBatch, result);
+        if (batchLatest > latestCreatedAt) {
+          latestCreatedAt = batchLatest;
+        }
+
+        chainFeedbackCount += feedbackBatch.length;
+        skip += feedbackBatch.length;
+        hasMore = feedbackBatch.length === first;
+
+        // Safety limit per chain
+        if (skip > 10000) {
+          console.warn(`Graph feedback sync: chain ${chainId} reached safety limit of 10000 entries`);
+          break;
+        }
       }
 
-      console.info(
-        `Graph feedback sync: processing batch of ${feedbackBatch.length} feedback entries`
-      );
-
-      const batchLatest = await processBatch(db, reputationService, feedbackBatch, result);
-      if (batchLatest > latestCreatedAt) {
-        latestCreatedAt = batchLatest;
-      }
-
-      skip += feedbackBatch.length;
-      hasMore = feedbackBatch.length === first;
-
-      // Safety limit to prevent infinite loops
-      if (skip > 50000) {
-        console.warn('Graph feedback sync: reached safety limit of 50000 entries');
-        break;
-      }
+      console.info(`Graph feedback sync: chain ${chainId} - synced ${chainFeedbackCount} entries`);
     }
 
     // Update sync state

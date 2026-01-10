@@ -90,6 +90,7 @@ function searchResultToAgentSummary(result: SearchResultItem): AgentSummary {
     ens: result.metadata?.ens,
     did: result.metadata?.did,
     walletAddress: result.metadata?.walletAddress,
+    erc8004Version: result.metadata?.erc8004Version,
   };
 }
 

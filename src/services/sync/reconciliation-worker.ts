@@ -279,6 +279,7 @@ async function indexAgentsToQdrant(
         agent_uri: '', // Not available in reconciliation context
         updated_at: '', // Not available in reconciliation context
         trust_score: 0,
+        erc_8004_version: 'v1.0', // Default to v1.0 for reconciliation
       };
 
       await qdrant.upsertAgent(agentId, vector, payload);
