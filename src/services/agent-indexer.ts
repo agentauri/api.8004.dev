@@ -295,6 +295,11 @@ export class AgentIndexer {
       updated_at: '', // Will be populated from subgraph during full sync
       trust_score: 0, // Will be populated from PageRank computation
       erc_8004_version: 'v1.0', // Default to v1.0 for SDK-sourced agents
+      mcp_endpoint: '', // Will be populated from subgraph during full sync
+      a2a_endpoint: '', // Will be populated from subgraph during full sync
+      // Curation fields (Gap 3) - initialized empty, populated from feedback sync
+      curated_by: [],
+      is_curated: false,
     };
   }
 

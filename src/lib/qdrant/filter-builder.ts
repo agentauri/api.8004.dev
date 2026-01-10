@@ -368,6 +368,70 @@ export function buildFilter(params: AgentFilterParams): QdrantFilter | undefined
     });
   }
 
+  // --- Trust score filters (Gap 1) ---
+
+  // Trust score range filter
+  if (params.trustScoreMin !== undefined || params.trustScoreMax !== undefined) {
+    const range: { gte?: number; lte?: number } = {};
+
+    if (params.trustScoreMin !== undefined) {
+      range.gte = params.trustScoreMin;
+    }
+
+    if (params.trustScoreMax !== undefined) {
+      range.lte = params.trustScoreMax;
+    }
+
+    mustConditions.push({
+      key: 'trust_score',
+      range,
+    });
+  }
+
+  // --- Version filters (Gap 1) ---
+
+  // ERC-8004 version filter
+  if (params.erc8004Version) {
+    mustConditions.push({
+      key: 'erc_8004_version',
+      match: { value: params.erc8004Version },
+    });
+  }
+
+  // MCP version filter
+  if (params.mcpVersion) {
+    mustConditions.push({
+      key: 'mcp_version',
+      match: { value: params.mcpVersion },
+    });
+  }
+
+  // A2A version filter
+  if (params.a2aVersion) {
+    mustConditions.push({
+      key: 'a2a_version',
+      match: { value: params.a2aVersion },
+    });
+  }
+
+  // --- Curation filters (Gap 3) ---
+
+  // Curated by filter (check if curator is in curated_by array)
+  if (params.curatedBy) {
+    mustConditions.push({
+      key: 'curated_by',
+      match: { any: [params.curatedBy.toLowerCase()] },
+    });
+  }
+
+  // Is curated filter
+  if (params.isCurated !== undefined) {
+    mustConditions.push({
+      key: 'is_curated',
+      match: { value: params.isCurated },
+    });
+  }
+
   // --- Exclusion filters (notIn / except) ---
 
   // Exclude chain IDs

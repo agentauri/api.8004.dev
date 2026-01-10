@@ -4,6 +4,56 @@
  */
 
 /**
+ * MCP Tool with full details stored in Qdrant
+ */
+export interface McpToolPayload {
+  /** Tool name (identifier) */
+  name: string;
+  /** Human-readable description */
+  description?: string;
+  /** JSON Schema for input parameters */
+  inputSchema?: Record<string, unknown>;
+}
+
+/**
+ * MCP Prompt argument stored in Qdrant
+ */
+export interface McpPromptArgumentPayload {
+  /** Argument name */
+  name: string;
+  /** Argument description */
+  description?: string;
+  /** Whether this argument is required */
+  required?: boolean;
+}
+
+/**
+ * MCP Prompt with full details stored in Qdrant
+ */
+export interface McpPromptPayload {
+  /** Prompt name (identifier) */
+  name: string;
+  /** Human-readable description */
+  description?: string;
+  /** Prompt arguments */
+  arguments?: McpPromptArgumentPayload[];
+}
+
+/**
+ * MCP Resource with full details stored in Qdrant
+ */
+export interface McpResourcePayload {
+  /** Resource URI */
+  uri: string;
+  /** Resource name */
+  name: string;
+  /** Human-readable description */
+  description?: string;
+  /** MIME type of the resource content */
+  mimeType?: string;
+}
+
+/**
  * Agent payload stored in Qdrant
  * Contains all filterable and sortable fields
  */
@@ -48,6 +98,16 @@ export interface AgentPayload {
   mcp_prompts: string[];
   /** MCP resource names */
   mcp_resources: string[];
+  /** MCP tools with full details (descriptions, input schemas) */
+  mcp_tools_detailed?: McpToolPayload[];
+  /** MCP prompts with full details (descriptions, arguments) */
+  mcp_prompts_detailed?: McpPromptPayload[];
+  /** MCP resources with full details (descriptions, MIME types) */
+  mcp_resources_detailed?: McpResourcePayload[];
+  /** When MCP capabilities were last fetched (ISO timestamp) */
+  mcp_capabilities_fetched_at?: string;
+  /** Error message if MCP capability fetch failed */
+  mcp_capabilities_error?: string;
   /** Reputation score (0-100) */
   reputation: number;
   /** Creation timestamp (ISO string) */
@@ -78,6 +138,10 @@ export interface AgentPayload {
   mcp_version: string;
   /** A2A protocol version (empty string if not set) */
   a2a_version: string;
+  /** MCP endpoint URL for crawling capabilities (empty string if not set) */
+  mcp_endpoint: string;
+  /** A2A endpoint URL (empty string if not set) */
+  a2a_endpoint: string;
   /** Chain ID of agent's wallet (0 if not set) */
   agent_wallet_chain_id: number;
   /** Supported trust models (empty array if not set) */
@@ -90,6 +154,10 @@ export interface AgentPayload {
   trust_score: number;
   /** ERC-8004 spec version ('v0.4' for pre-v1.0, 'v1.0' for current) */
   erc_8004_version: string;
+  /** Wallet addresses of curators who gave STAR feedback to this agent */
+  curated_by: string[];
+  /** Whether this agent is curated by at least one known curator */
+  is_curated: boolean;
 }
 
 /**
@@ -415,6 +483,26 @@ export interface AgentFilterParams {
   // Substring filters
   /** Filter by description substring (case-insensitive) */
   descriptionContains?: string;
+
+  // Trust score filters (Gap 1)
+  /** Minimum trust score (0-100) */
+  trustScoreMin?: number;
+  /** Maximum trust score (0-100) */
+  trustScoreMax?: number;
+
+  // Version filters (Gap 1)
+  /** Filter by ERC-8004 spec version ('v0.4' or 'v1.0') */
+  erc8004Version?: string;
+  /** Filter by MCP protocol version */
+  mcpVersion?: string;
+  /** Filter by A2A protocol version */
+  a2aVersion?: string;
+
+  // Curation filters (Gap 3)
+  /** Filter by curator wallet address */
+  curatedBy?: string;
+  /** Filter by curated status */
+  isCurated?: boolean;
 
   // Exclusion filters (notIn)
   /** Exclude agents with these chain IDs */

@@ -280,6 +280,11 @@ async function indexAgentsToQdrant(
         updated_at: '', // Not available in reconciliation context
         trust_score: 0,
         erc_8004_version: 'v1.0', // Default to v1.0 for reconciliation
+        mcp_endpoint: reg?.mcpEndpoint ?? '',
+        a2a_endpoint: reg?.a2aEndpoint ?? '',
+        // Curation fields (Gap 3) - initialized empty, populated from feedback sync
+        curated_by: [],
+        is_curated: false,
       };
 
       await qdrant.upsertAgent(agentId, vector, payload);

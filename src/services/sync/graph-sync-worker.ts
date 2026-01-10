@@ -405,6 +405,8 @@ function agentToPayload(
     // New fields from subgraph schema
     mcp_version: reg?.mcpVersion ?? '',
     a2a_version: reg?.a2aVersion ?? '',
+    mcp_endpoint: reg?.mcpEndpoint ?? '',
+    a2a_endpoint: reg?.a2aEndpoint ?? '',
     agent_wallet_chain_id: agentWalletChainId,
     supported_trusts: reg?.supportedTrusts ?? [],
     agent_uri: agent.agentURI ?? '',
@@ -414,6 +416,9 @@ function agentToPayload(
     trust_score: 0,
     // Version tracking
     erc_8004_version: version,
+    // Curation fields (Gap 3) - initialized empty, populated from feedback sync
+    curated_by: [],
+    is_curated: false,
   };
 }
 
