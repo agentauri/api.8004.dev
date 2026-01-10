@@ -424,8 +424,10 @@ function agentToPayload(
  */
 function getEmbedFields(agent: GraphAgent, ioModes?: ExtractedIOModes): EmbedFields {
   const reg = agent.registrationFile;
+  // Use placeholder name if name is missing/null/empty - ensures we always have text for embedding
+  const name = reg?.name || `Agent #${agent.agentId}`;
   return {
-    name: reg?.name ?? '',
+    name,
     description: reg?.description ?? '',
     mcpTools: reg?.mcpTools?.map((t) => t.name) ?? [],
     mcpPrompts: reg?.mcpPrompts?.map((p) => p.name) ?? [],
