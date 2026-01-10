@@ -100,6 +100,72 @@ export interface AgentSummary {
 }
 
 /**
+ * MCP tool with detailed information
+ */
+export interface McpToolDetail {
+  /** Tool name (identifier) */
+  name: string;
+  /** Human-readable description */
+  description?: string;
+  /** JSON Schema for input parameters */
+  inputSchema?: Record<string, unknown>;
+}
+
+/**
+ * MCP prompt argument
+ */
+export interface McpPromptArgument {
+  /** Argument name */
+  name: string;
+  /** Argument description */
+  description?: string;
+  /** Whether this argument is required */
+  required?: boolean;
+}
+
+/**
+ * MCP prompt with detailed information
+ */
+export interface McpPromptDetail {
+  /** Prompt name (identifier) */
+  name: string;
+  /** Human-readable description */
+  description?: string;
+  /** Prompt arguments */
+  arguments?: McpPromptArgument[];
+}
+
+/**
+ * MCP resource with detailed information
+ */
+export interface McpResourceDetail {
+  /** Resource URI */
+  uri: string;
+  /** Resource name */
+  name: string;
+  /** Human-readable description */
+  description?: string;
+  /** MIME type of the resource content */
+  mimeType?: string;
+}
+
+/**
+ * MCP capabilities fetched from MCP endpoint
+ */
+export interface McpCapabilitiesDetail {
+  /** Available tools with descriptions */
+  tools: McpToolDetail[];
+  /** Available prompts with descriptions */
+  prompts: McpPromptDetail[];
+  /** Available resources with descriptions */
+  resources: McpResourceDetail[];
+  /** When capabilities were last fetched */
+  fetchedAt?: string;
+  /** Error message if fetch failed */
+  error?: string;
+}
+
+/**
  * MCP endpoint configuration
  */
 export interface McpEndpoint {
@@ -230,6 +296,8 @@ export interface AgentDetail extends AgentSummary {
   mcpPrompts?: string[];
   /** List of MCP resource names */
   mcpResources?: string[];
+  /** Detailed MCP capabilities (tools, prompts, resources with descriptions) */
+  mcpCapabilities?: McpCapabilitiesDetail;
   /** Full reputation data */
   reputation?: AgentReputation;
   /** Metadata fetched from IPFS */

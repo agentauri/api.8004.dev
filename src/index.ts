@@ -59,6 +59,7 @@ import {
   syncFeedbackFromGraph,
   syncFromGraph,
 } from '@/services/sync';
+import { crawlMcpCapabilities } from '@/services/sync/mcp-crawl-worker';
 import type { ClassificationJob, Env, EvaluationJob, Variables } from '@/types';
 
 /**
@@ -603,6 +604,26 @@ export default {
               );
             } catch (error) {
               console.error('Re-embed failed:', error instanceof Error ? error.message : error);
+            }
+          })()
+        );
+
+        // Every 30 minutes: Crawl MCP endpoints for detailed capabilities
+        ctx.waitUntil(
+          (async () => {
+            console.info('Starting MCP capabilities crawl...');
+            try {
+              const mcpResult = await crawlMcpCapabilities({
+                QDRANT_URL: qdrantUrl,
+                QDRANT_API_KEY: qdrantApiKey,
+                QDRANT_COLLECTION: qdrantCollection,
+              });
+              console.info(
+                `MCP crawl: ${mcpResult.agentsWithMcp} agents with MCP, ` +
+                  `${mcpResult.crawledSuccessfully} crawled, ${mcpResult.crawlErrors} errors`
+              );
+            } catch (error) {
+              console.error('MCP crawl failed:', error instanceof Error ? error.message : error);
             }
           })()
         );

@@ -377,6 +377,23 @@ export class QdrantClient {
   }
 
   /**
+   * Get a single agent by agent_id (chainId:tokenId format)
+   * Uses scroll with filter since we don't have the point UUID
+   */
+  async getByAgentId(agentId: string): Promise<QdrantSearchResultItem | null> {
+    const filter: QdrantFilter = {
+      must: [{ key: 'agent_id', match: { value: agentId } }],
+    };
+
+    const result = await this.scroll({
+      limit: 1,
+      qdrantFilter: filter,
+    });
+
+    return result.items[0] ?? null;
+  }
+
+  /**
    * Create a payload index for a field
    * Required for filtering on fields that aren't indexed by default
    */

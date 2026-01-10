@@ -21,9 +21,11 @@ import { getAgentEvaluations } from '@/services/evaluator';
 import { createIPFSService } from '@/services/ipfs';
 import { resolveClassification, toOASFClassification } from '@/services/oasf-resolver';
 import { sortAgents } from '@/services/pagination-cache';
+import { createQdrantClient } from '@/services/qdrant';
 import { createQdrantSearchService, searchFiltersToAgentFilters } from '@/services/qdrant-search';
 import { createReputationService } from '@/services/reputation';
 import { createSDKService } from '@/services/sdk';
+import type { McpCapabilitiesDetail } from '@/types/agent';
 import type {
   AgentDetailResponse,
   AgentListResponse,
@@ -630,17 +632,57 @@ agents.get('/:agentId', async (c) => {
     timeoutMs: c.env.IPFS_TIMEOUT_MS ? Number.parseInt(c.env.IPFS_TIMEOUT_MS, 10) : undefined,
   });
 
-  const [ipfsMetadata, classificationRow, reputationData] = await Promise.all([
+  // Create Qdrant client to fetch MCP capabilities
+  const qdrant = createQdrantClient({
+    QDRANT_URL: c.env.QDRANT_URL!,
+    QDRANT_API_KEY: c.env.QDRANT_API_KEY!,
+    QDRANT_COLLECTION: c.env.QDRANT_COLLECTION ?? 'agents',
+  });
+
+  const [ipfsMetadata, classificationRow, reputationData, qdrantAgent] = await Promise.all([
     agent.registration.metadataUri
       ? ipfsService.fetchMetadata(agent.registration.metadataUri, agentId)
       : Promise.resolve(null),
     getClassification(c.env.DB, agentId),
     createReputationService(c.env.DB).getAgentReputation(agentId),
+    qdrant.getByAgentId(agentId).catch(() => null), // Graceful fallback if Qdrant fails
   ]);
 
   const dbClassification = parseClassificationRow(classificationRow);
   const resolvedClassification = resolveClassification(ipfsMetadata, dbClassification);
   const oasf = toOASFClassification(resolvedClassification);
+
+  // Extract MCP capabilities from Qdrant payload if available
+  let mcpCapabilities: McpCapabilitiesDetail | undefined;
+  if (qdrantAgent?.payload) {
+    const p = qdrantAgent.payload;
+    if (p.mcp_tools_detailed || p.mcp_prompts_detailed || p.mcp_resources_detailed) {
+      mcpCapabilities = {
+        tools: (p.mcp_tools_detailed ?? []).map((t) => ({
+          name: t.name,
+          description: t.description,
+          inputSchema: t.inputSchema,
+        })),
+        prompts: (p.mcp_prompts_detailed ?? []).map((pr) => ({
+          name: pr.name,
+          description: pr.description,
+          arguments: pr.arguments?.map((a) => ({
+            name: a.name,
+            description: a.description,
+            required: a.required,
+          })),
+        })),
+        resources: (p.mcp_resources_detailed ?? []).map((r) => ({
+          uri: r.uri,
+          name: r.name,
+          description: r.description,
+          mimeType: r.mimeType,
+        })),
+        fetchedAt: p.mcp_capabilities_fetched_at,
+        error: p.mcp_capabilities_error,
+      };
+    }
+  }
 
   const response: AgentDetailResponse = {
     success: true,
@@ -656,6 +698,7 @@ agents.get('/:agentId', async (c) => {
         ...agent.endpoints,
         oasf: ipfsMetadata?.oasfEndpoint,
       },
+      mcpCapabilities,
       ipfsMetadata: ipfsMetadata
         ? {
             socialLinks: ipfsMetadata.socialLinks,
