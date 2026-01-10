@@ -28,6 +28,7 @@ import { registerAgentsOASFTests } from './tests/agents-oasf';
 import { registerAgentsPaginationTests } from './tests/agents-pagination';
 import { registerAgentsReputationTests } from './tests/agents-reputation';
 import { registerAgentsSortingTests } from './tests/agents-sorting';
+import { registerComprehensiveConsistencyTests } from './tests/comprehensive-consistency';
 import { registerConsistencyTests } from './tests/consistency';
 // Data consistency test suites
 import {
@@ -52,7 +53,8 @@ import { registerTaxonomyTests } from './tests/taxonomy';
 // Local worker configuration
 const LOCAL_WORKER_PORT = 8788;
 const LOCAL_WORKER_URL = `http://localhost:${LOCAL_WORKER_PORT}/api/v1`;
-const LOCAL_API_KEY = 'e2e-test-api-key';
+// API key from .dev.vars - wrangler loads this automatically
+const LOCAL_API_KEY = process.env.API_KEY || '3f4f9c31bacf4c286b7f7649159c06b5ebd84c69605392036a0c4e15a4f37b19';
 const WORKER_STARTUP_TIMEOUT = 30000; // 30 seconds
 
 // Slow test suites that can be skipped in CI (they compare multiple data sources and are flaky)
@@ -61,6 +63,7 @@ const WORKER_STARTUP_TIMEOUT = 30000; // 30 seconds
 // pagination/fallback/advanced: multi-request tests can hit rate limits
 const SLOW_SUITES = [
   'consistency',
+  'comprehensive-consistency', // comprehensive data consistency tests (SDK vs API)
   'mcp-consistency',
   'source',
   'data-consistency',
@@ -127,6 +130,7 @@ const testSuites: Record<string, () => void> = {
   fallback: registerSearchFallbackTests,
   pagination: registerAgentsPaginationTests,
   consistency: registerConsistencyTests,
+  'comprehensive-consistency': registerComprehensiveConsistencyTests,
   reputation: registerAgentsReputationTests,
   advanced: registerAgentsAdvancedTests,
   edge: registerAgentsEdgeCasesTests,

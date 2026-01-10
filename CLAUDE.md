@@ -114,7 +114,6 @@ api.8004.dev/
 │   │   ├── sse.ts                  # Server-Sent Events
 │   │   └── sync/                   # Data synchronization workers
 │   │       ├── graph-sync-worker.ts
-│   │       ├── sdk-sync-worker.ts
 │   │       ├── d1-sync-worker.ts
 │   │       ├── graph-feedback-worker.ts
 │   │       └── reconciliation-worker.ts
@@ -411,8 +410,31 @@ pnpm run test:e2e          # E2E tests (~120 cases)
 
 ## Related Documentation
 
+- [ERC-8004 Reference Guide](./docs/ERC-8004-REFERENCE.md) - **IMPORTANT**: Current spec status, breaking changes, deployment addresses
 - [Deployment Guide](./DEPLOY.md)
 - [Semantic Search Standard](./docs/AG0_SEMANTIC_SEARCH_STANDARD.md)
 - [MCP Integration](./docs/FRONTEND_MCP_INTEGRATION.md)
 - [agent0-ts SDK](https://github.com/agent0lab/agent0-ts)
 - [OASF Schema](https://docs.agntcy.org/oasf/)
+
+---
+
+## ERC-8004 Quick Reference
+
+**Official Resources:**
+- Spec: https://eips.ethereum.org/EIPS/eip-8004
+- Spec Changes (v1.0): https://github.com/erc-8004/erc-8004-contracts/blob/master/SpecsJan26Update.md
+- Contracts: https://github.com/erc-8004/erc-8004-contracts
+- Subgraph: https://github.com/agent0lab/subgraph
+
+**Deployed Contracts (ETH Sepolia only):**
+- IdentityRegistry: `0x8004A818BFB912233c491871b3d84c89A494BD9e`
+- ReputationRegistry: `0x8004B663056A597Dffe9eCcC1965A193B7388713`
+
+**v1.0 Breaking Changes:**
+- `feedbackAuth` parameter REMOVED
+- Tags: `bytes32` → `string`
+- NEW fields: `feedbackIndex`, `endpoint`
+- `agentWallet` moved to `Agent` entity (not `AgentRegistrationFile`)
+
+See [ERC-8004 Reference Guide](./docs/ERC-8004-REFERENCE.md) for full details.

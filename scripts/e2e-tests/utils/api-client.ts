@@ -3,8 +3,9 @@
  * HTTP client with retry logic for testing the 8004.dev API
  */
 
-const API_BASE = process.env.API_BASE_URL || 'https://api.8004.dev/api/v1';
-const API_KEY = process.env.API_KEY || '';
+// Read at request time to allow run-tests.ts to set environment variables
+const getApiBase = () => process.env.API_BASE_URL || 'https://api.8004.dev/api/v1';
+const getApiKey = () => process.env.API_KEY || '';
 const MAX_RETRIES = 2;
 const RETRY_DELAY = 1000;
 const REQUEST_DELAY = 50; // Reduced - test-runner has its own delay
@@ -75,15 +76,15 @@ export async function apiRequest<T>(
 ): Promise<{ response: Response; json: ApiResponse<T>; duration: number }> {
   const { method = 'GET', body, headers = {}, skipAuth = false } = options;
 
-  const url = path.startsWith('http') ? path : `${API_BASE}${path}`;
+  const url = path.startsWith('http') ? path : `${getApiBase()}${path}`;
 
   const requestHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
     ...headers,
   };
 
-  if (!skipAuth && API_KEY) {
-    requestHeaders['X-API-Key'] = API_KEY;
+  if (!skipAuth && getApiKey()) {
+    requestHeaders['X-API-Key'] = getApiKey();
   }
 
   const fetchOptions: RequestInit = {
@@ -170,14 +171,14 @@ export async function post<T = Agent[]>(
  * Check if API key is configured
  */
 export function hasApiKey(): boolean {
-  return Boolean(API_KEY);
+  return Boolean(getApiKey());
 }
 
 /**
  * Get the API base URL
  */
 export function getApiBaseUrl(): string {
-  return API_BASE;
+  return getApiBase();
 }
 
 // ============================================================================
