@@ -475,6 +475,7 @@ async function fetchAgentExtrasFromSubgraph(
 
 /**
  * Feedback record from subgraph
+ * Updated for ERC-8004 v1.0: added endpoint, feedbackIndex, feedbackHash
  */
 export interface SubgraphFeedback {
   id: string;
@@ -482,7 +483,10 @@ export interface SubgraphFeedback {
   clientAddress: string;
   tag1?: string;
   tag2?: string;
+  endpoint?: string; // v1.0: endpoint reference
+  feedbackIndex?: number; // v1.0: per-client feedback index
   feedbackUri?: string;
+  feedbackHash?: string; // v1.0: content hash
   createdAt: string;
   isRevoked: boolean;
 }
@@ -583,12 +587,14 @@ export async function fetchValidationsFromSubgraph(
 
 /**
  * Raw agent data from subgraph (includes agents without registration files)
+ * Updated for ERC-8004 v1.0: agentWallet is now on Agent entity, agentWalletChainId removed
  */
 export interface SubgraphRawAgent {
   id: string; // format: "chainId:tokenId"
   chainId: string;
   agentId: string;
   agentURI: string | null;
+  agentWallet: string | null; // v1.0: On-chain verified wallet (moved from registrationFile)
   owner: string; // Single owner address
   operators: string[];
   createdAt: string;
@@ -603,8 +609,7 @@ export interface SubgraphRawAgent {
     x402support: boolean;
     ens: string | null;
     did: string | null;
-    agentWallet: string | null;
-    agentWalletChainId: string | null;
+    // NOTE: agentWallet and agentWalletChainId removed in ERC-8004 v1.0
     mcpVersion: string | null;
     a2aVersion: string | null;
     supportedTrusts: string[] | null;
@@ -651,6 +656,7 @@ export async function fetchAllAgentsFromSubgraph(
   const whereClause = withRegistrationFileOnly ? 'where: { registrationFile_not: null }' : ''; // No filter = all agents
 
   while (allAgents.length < limit) {
+    // ERC-8004 v1.0: agentWallet is now on Agent entity, agentWalletChainId removed
     const query = `{
       agents(
         first: ${batchSize}
@@ -662,6 +668,7 @@ export async function fetchAllAgentsFromSubgraph(
         chainId
         agentId
         agentURI
+        agentWallet
         owner
         operators
         createdAt
@@ -676,8 +683,6 @@ export async function fetchAllAgentsFromSubgraph(
           x402support
           ens
           did
-          agentWallet
-          agentWalletChainId
           mcpVersion
           a2aVersion
           supportedTrusts
