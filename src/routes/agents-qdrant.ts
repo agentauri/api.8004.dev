@@ -36,6 +36,10 @@ import type {
   SearchResultItem,
   Variables,
 } from '@/types';
+import {
+  buildAgentSummary,
+  buildOASFClassification,
+} from '@/lib/utils/agent-transform';
 import { classify } from './classify';
 import { healthAgent } from './health-agent';
 import { reputation } from './reputation';
@@ -43,57 +47,43 @@ import { verification } from './verification';
 
 /**
  * Convert SearchResultItem to AgentSummary for similar agents response
+ * Uses centralized transformation utilities
  */
 function searchResultToAgentSummary(result: SearchResultItem): AgentSummary {
-  const [, tokenId] = result.agentId.split(':');
   const qdrantSkills = result.metadata?.skills ?? [];
   const qdrantDomains = result.metadata?.domains ?? [];
 
-  // Use enriched data (skills_with_confidence) when available, fallback to slugs
-  const hasEnrichedOasf = (result.metadata?.skills_with_confidence?.length ?? 0) > 0;
-  const hasOasf = hasEnrichedOasf || qdrantSkills.length > 0 || qdrantDomains.length > 0;
+  const oasf = buildOASFClassification({
+    skills: qdrantSkills,
+    domains: qdrantDomains,
+    skillsWithConfidence: result.metadata?.skills_with_confidence,
+    domainsWithConfidence: result.metadata?.domains_with_confidence,
+    confidence: result.metadata?.classification_confidence,
+    classifiedAt: result.metadata?.classification_at,
+    modelVersion: result.metadata?.classification_model,
+  });
 
-  const oasf = hasEnrichedOasf
-    ? {
-        skills: result.metadata?.skills_with_confidence ?? [],
-        domains: result.metadata?.domains_with_confidence ?? [],
-        confidence: result.metadata?.classification_confidence ?? 1,
-        classifiedAt: result.metadata?.classification_at ?? new Date().toISOString(),
-        modelVersion: result.metadata?.classification_model ?? 'qdrant-indexed',
-      }
-    : hasOasf
-      ? {
-          skills: qdrantSkills.map((slug) => ({ slug, confidence: 1 })),
-          domains: qdrantDomains.map((slug) => ({ slug, confidence: 1 })),
-          confidence: 1,
-          classifiedAt: new Date().toISOString(),
-          modelVersion: 'qdrant-indexed',
-        }
-      : undefined;
-
-  return {
-    id: result.agentId,
-    chainId: result.chainId,
-    tokenId: tokenId ?? '0',
-    name: result.name,
-    description: result.description,
-    image: result.metadata?.image,
-    active: result.metadata?.active ?? true,
-    hasMcp: result.metadata?.hasMcp ?? false,
-    hasA2a: result.metadata?.hasA2a ?? false,
-    x402Support: result.metadata?.x402Support ?? false,
-    supportedTrust: [],
-    oasf,
-    oasfSource: (oasf ? 'llm-classification' : 'none') as OASFSource,
-    searchScore: result.score,
-    reputationScore: result.metadata?.reputation,
-    owner: result.metadata?.owner,
-    operators: result.metadata?.operators ?? [],
-    ens: result.metadata?.ens,
-    did: result.metadata?.did,
-    walletAddress: result.metadata?.walletAddress,
-    erc8004Version: result.metadata?.erc8004Version,
-  };
+  return buildAgentSummary(
+    {
+      agentId: result.agentId,
+      name: result.name,
+      description: result.description,
+      image: result.metadata?.image,
+      active: result.metadata?.active ?? true,
+      hasMcp: result.metadata?.hasMcp ?? false,
+      hasA2a: result.metadata?.hasA2a ?? false,
+      x402Support: result.metadata?.x402Support ?? false,
+      operators: result.metadata?.operators,
+      ens: result.metadata?.ens,
+      did: result.metadata?.did,
+      walletAddress: result.metadata?.walletAddress,
+      owner: result.metadata?.owner,
+      reputationScore: result.metadata?.reputation,
+      searchScore: result.score,
+      erc8004Version: result.metadata?.erc8004Version,
+    },
+    oasf
+  );
 }
 
 /**

@@ -10,20 +10,27 @@
 
 import type { D1Database } from '@cloudflare/workers-types';
 import { formatAgentText } from '@/lib/ai/formatting';
+import { buildSubgraphUrls } from '@/lib/config/graph';
+import { createWorkerLogger } from '@/lib/logger/worker-logger';
+import {
+  buildAgentPayload,
+  type PayloadBuilderInput,
+} from '../../lib/qdrant/payload-builder';
 import type { AgentPayload } from '../../lib/qdrant/types';
 import { generateEmbedding } from '../embedding';
 import { createQdrantClient } from '../qdrant';
 
-// Graph endpoints per chain (using gateway.thegraph.com with subgraph IDs)
-// Must match graph-sync-worker.ts endpoints
-// NOTE: Base Sepolia and Polygon Amoy subgraphs were deprecated after ERC-8004 v1.0 update
-// TODO: Add new subgraph IDs when they are deployed
-const GRAPH_ENDPOINTS: Record<number, string> = {
-  11155111:
-    'https://gateway.thegraph.com/api/subgraphs/id/6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT',
-  // 84532: Deprecated - waiting for new subgraph deployment
-  // 80002: Deprecated - waiting for new subgraph deployment
-};
+// The Graph API key from agent0-sdk (public key for ERC-8004 subgraphs)
+const GRAPH_API_KEY = '00a452ad3cd1900273ea62c1bf283f93';
+
+// Build URLs once at module load
+const ALL_SUBGRAPH_URLS = buildSubgraphUrls(GRAPH_API_KEY);
+
+// Graph endpoints per chain (using centralized config)
+// Only ETH Sepolia has v1.0 contracts deployed currently
+const GRAPH_ENDPOINTS: Record<number, string> = Object.fromEntries(
+  Object.entries(ALL_SUBGRAPH_URLS).filter(([chainId]) => chainId === '11155111')
+);
 
 interface GraphAgent {
   chainId: string;
@@ -205,6 +212,7 @@ async function fetchAgentsByIds(agentIds: string[], graphApiKey?: string): Promi
 /**
  * Index missing agents to Qdrant
  * Handles both agents with and without registrationFile
+ * Uses centralized payload builder for consistent payload structure
  */
 async function indexAgentsToQdrant(
   agents: GraphAgent[],
@@ -239,61 +247,41 @@ async function indexAgentsToQdrant(
 
       const vector = await generateEmbedding(text, env.VENICE_API_KEY);
 
-      // NOTE: agentWalletChainId was removed in ERC-8004 v1.0
-
-      // Create payload - supports agents with or without registrationFile
-      const payload: AgentPayload = {
-        agent_id: agentId,
-        chain_id: Number(agent.chainId),
-        token_id: agent.agentId,
+      // Build input for centralized payload builder
+      const input: PayloadBuilderInput = {
+        agentId,
+        chainId: Number(agent.chainId),
+        tokenId: agent.agentId,
         name: reg?.name ?? (hasReg ? '' : `Agent #${agent.agentId}`),
         description: reg?.description ?? '',
-        image: reg?.image ?? '',
+        image: reg?.image ?? undefined,
         active: reg?.active ?? false,
-        has_mcp: !!reg?.mcpEndpoint,
-        has_a2a: !!reg?.a2aEndpoint,
-        x402_support: reg?.x402support ?? false,
-        has_registration_file: hasReg,
-        ens: reg?.ens ?? '',
-        did: reg?.did ?? '',
-        wallet_address: agent.agentWallet ?? '', // On-chain agentWallet (set via setAgentWallet)
-        owner: (agent.owner ?? '').toLowerCase(),
+        mcpEndpoint: reg?.mcpEndpoint ?? undefined,
+        a2aEndpoint: reg?.a2aEndpoint ?? undefined,
+        x402Support: reg?.x402support ?? false,
+        hasRegistrationFile: hasReg,
+        ens: reg?.ens ?? undefined,
+        did: reg?.did ?? undefined,
+        walletAddress: agent.agentWallet ?? undefined, // On-chain agentWallet (v1.0)
+        owner: agent.owner ?? '',
         operators: agent.operators ?? [],
-        mcp_tools: reg?.mcpTools?.map((t) => t.name) ?? [],
-        mcp_prompts: [],
-        mcp_resources: [],
-        a2a_skills: reg?.a2aSkills?.map((s) => s.name) ?? [],
-        skills: [],
-        domains: [],
-        reputation: 0,
-        input_modes: [],
-        output_modes: [],
-        created_at: reg?.createdAt ?? new Date().toISOString(),
-        is_reachable_a2a: false, // Will be populated from feedback data during regular sync
-        is_reachable_mcp: false, // Will be populated from feedback data during regular sync
-        // New fields from subgraph schema
-        mcp_version: reg?.mcpVersion ?? '',
-        a2a_version: reg?.a2aVersion ?? '',
-        agent_wallet_chain_id: 0, // NOTE: agentWalletChainId removed in ERC-8004 v1.0
-        supported_trusts: reg?.supportedTrusts ?? [],
-        agent_uri: '', // Not available in reconciliation context
-        updated_at: '', // Not available in reconciliation context
-        trust_score: 0,
-        erc_8004_version: 'v1.0', // Default to v1.0 for reconciliation
-        mcp_endpoint: reg?.mcpEndpoint ?? '',
-        a2a_endpoint: reg?.a2aEndpoint ?? '',
-        // Curation fields (Gap 3) - initialized empty, populated from feedback sync
-        curated_by: [],
-        is_curated: false,
+        mcpTools: reg?.mcpTools?.map((t) => t.name),
+        a2aSkills: reg?.a2aSkills?.map((s) => s.name),
+        createdAt: reg?.createdAt,
+        mcpVersion: reg?.mcpVersion ?? undefined,
+        a2aVersion: reg?.a2aVersion ?? undefined,
+        supportedTrusts: reg?.supportedTrusts ?? undefined,
+        erc8004Version: 'v1.0', // Reconciliation always uses v1.0
       };
+
+      const payload: AgentPayload = buildAgentPayload(input);
 
       await qdrant.upsertAgent(agentId, vector, payload);
       indexed++;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(`Failed to index ${agentId}:`, message);
       // Note: This function doesn't have access to result.errors
       // Caller should handle failures by checking indexed count
+      // Errors are logged by the caller
     }
   }
 
@@ -313,6 +301,7 @@ export async function runReconciliation(
     GRAPH_API_KEY?: string;
   }
 ): Promise<ReconciliationResult> {
+  const logger = createWorkerLogger('reconciliation');
   const qdrant = createQdrantClient(env);
   const result: ReconciliationResult = {
     orphansDeleted: 0,
@@ -321,13 +310,15 @@ export async function runReconciliation(
   };
 
   try {
+    logger.start('Starting reconciliation');
+
     // Get all agent IDs from Graph
     const graphAgentIds = await fetchAllAgentIdsFromGraph(env.GRAPH_API_KEY);
-    console.info(`Reconciliation: ${graphAgentIds.size} agents in Graph`);
+    logger.progress('Fetched Graph agents', { count: graphAgentIds.size });
 
     // Get all agent IDs from Qdrant
     const qdrantAgentIds = new Set(await qdrant.getAllAgentIds());
-    console.info(`Reconciliation: ${qdrantAgentIds.size} agents in Qdrant`);
+    logger.progress('Fetched Qdrant agents', { count: qdrantAgentIds.size });
 
     // Find orphans (in Qdrant but not in Graph) → DELETE
     const orphans: string[] = [];
@@ -345,7 +336,7 @@ export async function runReconciliation(
       }
     }
 
-    console.info(`Reconciliation: ${orphans.length} orphans, ${missing.length} missing`);
+    logger.progress('Identified drift', { orphans: orphans.length, missing: missing.length });
 
     // Hard delete orphans from Qdrant
     if (orphans.length > 0) {
@@ -392,9 +383,16 @@ export async function runReconciliation(
       )
       .bind(now, result.orphansDeleted, result.missingIndexed)
       .run();
+
+    logger.complete({
+      orphansDeleted: result.orphansDeleted,
+      missingIndexed: result.missingIndexed,
+      errors: result.errors.length,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     result.errors.push(`Reconciliation: ${message}`);
+    logger.fail('Reconciliation failed', error);
   }
 
   return result;

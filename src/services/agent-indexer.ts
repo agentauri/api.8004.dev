@@ -5,6 +5,11 @@
  */
 
 import type { AgentPayload } from '../lib/qdrant/types';
+import {
+  buildAgentPayload,
+  type PayloadBuilderInput,
+  type PayloadEnrichment,
+} from '../lib/qdrant/payload-builder';
 import type { AgentSummary, Env } from '../types';
 import { type EmbeddingService, formatAgentText } from './embedding';
 import type { QdrantClient } from './qdrant';
@@ -255,52 +260,41 @@ export class AgentIndexer {
 
   /**
    * Convert AgentSummary to Qdrant payload
+   * Uses centralized payload builder for consistent payload structure
    */
   private agentToPayload(agent: AgentSummary): AgentPayload {
-    return {
-      agent_id: agent.id,
-      chain_id: agent.chainId,
+    // Build input from SDK AgentSummary
+    const input: PayloadBuilderInput = {
+      agentId: agent.id,
+      chainId: agent.chainId,
+      tokenId: agent.tokenId,
       name: agent.name,
       description: agent.description,
+      image: agent.image ?? undefined,
       active: agent.active,
-      has_mcp: agent.hasMcp,
-      has_a2a: agent.hasA2a,
-      x402_support: agent.x402Support,
-      has_registration_file: true, // We only index agents with registration files
-      skills: agent.oasf?.skills.map((s) => s.slug) ?? [],
-      domains: agent.oasf?.domains.map((d) => d.slug) ?? [],
-      mcp_tools: [], // Will be populated from detail view
-      a2a_skills: [], // Will be populated from detail view
-      mcp_prompts: [], // Will be populated from detail view
-      mcp_resources: [], // Will be populated from detail view
-      reputation: agent.reputationScore ?? 0,
-      created_at: new Date().toISOString(), // Will be populated from subgraph
-      owner: (agent.owner ?? agent.operators?.[0] ?? '').toLowerCase(),
+      hasRegistrationFile: true, // We only index agents with registration files
+      owner: agent.owner ?? agent.operators?.[0] ?? '',
       operators: agent.operators ?? [],
-      ens: agent.ens ?? '',
-      did: agent.did ?? '',
-      image: agent.image ?? '',
-      wallet_address: agent.walletAddress ?? '',
-      input_modes: agent.inputModes ?? [],
-      output_modes: agent.outputModes ?? [],
-      token_id: agent.tokenId,
-      is_reachable_a2a: false, // Will be populated from feedback data during sync
-      is_reachable_mcp: false, // Will be populated from feedback data during sync
-      // New fields from subgraph schema
-      mcp_version: agent.mcpVersion ?? '',
-      a2a_version: agent.a2aVersion ?? '',
-      agent_wallet_chain_id: 0, // NOTE: agentWalletChainId removed in ERC-8004 v1.0
-      supported_trusts: agent.supportedTrusts ?? [],
-      agent_uri: '', // Will be populated from subgraph during full sync
-      updated_at: '', // Will be populated from subgraph during full sync
-      trust_score: 0, // Will be populated from PageRank computation
-      erc_8004_version: 'v1.0', // Default to v1.0 for SDK-sourced agents
-      mcp_endpoint: '', // Will be populated from subgraph during full sync
-      a2a_endpoint: '', // Will be populated from subgraph during full sync
-      // Curation fields (Gap 3) - initialized empty, populated from feedback sync
-      curated_by: [],
-      is_curated: false,
+      ens: agent.ens ?? undefined,
+      did: agent.did ?? undefined,
+      walletAddress: agent.walletAddress ?? undefined,
+      mcpVersion: agent.mcpVersion ?? undefined,
+      a2aVersion: agent.a2aVersion ?? undefined,
+      supportedTrusts: agent.supportedTrusts,
+      erc8004Version: 'v1.0', // Default to v1.0 for SDK-sourced agents
     };
+
+    // Build enrichment from AgentSummary classification
+    const enrichment: PayloadEnrichment = {
+      skills: agent.oasf?.skills.map((s) => s.slug),
+      domains: agent.oasf?.domains.map((d) => d.slug),
+      inputModes: agent.inputModes,
+      outputModes: agent.outputModes,
+      reputation: agent.reputationScore,
+      // trustScore, isReachableA2a, isReachableMcp will be populated later
+    };
+
+    return buildAgentPayload(input, enrichment);
   }
 
   /**

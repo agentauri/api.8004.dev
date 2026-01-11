@@ -375,39 +375,9 @@ function generateMatchReasons(
  */
 let pendingChainStatsPromise: Promise<ChainStats[]> | null = null;
 
-/**
- * Subgraph IDs for each chain (The Graph Network)
- */
-const SUBGRAPH_IDS: Record<number, string> = {
-  11155111: '6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT', // Ethereum Sepolia
-  84532: 'GjQEDgEKqoh5Yc8MUgxoQoRATEJdEiH7HbocfR1aFiHa', // Base Sepolia
-  80002: '2A1JB18r1mF2VNP4QBH4mmxd74kbHoM6xLXC8ABAKf7j', // Polygon Amoy
-  59141: '7GyxsUkWZ5aDNEqZQhFnMQk8CDxCDgT9WZKqFkNJ7YPx', // Linea Sepolia
-  296: '5GwJ2UKQK3WQhJNqvCqV9EFKBYD6wPYJvFqEPmBKcFsP', // Hedera Testnet
-  998: '3L8DKCwQwpLEYF7m3mE8PCvr8qJcJBvXTk3a9f9sLQrP', // HyperEVM Testnet
-  1351057110: 'HvYWvsPKqWrSzV8VT4mjLGwPNMgVFgRiNMZFdJUg8BPf', // SKALE Base Sepolia
-};
-
-/**
- * Build subgraph URL for a chain using the Graph API key
- */
-function buildSubgraphUrl(chainId: number, graphApiKey: string): string | undefined {
-  const subgraphId = SUBGRAPH_IDS[chainId];
-  if (!subgraphId) return undefined;
-  return `https://gateway.thegraph.com/api/${graphApiKey}/subgraphs/id/${subgraphId}`;
-}
-
-/**
- * Build all subgraph URLs using the Graph API key
- */
-export function buildSubgraphUrls(graphApiKey: string): Record<number, string> {
-  const urls: Record<number, string> = {};
-  for (const chainId of Object.keys(SUBGRAPH_IDS)) {
-    const url = buildSubgraphUrl(Number(chainId), graphApiKey);
-    if (url) urls[Number(chainId)] = url;
-  }
-  return urls;
-}
+// Import and re-export buildSubgraphUrls from centralized config
+import { buildSubgraphUrls as _buildSubgraphUrls } from '@/lib/config/graph';
+export const buildSubgraphUrls = _buildSubgraphUrls;
 
 /**
  * Execute a subgraph GraphQL query with circuit breaker protection

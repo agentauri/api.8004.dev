@@ -9,7 +9,13 @@
 
 import type { D1Database } from '@cloudflare/workers-types';
 import { type EmbedFields, formatAgentText } from '@/lib/ai/formatting';
+import { createWorkerLogger } from '@/lib/logger/worker-logger';
 import type { AgentPayload } from '../../lib/qdrant/types';
+import {
+  buildAgentPayload,
+  type PayloadBuilderInput,
+  type PayloadEnrichment,
+} from '../../lib/qdrant/payload-builder';
 import { type A2AClient, createA2AClient, type ExtractedIOModes } from '../a2a-client';
 import { generateEmbedding } from '../embedding';
 import { createQdrantClient, type QdrantClient } from '../qdrant';
@@ -19,27 +25,27 @@ import { type ContentFields, computeContentHash, computeEmbedHash } from './cont
 // ERC-8004 spec version types
 type ERC8004Version = 'v0.4' | 'v1.0';
 
+import { buildSubgraphUrls, SUBGRAPH_IDS } from '@/lib/config/graph';
+
 // The Graph API key from agent0-sdk (public key for ERC-8004 subgraphs)
 const GRAPH_API_KEY = '00a452ad3cd1900273ea62c1bf283f93';
+
+// Build URLs once at module load
+const ALL_SUBGRAPH_URLS = buildSubgraphUrls(GRAPH_API_KEY);
 
 // Graph endpoints for v1.0 (Jan 2026 update - new contracts)
 // Only ETH Sepolia has v1.0 contracts deployed currently
 // Other chains are pending contract deployment
-const GRAPH_ENDPOINTS_V1_0: Record<number, string> = {
-  11155111: `https://gateway.thegraph.com/api/${GRAPH_API_KEY}/subgraphs/id/6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT`,
-};
+const GRAPH_ENDPOINTS_V1_0: Record<number, string> = Object.fromEntries(
+  Object.entries(ALL_SUBGRAPH_URLS).filter(([chainId]) => chainId === '11155111')
+);
 
 // Graph endpoints for v0.4 (pre-v1.0 - backward compatibility)
 // NOTE: These subgraphs no longer exist after the v1.0 spec update
 // Contracts for these chains are pending deployment
 // Keep empty for now - will be populated when chains deploy v1.0 contracts
 const GRAPH_ENDPOINTS_V0_4: Record<number, string> = {
-  // 84532: pending Base Sepolia v1.0 contract deployment
-  // 80002: pending Polygon Amoy v1.0 contract deployment
-  // 59141: pending Linea Sepolia v1.0 contract deployment
-  // 296: pending Hedera Testnet v1.0 contract deployment
-  // 998: pending HyperEVM Testnet v1.0 contract deployment
-  // 1351057110: pending SKALE Base Sepolia v1.0 contract deployment
+  // Chains pending v1.0 contract deployment will be added here
 };
 
 // Combined endpoints (used by fetchAllAgentsFromGraph)
@@ -340,6 +346,8 @@ async function fetchAllAgentsFromGraph(
 
 /**
  * Convert Graph agent to Qdrant payload
+ * Uses centralized payload builder for consistent payload structure
+ *
  * @param agent - Graph agent data
  * @param version - ERC-8004 spec version
  * @param ioModes - Optional IO modes from A2A AgentCard
@@ -372,54 +380,50 @@ function agentToPayload(
       : 0;
   }
 
-  return {
-    agent_id: `${agent.chainId}:${agent.agentId}`,
-    chain_id: Number(agent.chainId),
-    token_id: agent.agentId,
-    // For agents without registrationFile, use a placeholder name
+  // Build input from Graph agent
+  const input: PayloadBuilderInput = {
+    agentId: `${agent.chainId}:${agent.agentId}`,
+    chainId: Number(agent.chainId),
+    tokenId: agent.agentId,
     name: reg?.name ?? (hasReg ? '' : `Agent #${agent.agentId}`),
     description: reg?.description ?? '',
-    image: reg?.image ?? '',
+    image: reg?.image ?? undefined,
     active: reg?.active ?? false,
-    has_mcp: !!reg?.mcpEndpoint,
-    has_a2a: !!reg?.a2aEndpoint,
-    x402_support: reg?.x402support ?? false,
-    has_registration_file: hasReg,
-    ens: reg?.ens ?? '',
-    did: reg?.did ?? '',
-    wallet_address: walletAddress,
-    owner: (agent.owner ?? '').toLowerCase(),
+    mcpEndpoint: reg?.mcpEndpoint ?? undefined,
+    a2aEndpoint: reg?.a2aEndpoint ?? undefined,
+    x402Support: reg?.x402support ?? false,
+    hasRegistrationFile: hasReg,
+    ens: reg?.ens ?? undefined,
+    did: reg?.did ?? undefined,
+    walletAddress,
+    owner: agent.owner ?? '',
     operators: agent.operators ?? [],
-    mcp_tools: reg?.mcpTools?.map((t) => t.name) ?? [],
-    mcp_prompts: reg?.mcpPrompts?.map((p) => p.name) ?? [],
-    mcp_resources: reg?.mcpResources?.map((r) => r.name) ?? [],
-    a2a_skills: reg?.a2aSkills?.map((s) => s.name) ?? [],
-    skills: [], // Will be populated from D1
-    domains: [], // Will be populated from D1
-    reputation: 0, // Will be populated from D1
-    input_modes: ioModes?.inputModes ?? [],
-    output_modes: ioModes?.outputModes ?? [],
-    created_at: reg?.createdAt ?? new Date().toISOString(),
-    is_reachable_a2a: reachability?.a2a ?? false,
-    is_reachable_mcp: reachability?.mcp ?? false,
-    // New fields from subgraph schema
-    mcp_version: reg?.mcpVersion ?? '',
-    a2a_version: reg?.a2aVersion ?? '',
-    mcp_endpoint: reg?.mcpEndpoint ?? '',
-    a2a_endpoint: reg?.a2aEndpoint ?? '',
-    agent_wallet_chain_id: agentWalletChainId,
-    supported_trusts: reg?.supportedTrusts ?? [],
-    agent_uri: agent.agentURI ?? '',
-    updated_at: agent.updatedAt
+    mcpTools: reg?.mcpTools?.map((t) => t.name),
+    mcpPrompts: reg?.mcpPrompts?.map((p) => p.name),
+    mcpResources: reg?.mcpResources?.map((r) => r.name),
+    a2aSkills: reg?.a2aSkills?.map((s) => s.name),
+    createdAt: reg?.createdAt,
+    mcpVersion: reg?.mcpVersion ?? undefined,
+    a2aVersion: reg?.a2aVersion ?? undefined,
+    supportedTrusts: reg?.supportedTrusts ?? undefined,
+    agentUri: agent.agentURI ?? undefined,
+    updatedAt: agent.updatedAt
       ? new Date(Number.parseInt(agent.updatedAt, 10) * 1000).toISOString()
-      : '',
-    trust_score: 0,
-    // Version tracking
-    erc_8004_version: version,
-    // Curation fields (Gap 3) - initialized empty, populated from feedback sync
-    curated_by: [],
-    is_curated: false,
+      : undefined,
+    agentWalletChainId,
+    erc8004Version: version,
   };
+
+  // Build enrichment from IO modes and reachability
+  const enrichment: PayloadEnrichment = {
+    inputModes: ioModes?.inputModes,
+    outputModes: ioModes?.outputModes,
+    isReachableA2a: reachability?.a2a,
+    isReachableMcp: reachability?.mcp,
+    // skills, domains, reputation, trustScore will be populated from D1 sync
+  };
+
+  return buildAgentPayload(input, enrichment);
 }
 
 /**
@@ -519,6 +523,7 @@ export async function syncFromGraph(
     GRAPH_API_KEY?: string;
   }
 ): Promise<GraphSyncResult> {
+  const logger = createWorkerLogger('graph-sync');
   const qdrant = createQdrantClient(env);
   const a2aClient = createA2AClient({ timeoutMs: 5000 });
   const reachabilityService = createReachabilityService(db);
@@ -531,6 +536,8 @@ export async function syncFromGraph(
     hasMore: false,
   };
 
+  logger.start('Fetching agents from Graph');
+
   // Fetch all agents from Graph (including those without registrationFile)
   const agentsWithVersions = await fetchAllAgentsFromGraph(env.GRAPH_API_KEY);
   const agentsWithReg = agentsWithVersions.filter((a) => a.agent.registrationFile);
@@ -539,9 +546,13 @@ export async function syncFromGraph(
   // Count agents by version
   const v1Count = agentsWithVersions.filter((a) => a.version === 'v1.0').length;
   const v04Count = agentsWithVersions.filter((a) => a.version === 'v0.4').length;
-  console.info(
-    `Graph sync: fetched ${agentsWithVersions.length} agents from Graph (${agentsWithReg.length} with registrationFile, ${agentsWithoutReg} without) - v1.0: ${v1Count}, v0.4: ${v04Count}`
-  );
+  logger.progress('Fetched agents from Graph', {
+    total: agentsWithVersions.length,
+    withRegistration: agentsWithReg.length,
+    withoutRegistration: agentsWithoutReg,
+    v1Count,
+    v04Count,
+  });
 
   // Get existing sync metadata for all agents (to identify which need syncing)
   const agentIds = agentsWithVersions.map((a) => `${a.agent.chainId}:${a.agent.agentId}`);
@@ -565,7 +576,7 @@ export async function syncFromGraph(
       });
     }
   }
-  console.info(`Graph sync: found ${existingMetadata.size} agents already synced`);
+  logger.progress('Found existing sync metadata', { existingSynced: existingMetadata.size });
 
   // Identify agents that need syncing (new or changed)
   // Process ALL agents (with or without registrationFile)
@@ -615,23 +626,27 @@ export async function syncFromGraph(
   }
 
   result.skipped = skipped;
-  console.info(
-    `Graph sync: ${toSync.length} agents to sync (${toSync.filter((a) => a.needsEmbed).length} new, ${contentChanged} changed), ${skipped} unchanged`
-  );
+  const newCount = toSync.filter((a) => a.needsEmbed).length;
+  logger.progress('Identified agents to sync', {
+    toSync: toSync.length,
+    newAgents: newCount,
+    contentChanged,
+    unchanged: skipped,
+  });
 
   if (toSync.length === 0) {
-    console.info('Graph sync: no new agents to sync');
+    logger.skip('No agents need syncing');
     return result;
   }
 
   // Fetch A2A IO modes only for agents we're going to sync
   const agentsToFetchA2A = toSync.filter((a) => a.agent.registrationFile?.a2aEndpoint);
-  console.info(`Graph sync: fetching A2A AgentCards for ${agentsToFetchA2A.length} agents...`);
+  logger.progress('Fetching A2A AgentCards', { count: agentsToFetchA2A.length });
   const ioModesMap = await fetchA2AIOModes(
     agentsToFetchA2A.map((a) => a.agent),
     a2aClient
   );
-  console.info(`Graph sync: fetched ${ioModesMap.size} A2A AgentCards with IO modes`);
+  logger.progress('Fetched A2A AgentCards', { fetched: ioModesMap.size });
 
   // Update toSync with IO modes
   for (const item of toSync) {
@@ -641,11 +656,11 @@ export async function syncFromGraph(
 
   // Fetch reachability status only for agents we're syncing
   const syncAgentIds = toSync.map((a) => `${a.agent.chainId}:${a.agent.agentId}`);
-  console.info('Graph sync: fetching reachability status...');
+  logger.progress('Fetching reachability status', { agentCount: syncAgentIds.length });
   const reachabilityMap = await reachabilityService.getAgentReachabilitiesBatch(syncAgentIds);
-  console.info(`Graph sync: fetched reachability for ${reachabilityMap.size} agents`);
+  logger.progress('Fetched reachability status', { fetched: reachabilityMap.size });
 
-  console.info(`Graph sync: processing ${toSync.length} agents...`);
+  logger.progress('Processing agents', { count: toSync.length });
 
   // Process agents that need syncing
   for (const { agent, version, needsEmbed, ioModes } of toSync) {
@@ -729,9 +744,13 @@ export async function syncFromGraph(
     .bind(now, result.newAgents + result.updatedAgents, result.reembedded)
     .run();
 
-  console.info(
-    `Graph sync complete: ${result.newAgents} new, ${result.updatedAgents} updated, ${result.reembedded} reembedded`
-  );
+  logger.complete({
+    newAgents: result.newAgents,
+    updatedAgents: result.updatedAgents,
+    reembedded: result.reembedded,
+    errors: result.errors.length,
+    hasMore: result.hasMore,
+  });
 
   return result;
 }

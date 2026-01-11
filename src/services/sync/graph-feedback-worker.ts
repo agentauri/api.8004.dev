@@ -28,16 +28,21 @@ import { createReputationService } from '../reputation';
 /** ERC-8004 spec version */
 type ERC8004Version = 'v0.4' | 'v1.0';
 
+import { buildSubgraphUrls } from '@/lib/config/graph';
+
 // The Graph API key from agent0-sdk (public key for ERC-8004 subgraphs)
 const GRAPH_API_KEY = '00a452ad3cd1900273ea62c1bf283f93';
+
+// Build URLs once at module load
+const ALL_SUBGRAPH_URLS = buildSubgraphUrls(GRAPH_API_KEY);
 
 /**
  * Graph endpoints for v1.0 feedback (Jan 2026 update)
  * Only ETH Sepolia has v1.0 contracts deployed currently
  */
-const GRAPH_ENDPOINTS_V1_0: Record<number, string> = {
-  11155111: `https://gateway.thegraph.com/api/${GRAPH_API_KEY}/subgraphs/id/6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT`,
-};
+const GRAPH_ENDPOINTS_V1_0: Record<number, string> = Object.fromEntries(
+  Object.entries(ALL_SUBGRAPH_URLS).filter(([chainId]) => chainId === '11155111')
+);
 
 /**
  * Graph endpoints for v0.4 feedback (pre-v1.0 backward compatibility)

@@ -6,6 +6,10 @@
 
 import { buildFilter } from '../lib/qdrant/filter-builder';
 import type { AgentFilterParams, AgentPayload, OrderBy, QdrantFilter } from '../lib/qdrant/types';
+import {
+  buildAgentSummary,
+  buildOASFClassification,
+} from '../lib/utils/agent-transform';
 import type {
   AgentSummary,
   Env,
@@ -13,7 +17,6 @@ import type {
   SearchResultItem,
   SearchServiceResult,
 } from '../types';
-import type { OASFClassification } from '../types/classification';
 import { createEmbeddingService, type EmbeddingService } from './embedding';
 import { createHyDEService, type HyDEService } from './hyde';
 import { createQdrantClient, decodeCursor, encodeCursor, type QdrantClient } from './qdrant';
@@ -661,43 +664,37 @@ export function searchFiltersToAgentFilters(filters: SearchFilters): AgentFilter
 
 /**
  * Convert AgentPayload to AgentSummary
+ * Uses centralized transformation utilities
  */
 export function payloadToAgentSummary(payload: AgentPayload, score?: number): AgentSummary {
-  // Build OASF classification if skills/domains exist
-  let oasf: OASFClassification | undefined;
-  if (payload.skills.length > 0 || payload.domains.length > 0) {
-    oasf = {
-      skills: payload.skills.map((slug) => ({ slug, confidence: 1 })),
-      domains: payload.domains.map((slug) => ({ slug, confidence: 1 })),
-      confidence: 1,
-      classifiedAt: payload.created_at,
-      modelVersion: 'qdrant-indexed',
-    };
-  }
+  const oasf = buildOASFClassification({
+    skills: payload.skills,
+    domains: payload.domains,
+    classifiedAt: payload.created_at,
+    modelVersion: 'qdrant-indexed',
+  });
 
-  return {
-    id: payload.agent_id,
-    chainId: payload.chain_id,
-    tokenId: payload.token_id,
-    name: payload.name,
-    description: payload.description,
-    image: payload.image || undefined,
-    active: payload.active,
-    hasMcp: payload.has_mcp,
-    hasA2a: payload.has_a2a,
-    x402Support: payload.x402_support,
-    supportedTrust: payload.x402_support ? ['x402'] : [],
-    oasf,
-    oasfSource: oasf ? 'llm-classification' : 'none',
-    searchScore: score,
-    reputationScore: payload.reputation > 0 ? payload.reputation : undefined,
-    operators: payload.operators.length > 0 ? payload.operators : undefined,
-    ens: payload.ens || undefined,
-    did: payload.did || undefined,
-    walletAddress: payload.wallet_address || undefined,
-    inputModes: payload.input_modes.length > 0 ? payload.input_modes : undefined,
-    outputModes: payload.output_modes.length > 0 ? payload.output_modes : undefined,
-  };
+  return buildAgentSummary(
+    {
+      agentId: payload.agent_id,
+      name: payload.name,
+      description: payload.description,
+      image: payload.image,
+      active: payload.active,
+      hasMcp: payload.has_mcp,
+      hasA2a: payload.has_a2a,
+      x402Support: payload.x402_support,
+      operators: payload.operators,
+      ens: payload.ens,
+      did: payload.did,
+      walletAddress: payload.wallet_address,
+      reputationScore: payload.reputation > 0 ? payload.reputation : undefined,
+      searchScore: score,
+      inputModes: payload.input_modes,
+      outputModes: payload.output_modes,
+    },
+    oasf
+  );
 }
 
 /**
