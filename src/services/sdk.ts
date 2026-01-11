@@ -1264,7 +1264,16 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
           if (result.status === 'fulfilled') {
             successfulChains.push(result.value);
           } else {
-            console.warn('Multi-chain pagination: chain query failed:', result.reason);
+            // Only log unexpected errors - suppress expected failures for chains pending v1.0 deployment
+            const errorMessage = result.reason?.message ?? String(result.reason);
+            const isExpectedError =
+              errorMessage.includes('subgraph not found') ||
+              errorMessage.includes('not authorized') ||
+              errorMessage.includes('has no field');
+
+            if (!isExpectedError) {
+              console.warn('Multi-chain pagination: chain query failed:', result.reason);
+            }
           }
         }
 
