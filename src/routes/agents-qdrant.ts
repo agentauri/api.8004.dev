@@ -564,8 +564,122 @@ agents.get('/batch', async (c) => {
 });
 
 /**
+ * Build AgentDetailResponse from Qdrant payload
+ * Used as fallback when SDK fails (e.g., for agents without registrationFile)
+ */
+function buildDetailFromQdrantPayload(
+  payload: NonNullable<Awaited<ReturnType<ReturnType<typeof createQdrantClient>['getByAgentId']>>>['payload'],
+  reputationData: Awaited<ReturnType<ReturnType<typeof createReputationService>['getAgentReputation']>>,
+  classificationRow: Awaited<ReturnType<typeof getClassification>>
+): AgentDetailResponse['data'] {
+  const dbClassification = parseClassificationRow(classificationRow);
+
+  // Build OASF from Qdrant payload
+  const oasf = buildOASFClassification({
+    skills: payload.skills ?? [],
+    domains: payload.domains ?? [],
+    skillsWithConfidence: payload.skills_with_confidence,
+    domainsWithConfidence: payload.domains_with_confidence,
+    confidence: payload.classification_confidence,
+    classifiedAt: payload.classification_at,
+    modelVersion: payload.classification_model ?? 'qdrant-indexed',
+  });
+
+  // Extract MCP capabilities from Qdrant payload
+  let mcpCapabilities: McpCapabilitiesDetail | undefined;
+  if (payload.mcp_tools_detailed || payload.mcp_prompts_detailed || payload.mcp_resources_detailed) {
+    mcpCapabilities = {
+      tools: (payload.mcp_tools_detailed ?? []).map((t) => ({
+        name: t.name,
+        description: t.description,
+        inputSchema: t.inputSchema,
+      })),
+      prompts: (payload.mcp_prompts_detailed ?? []).map((pr) => ({
+        name: pr.name,
+        description: pr.description,
+        arguments: pr.arguments?.map((a) => ({
+          name: a.name,
+          description: a.description,
+          required: a.required,
+        })),
+      })),
+      resources: (payload.mcp_resources_detailed ?? []).map((r) => ({
+        uri: r.uri,
+        name: r.name,
+        description: r.description,
+        mimeType: r.mimeType,
+      })),
+      fetchedAt: payload.mcp_capabilities_fetched_at,
+      error: payload.mcp_capabilities_error,
+    };
+  }
+
+  return {
+    id: payload.agent_id,
+    chainId: payload.chain_id,
+    tokenId: payload.token_id ?? payload.agent_id.split(':')[1] ?? '0',
+    name: payload.name,
+    description: payload.description,
+    image: payload.image || undefined,
+    active: payload.active,
+    hasMcp: payload.has_mcp,
+    hasA2a: payload.has_a2a,
+    x402Support: payload.x402_support,
+    supportedTrust: payload.x402_support ? ['x402'] : [],
+    oasf: oasf ?? (dbClassification ? buildOASFClassification({
+      skills: dbClassification.skills.map(s => s.slug),
+      domains: dbClassification.domains.map(d => d.slug),
+      skillsWithConfidence: dbClassification.skills,
+      domainsWithConfidence: dbClassification.domains,
+      confidence: dbClassification.confidence,
+      classifiedAt: dbClassification.classifiedAt,
+      modelVersion: dbClassification.modelVersion,
+    }) : undefined),
+    oasfSource: oasf ? 'llm-classification' : dbClassification ? 'llm-classification' : 'none',
+    reputation: reputationData ?? undefined,
+    reputationScore: reputationData?.averageScore ?? (payload.reputation > 0 ? payload.reputation : undefined),
+    reputationCount: reputationData?.count,
+    operators: payload.operators ?? [],
+    ens: payload.ens || undefined,
+    did: payload.did || undefined,
+    walletAddress: payload.wallet_address || undefined,
+    endpoints: {
+      mcp: payload.has_mcp && payload.mcp_endpoint
+        ? { url: payload.mcp_endpoint, version: payload.mcp_version || '1.0.0' }
+        : undefined,
+      a2a: payload.has_a2a && payload.a2a_endpoint
+        ? { url: payload.a2a_endpoint, version: payload.a2a_version || '1.0.0' }
+        : undefined,
+      ens: payload.ens || undefined,
+      did: payload.did || undefined,
+      agentWallet: payload.wallet_address || undefined,
+      oasf: payload.oasf_endpoint ? { url: payload.oasf_endpoint } : undefined,
+    },
+    registration: {
+      chainId: payload.chain_id,
+      tokenId: payload.token_id ?? payload.agent_id.split(':')[1] ?? '0',
+      contractAddress: '',
+      metadataUri: payload.agent_uri || '',
+      owner: payload.owner || '',
+      registeredAt: payload.created_at || new Date().toISOString(),
+    },
+    mcpTools: payload.mcp_tools ?? [],
+    a2aSkills: payload.a2a_skills ?? [],
+    mcpPrompts: payload.mcp_prompts ?? [],
+    mcpResources: payload.mcp_resources ?? [],
+    inputModes: payload.input_modes?.length ? payload.input_modes : undefined,
+    outputModes: payload.output_modes?.length ? payload.output_modes : undefined,
+    lastUpdatedAt: payload.updated_at || undefined,
+    mcpCapabilities,
+    // Note: warnings and healthScore not computed for Qdrant fallback
+    // to keep response fast - these are computed on-demand for SDK responses
+  };
+}
+
+/**
  * GET /api/v1/agents/:agentId
  * Get single agent details
+ * Uses SDK as primary source, falls back to Qdrant for agents without registrationFile
  */
 agents.get('/:agentId', async (c) => {
   const agentIdParam = c.req.param('agentId');
@@ -585,23 +699,56 @@ agents.get('/:agentId', async (c) => {
   }
 
   const { chainId, tokenId } = parseAgentId(agentId);
-  const sdk = createSDKService(c.env, c.env.CACHE);
-  const agent = await sdk.getAgent(chainId, tokenId);
 
-  if (!agent) {
-    return errors.notFound(c, 'Agent');
-  }
-
-  const ipfsService = createIPFSService(cache, {
-    gatewayUrl: c.env.IPFS_GATEWAY_URL,
-    timeoutMs: c.env.IPFS_TIMEOUT_MS ? Number.parseInt(c.env.IPFS_TIMEOUT_MS, 10) : undefined,
-  });
-
-  // Create Qdrant client to fetch MCP capabilities
+  // Create Qdrant client (needed for both SDK path and fallback)
   const qdrant = createQdrantClient({
     QDRANT_URL: c.env.QDRANT_URL!,
     QDRANT_API_KEY: c.env.QDRANT_API_KEY!,
     QDRANT_COLLECTION: c.env.QDRANT_COLLECTION ?? 'agents',
+  });
+
+  // Try SDK first (works for agents WITH registrationFile)
+  const sdk = createSDKService(c.env, c.env.CACHE);
+  let agent: Awaited<ReturnType<typeof sdk.getAgent>> = null;
+  let sdkFailed = false;
+
+  try {
+    agent = await sdk.getAgent(chainId, tokenId);
+  } catch (error) {
+    // SDK failed - will try Qdrant fallback
+    console.warn(`SDK getAgent failed for ${agentId}, trying Qdrant fallback:`, error);
+    sdkFailed = true;
+  }
+
+  // If SDK returned null or failed, try Qdrant fallback
+  if (!agent) {
+    const qdrantAgent = await qdrant.getByAgentId(agentId).catch(() => null);
+
+    if (!qdrantAgent?.payload) {
+      // Agent not found in either source
+      return errors.notFound(c, 'Agent');
+    }
+
+    // Build response from Qdrant data
+    const [classificationRow, reputationData] = await Promise.all([
+      getClassification(c.env.DB, agentId),
+      createReputationService(c.env.DB).getAgentReputation(agentId),
+    ]);
+
+    const response: AgentDetailResponse = {
+      success: true,
+      data: buildDetailFromQdrantPayload(qdrantAgent.payload, reputationData, classificationRow),
+    };
+
+    // Cache with shorter TTL for Qdrant-only responses (less complete data)
+    await cache.set(cacheKey, response, Math.min(CACHE_TTL.AGENT_DETAIL, 120));
+    return c.json(response);
+  }
+
+  // SDK succeeded - build full response with additional data
+  const ipfsService = createIPFSService(cache, {
+    gatewayUrl: c.env.IPFS_GATEWAY_URL,
+    timeoutMs: c.env.IPFS_TIMEOUT_MS ? Number.parseInt(c.env.IPFS_TIMEOUT_MS, 10) : undefined,
   });
 
   const [ipfsMetadata, classificationRow, reputationData, qdrantAgent] = await Promise.all([
