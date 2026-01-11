@@ -1044,7 +1044,8 @@ export interface SDKService {
  */
 export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
   // Use mock service for deterministic E2E testing
-  if (env.MOCK_EXTERNAL_SERVICES === 'true') {
+  // Defense-in-depth: also check ENVIRONMENT to prevent accidental mock in production
+  if (env.MOCK_EXTERNAL_SERVICES === 'true' && env.ENVIRONMENT !== 'production') {
     return createMockSDKService();
   }
 
@@ -1454,6 +1455,7 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
             const [chainIdStr, tokenId] = agentId.split(':');
             if (!chainIdStr || !tokenId) return null;
             const chainId = Number.parseInt(chainIdStr, 10);
+            if (Number.isNaN(chainId)) return null;
             const agent = await this.getAgent(chainId, tokenId);
             return agent ? { agentId, agent } : null;
           })
@@ -1672,32 +1674,7 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
 
               searchPromises.push(
                 chainSdk.searchAgents(filterParams, ['createdAt:desc'], fetchLimit).then((result) =>
-                  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Agent transformation requires parsing multiple fields
-                  result.items.map((agent) => {
-                    const parts = agent.agentId.split(':');
-                    const chainIdStr = parts[0] || '0';
-                    const tokenId = parts[1] || '0';
-
-                    return {
-                      id: agent.agentId,
-                      chainId: Number.parseInt(chainIdStr, 10),
-                      tokenId,
-                      name: agent.name,
-                      description: agent.description,
-                      image: agent.image,
-                      active: agent.active,
-                      hasMcp: agent.mcp,
-                      hasA2a: agent.a2a,
-                      x402Support: agent.x402support,
-                      supportedTrust: deriveSupportedTrust(agent.x402support),
-                      operators: agent.operators || [],
-                      ens: agent.ens || undefined,
-                      did: agent.did || undefined,
-                      walletAddress: agent.walletAddress || undefined,
-                      inputModes: agent.mcpPrompts?.length ? ['mcp-prompt'] : undefined,
-                      outputModes: agent.mcpResources?.length ? ['mcp-resource'] : undefined,
-                    };
-                  })
+                  result.items.map(transformAgent)
                 )
               );
             }
@@ -1757,29 +1734,7 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
                   const descMatch = agent.description?.toLowerCase().includes(queryLower);
                   if (!nameMatch && !descMatch) continue;
 
-                  const parts = agent.agentId.split(':');
-                  const chainIdStr = parts[0] || '0';
-                  const tokenId = parts[1] || '0';
-
-                  chainItems.push({
-                    id: agent.agentId,
-                    chainId: Number.parseInt(chainIdStr, 10),
-                    tokenId,
-                    name: agent.name,
-                    description: agent.description,
-                    image: agent.image,
-                    active: agent.active,
-                    hasMcp: agent.mcp,
-                    hasA2a: agent.a2a,
-                    x402Support: agent.x402support,
-                    supportedTrust: deriveSupportedTrust(agent.x402support),
-                    operators: agent.operators || [],
-                    ens: agent.ens || undefined,
-                    did: agent.did || undefined,
-                    walletAddress: agent.walletAddress || undefined,
-                    inputModes: agent.mcpPrompts?.length ? ['mcp-prompt'] : undefined,
-                    outputModes: agent.mcpResources?.length ? ['mcp-resource'] : undefined,
-                  });
+                  chainItems.push(transformAgent(agent));
                 }
 
                 cursor = result.nextCursor;
@@ -1821,31 +1776,7 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
 
             for (const result of chainResults) {
               if (result.status === 'fulfilled') {
-                for (const agent of result.value) {
-                  const parts = agent.agentId.split(':');
-                  const chainIdStr = parts[0] || '0';
-                  const tokenId = parts[1] || '0';
-
-                  allItems.push({
-                    id: agent.agentId,
-                    chainId: Number.parseInt(chainIdStr, 10),
-                    tokenId,
-                    name: agent.name,
-                    description: agent.description,
-                    image: agent.image,
-                    active: agent.active,
-                    hasMcp: agent.mcp,
-                    hasA2a: agent.a2a,
-                    x402Support: agent.x402support,
-                    supportedTrust: deriveSupportedTrust(agent.x402support),
-                    operators: agent.operators || [],
-                    ens: agent.ens || undefined,
-                    did: agent.did || undefined,
-                    walletAddress: agent.walletAddress || undefined,
-                    inputModes: agent.mcpPrompts?.length ? ['mcp-prompt'] : undefined,
-                    outputModes: agent.mcpResources?.length ? ['mcp-resource'] : undefined,
-                  });
-                }
+                allItems.push(...result.value.map(transformAgent));
               } else {
                 console.warn('Chain search failed without query:', result.reason);
               }
@@ -1937,32 +1868,7 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
         );
 
         // Transform SDK results to our format
-        let items: AgentSummary[] = result.items.map((agent) => {
-          const parts = agent.agentId.split(':');
-          const chainIdStr = parts[0] || '0';
-          const tokenId = parts[1] || '0';
-
-          return {
-            id: agent.agentId,
-            chainId: Number.parseInt(chainIdStr, 10),
-            tokenId,
-            name: agent.name,
-            description: agent.description,
-            image: agent.image,
-            active: agent.active,
-            hasMcp: agent.mcp,
-            hasA2a: agent.a2a,
-            x402Support: agent.x402support,
-            supportedTrust: deriveSupportedTrust(agent.x402support),
-            operators: agent.operators || [],
-            ens: agent.ens || undefined,
-            did: agent.did || undefined,
-            walletAddress: agent.walletAddress || undefined,
-            inputModes: agent.mcpPrompts?.length ? ['mcp-prompt'] : undefined,
-            outputModes: agent.mcpResources?.length ? ['mcp-resource'] : undefined,
-            // Note: reputation data needs to be enriched by caller
-          };
-        });
+        let items: AgentSummary[] = result.items.map(transformAgent);
 
         // Post-filter by maxRep if specified (SDK doesn't support this natively)
         // Note: We can't filter by reputationScore here because SDK doesn't return it

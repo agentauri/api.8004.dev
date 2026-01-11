@@ -87,6 +87,13 @@ interface GraphAgentV1_0 {
     mcpResources?: Array<{ name: string }>;
     a2aSkills?: Array<{ name: string }>;
     createdAt?: string;
+    // Gap 4: Declared OASF fields (v1.0)
+    oasfSkills?: string[];
+    oasfDomains?: string[];
+    // Gap 5: New endpoint fields (v1.0)
+    emailEndpoint?: string | null;
+    oasfEndpoint?: string | null;
+    oasfVersion?: string | null;
   } | null;
 }
 
@@ -200,6 +207,11 @@ function buildAgentQueryV1_0(): string {
           mcpResources { name }
           a2aSkills { name }
           createdAt
+          oasfSkills
+          oasfDomains
+          emailEndpoint
+          oasfEndpoint
+          oasfVersion
         }
       }
     }
@@ -380,6 +392,9 @@ function agentToPayload(
       : 0;
   }
 
+  // Extract v1.0 specific fields if available
+  const regV1 = version === 'v1.0' && reg ? (reg as GraphAgentV1_0['registrationFile']) : null;
+
   // Build input from Graph agent
   const input: PayloadBuilderInput = {
     agentId: `${agent.chainId}:${agent.agentId}`,
@@ -412,6 +427,13 @@ function agentToPayload(
       : undefined,
     agentWalletChainId,
     erc8004Version: version,
+    // Gap 4: Declared OASF fields (v1.0 only)
+    oasfSkills: regV1?.oasfSkills ?? undefined,
+    oasfDomains: regV1?.oasfDomains ?? undefined,
+    // Gap 5: New endpoint fields (v1.0 only)
+    emailEndpoint: regV1?.emailEndpoint ?? undefined,
+    oasfEndpoint: regV1?.oasfEndpoint ?? undefined,
+    oasfVersion: regV1?.oasfVersion ?? undefined,
   };
 
   // Build enrichment from IO modes and reachability

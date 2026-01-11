@@ -70,6 +70,20 @@ export interface PayloadBuilderInput {
   agentWalletChainId?: number;
   /** ERC-8004 version */
   erc8004Version?: 'v0.4' | 'v1.0';
+
+  // Gap 4: Declared OASF fields (v1.0)
+  /** OASF skills declared in registration file */
+  oasfSkills?: string[];
+  /** OASF domains declared in registration file */
+  oasfDomains?: string[];
+
+  // Gap 5: New endpoint fields (v1.0)
+  /** Email contact endpoint */
+  emailEndpoint?: string;
+  /** OASF API endpoint */
+  oasfEndpoint?: string;
+  /** OASF API version */
+  oasfVersion?: string;
 }
 
 /**
@@ -97,6 +111,14 @@ export interface PayloadEnrichment {
   curatedBy?: string[];
   /** Whether agent is curated */
   isCurated?: boolean;
+
+  // Gap 6: Reachability attestations
+  /** Last MCP reachability check timestamp */
+  lastReachabilityCheckMcp?: string;
+  /** Last A2A reachability check timestamp */
+  lastReachabilityCheckA2a?: string;
+  /** Wallet address of the reachability attestor */
+  reachabilityAttestor?: string;
 }
 
 /**
@@ -176,6 +198,20 @@ export function buildAgentPayload(
     // Curation
     curated_by: enrichment?.curatedBy ?? [],
     is_curated: enrichment?.isCurated ?? false,
+
+    // Gap 4: Declared OASF fields
+    declared_oasf_skills: input.oasfSkills ?? [],
+    declared_oasf_domains: input.oasfDomains ?? [],
+
+    // Gap 5: New endpoint fields
+    email_endpoint: input.emailEndpoint ?? '',
+    oasf_endpoint: input.oasfEndpoint ?? '',
+    oasf_version: input.oasfVersion ?? '',
+
+    // Gap 6: Reachability attestations
+    last_reachability_check_mcp: enrichment?.lastReachabilityCheckMcp ?? '',
+    last_reachability_check_a2a: enrichment?.lastReachabilityCheckA2a ?? '',
+    reachability_attestor: enrichment?.reachabilityAttestor ?? '',
   };
 }
 

@@ -20,17 +20,16 @@ import type { AgentPayload } from '../../lib/qdrant/types';
 import { generateEmbedding } from '../embedding';
 import { createQdrantClient } from '../qdrant';
 
-// The Graph API key from agent0-sdk (public key for ERC-8004 subgraphs)
-const GRAPH_API_KEY = '00a452ad3cd1900273ea62c1bf283f93';
-
-// Build URLs once at module load
-const ALL_SUBGRAPH_URLS = buildSubgraphUrls(GRAPH_API_KEY);
-
-// Graph endpoints per chain (using centralized config)
-// Only ETH Sepolia has v1.0 contracts deployed currently
-const GRAPH_ENDPOINTS: Record<number, string> = Object.fromEntries(
-  Object.entries(ALL_SUBGRAPH_URLS).filter(([chainId]) => chainId === '11155111')
-);
+/**
+ * Build Graph endpoints lazily using the provided API key.
+ * Only ETH Sepolia (11155111) has v1.0 contracts deployed currently.
+ */
+function getGraphEndpoints(graphApiKey: string): Record<number, string> {
+  const allUrls = buildSubgraphUrls(graphApiKey);
+  return Object.fromEntries(
+    Object.entries(allUrls).filter(([chainId]) => chainId === '11155111')
+  );
+}
 
 interface GraphAgent {
   chainId: string;
@@ -68,8 +67,12 @@ export interface ReconciliationResult {
 /**
  * Fetch all agent IDs from a single chain
  */
-async function fetchAgentIdsFromChain(chainId: number, graphApiKey?: string): Promise<string[]> {
-  const endpoint = GRAPH_ENDPOINTS[chainId];
+async function fetchAgentIdsFromChain(
+  chainId: number,
+  graphApiKey: string,
+  endpoints: Record<number, string>
+): Promise<string[]> {
+  const endpoint = endpoints[chainId];
   if (!endpoint) return [];
 
   const ids: string[] = [];
@@ -121,11 +124,12 @@ async function fetchAgentIdsFromChain(chainId: number, graphApiKey?: string): Pr
 /**
  * Fetch all agent IDs from all chains
  */
-async function fetchAllAgentIdsFromGraph(graphApiKey?: string): Promise<Set<string>> {
+async function fetchAllAgentIdsFromGraph(graphApiKey: string): Promise<Set<string>> {
   const allIds = new Set<string>();
+  const endpoints = getGraphEndpoints(graphApiKey);
 
-  for (const chainId of Object.keys(GRAPH_ENDPOINTS)) {
-    const ids = await fetchAgentIdsFromChain(Number(chainId), graphApiKey);
+  for (const chainId of Object.keys(endpoints)) {
+    const ids = await fetchAgentIdsFromChain(Number(chainId), graphApiKey, endpoints);
     for (const id of ids) {
       allIds.add(id);
     }
@@ -137,8 +141,9 @@ async function fetchAllAgentIdsFromGraph(graphApiKey?: string): Promise<Set<stri
 /**
  * Fetch agents by IDs from Graph (for indexing missing ones)
  */
-async function fetchAgentsByIds(agentIds: string[], graphApiKey?: string): Promise<GraphAgent[]> {
+async function fetchAgentsByIds(agentIds: string[], graphApiKey: string): Promise<GraphAgent[]> {
   const agents: GraphAgent[] = [];
+  const endpoints = getGraphEndpoints(graphApiKey);
 
   // Group by chain
   const byChain = new Map<number, string[]>();
@@ -156,13 +161,13 @@ async function fetchAgentsByIds(agentIds: string[], graphApiKey?: string): Promi
 
   // Fetch from each chain
   for (const [chainId, tokenIds] of byChain) {
-    const endpoint = GRAPH_ENDPOINTS[chainId];
+    const endpoint = endpoints[chainId];
     if (!endpoint) continue;
 
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (graphApiKey) {
-      headers.Authorization = `Bearer ${graphApiKey}`;
-    }
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${graphApiKey}`,
+    };
 
     // Fetch ALL agents (including those without registrationFile)
     const query = `
@@ -279,9 +284,10 @@ async function indexAgentsToQdrant(
       await qdrant.upsertAgent(agentId, vector, payload);
       indexed++;
     } catch (error) {
-      // Note: This function doesn't have access to result.errors
-      // Caller should handle failures by checking indexed count
-      // Errors are logged by the caller
+      // Log individual agent failures for debugging
+      // Caller handles batch-level failures and tracks indexed count
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[reconciliation] Failed to index agent ${agentId}:`, message);
     }
   }
 
@@ -298,7 +304,7 @@ export async function runReconciliation(
     QDRANT_API_KEY: string;
     QDRANT_COLLECTION?: string;
     VENICE_API_KEY: string;
-    GRAPH_API_KEY?: string;
+    GRAPH_API_KEY: string;
   }
 ): Promise<ReconciliationResult> {
   const logger = createWorkerLogger('reconciliation');
@@ -308,6 +314,12 @@ export async function runReconciliation(
     missingIndexed: 0,
     errors: [],
   };
+
+  // Validate required API key
+  if (!env.GRAPH_API_KEY) {
+    result.errors.push('GRAPH_API_KEY is required for reconciliation');
+    return result;
+  }
 
   try {
     logger.start('Starting reconciliation');

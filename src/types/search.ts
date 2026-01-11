@@ -57,6 +57,36 @@ export interface SearchFilters {
   excludeSkills?: string[];
   /** Exclude agents with these domains */
   excludeDomains?: string[];
+  // Gap 1: Trust score filters
+  /** Minimum trust score (0-100) */
+  trustScoreMin?: number;
+  /** Maximum trust score (0-100) */
+  trustScoreMax?: number;
+  // Gap 1: Version filters
+  /** Filter by ERC-8004 spec version ('v0.4' or 'v1.0') */
+  erc8004Version?: string;
+  /** Filter by MCP protocol version */
+  mcpVersion?: string;
+  /** Filter by A2A protocol version */
+  a2aVersion?: string;
+  // Gap 3: Curation filters
+  /** Filter by curator wallet address */
+  curatedBy?: string;
+  /** Filter by curated status */
+  isCurated?: boolean;
+  // Gap 4: Declared OASF filters
+  /** Filter by declared OASF skill slug */
+  declaredSkill?: string;
+  /** Filter by declared OASF domain slug */
+  declaredDomain?: string;
+  // Gap 5: New endpoint filters
+  /** Filter by agents with email endpoint */
+  hasEmail?: boolean;
+  /** Filter by agents with OASF endpoint */
+  hasOasfEndpoint?: boolean;
+  // Gap 6: Reachability attestation filters
+  /** Filter by agents with recent reachability attestation (within 14 days) */
+  hasRecentReachability?: boolean;
 }
 
 /**
@@ -135,6 +165,37 @@ export interface SearchResultMetadata {
   classification_model?: string;
   /** ERC-8004 spec version ('v0.4' for pre-v1.0, 'v1.0' for current) */
   erc8004Version?: string;
+  // Gap 4: Declared OASF fields
+  /** OASF skills declared by the agent in registration file */
+  declaredOasfSkills?: string[];
+  /** OASF domains declared by the agent in registration file */
+  declaredOasfDomains?: string[];
+  // Gap 5: New endpoint fields
+  /** Email contact endpoint */
+  emailEndpoint?: string;
+  /** OASF API endpoint */
+  oasfEndpoint?: string;
+  /** OASF API version */
+  oasfVersion?: string;
+  // Gap 6: Reachability attestation fields
+  /** Last MCP reachability check timestamp */
+  lastReachabilityCheckMcp?: string;
+  /** Last A2A reachability check timestamp */
+  lastReachabilityCheckA2a?: string;
+  /** Wallet address of reachability attestor */
+  reachabilityAttestor?: string;
+  // Gap 3: Curation fields
+  /** Curator wallet addresses */
+  curatedBy?: string[];
+  /** Whether agent is curated */
+  isCurated?: boolean;
+  // Trust & reachability status
+  /** Trust score (0-100) */
+  trustScore?: number;
+  /** MCP endpoint reachability status */
+  isReachableMcp?: boolean;
+  /** A2A endpoint reachability status */
+  isReachableA2a?: boolean;
 }
 
 /**

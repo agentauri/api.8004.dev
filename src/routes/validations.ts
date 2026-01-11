@@ -8,6 +8,7 @@
 import { Hono } from 'hono';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
+import { validateAndParseAgentId } from '@/lib/utils/validation';
 import {
   buildSubgraphUrls,
   fetchValidationsFromSubgraph,
@@ -19,18 +20,6 @@ const validations = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 // Apply rate limiting
 validations.use('*', rateLimit(rateLimitConfigs.standard));
-
-/**
- * Parse agent ID into chainId and tokenId
- */
-function parseAgentId(agentId: string): { chainId: number; tokenId: string } | null {
-  const parts = agentId.split(':');
-  if (parts.length !== 2) return null;
-  const chainId = Number.parseInt(parts[0] || '', 10);
-  const tokenId = parts[1] || '';
-  if (Number.isNaN(chainId) || !tokenId) return null;
-  return { chainId, tokenId };
-}
 
 /**
  * Validation record in API response format
@@ -73,7 +62,7 @@ validations.get('/', async (c) => {
     return errors.validationError(c, 'Agent ID is required');
   }
 
-  const parsed = parseAgentId(agentId);
+  const parsed = validateAndParseAgentId(agentId);
   if (!parsed) {
     return errors.validationError(c, 'Invalid agent ID format. Expected chainId:tokenId');
   }
@@ -135,7 +124,7 @@ validations.get('/summary', async (c) => {
     return errors.validationError(c, 'Agent ID is required');
   }
 
-  const parsed = parseAgentId(agentId);
+  const parsed = validateAndParseAgentId(agentId);
   if (!parsed) {
     return errors.validationError(c, 'Invalid agent ID format. Expected chainId:tokenId');
   }

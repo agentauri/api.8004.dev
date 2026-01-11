@@ -1195,15 +1195,12 @@ agents.get('/:agentId/similar', async (c) => {
     return c.json(similarResponse);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    const errorStack = error instanceof Error ? error.stack : undefined;
     console.error('Similar agents error:', errorMessage, error);
-    // Return detailed error for debugging
     return c.json(
       {
         success: false,
-        error: `Failed to find similar agents: ${errorMessage}`,
+        error: 'Failed to find similar agents',
         code: 'INTERNAL_ERROR',
-        debug: { message: errorMessage, stack: errorStack },
       },
       500
     );

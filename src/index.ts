@@ -646,7 +646,8 @@ export default {
       }
 
       // Hourly only: Run reconciliation (at minute 0)
-      if (minute === 0) {
+      // Requires GRAPH_API_KEY to be configured
+      if (minute === 0 && graphApiKey) {
         ctx.waitUntil(
           (async () => {
             console.info('Starting Qdrant reconciliation...');

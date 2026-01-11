@@ -158,6 +158,28 @@ export interface AgentPayload {
   curated_by: string[];
   /** Whether this agent is curated by at least one known curator */
   is_curated: boolean;
+
+  // Gap 4: Declared OASF fields from subgraph (v1.0)
+  /** OASF skills declared by the agent in registration file */
+  declared_oasf_skills: string[];
+  /** OASF domains declared by the agent in registration file */
+  declared_oasf_domains: string[];
+
+  // Gap 5: New endpoint fields (v1.0)
+  /** Email contact endpoint */
+  email_endpoint: string;
+  /** OASF API endpoint */
+  oasf_endpoint: string;
+  /** OASF API version */
+  oasf_version: string;
+
+  // Gap 6: Reachability attestations from watchtower
+  /** Last MCP reachability check timestamp (ISO string) */
+  last_reachability_check_mcp: string;
+  /** Last A2A reachability check timestamp (ISO string) */
+  last_reachability_check_a2a: string;
+  /** Wallet address of the reachability attestor */
+  reachability_attestor: string;
 }
 
 /**
@@ -503,6 +525,22 @@ export interface AgentFilterParams {
   curatedBy?: string;
   /** Filter by curated status */
   isCurated?: boolean;
+
+  // Gap 4: Declared OASF filters
+  /** Filter by declared OASF skill slug */
+  declaredSkill?: string;
+  /** Filter by declared OASF domain slug */
+  declaredDomain?: string;
+
+  // Gap 5: New endpoint filters
+  /** Filter by agents with email endpoint */
+  hasEmail?: boolean;
+  /** Filter by agents with OASF endpoint */
+  hasOasfEndpoint?: boolean;
+
+  // Gap 6: Reachability attestation filters
+  /** Filter by agents with recent reachability attestation (within 14 days) */
+  hasRecentReachability?: boolean;
 
   // Exclusion filters (notIn)
   /** Exclude agents with these chain IDs */

@@ -83,8 +83,37 @@ export async function syncD1ToQdrant(
   // Update classifications in Qdrant (including full confidence data for Phase 2)
   for (const c of classifications.results ?? []) {
     try {
-      const skillsData = JSON.parse(c.skills) as SkillOrDomain[];
-      const domainsData = JSON.parse(c.domains) as SkillOrDomain[];
+      // Validate and parse skills JSON
+      let skillsData: SkillOrDomain[] = [];
+      if (c.skills) {
+        try {
+          const parsed = JSON.parse(c.skills);
+          if (Array.isArray(parsed)) {
+            skillsData = parsed.filter(
+              (s): s is SkillOrDomain =>
+                typeof s === 'object' && s !== null && typeof s.slug === 'string'
+            );
+          }
+        } catch (parseError) {
+          console.error(`[d1-sync] Malformed skills JSON for ${c.agent_id}:`, parseError);
+        }
+      }
+
+      // Validate and parse domains JSON
+      let domainsData: SkillOrDomain[] = [];
+      if (c.domains) {
+        try {
+          const parsed = JSON.parse(c.domains);
+          if (Array.isArray(parsed)) {
+            domainsData = parsed.filter(
+              (d): d is SkillOrDomain =>
+                typeof d === 'object' && d !== null && typeof d.slug === 'string'
+            );
+          }
+        } catch (parseError) {
+          console.error(`[d1-sync] Malformed domains JSON for ${c.agent_id}:`, parseError);
+        }
+      }
 
       // Slugs only for filtering (indexed)
       const skills = skillsData.map((s) => s.slug);

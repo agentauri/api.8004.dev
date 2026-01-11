@@ -71,6 +71,7 @@ export const agentIdSchema = z
 
 /**
  * Parse agent ID into components
+ * Returns default values (chainId: 0, tokenId: '0') if format is invalid
  */
 export function parseAgentId(agentId: string): { chainId: number; tokenId: string } {
   const [chainIdStr = '0', tokenId = '0'] = agentId.split(':');
@@ -78,6 +79,22 @@ export function parseAgentId(agentId: string): { chainId: number; tokenId: strin
     chainId: Number.parseInt(chainIdStr, 10),
     tokenId,
   };
+}
+
+/**
+ * Validate and parse agent ID into components
+ * Returns null if format is invalid (not chainId:tokenId)
+ * Use this when you need to validate user input
+ */
+export function validateAndParseAgentId(
+  agentId: string
+): { chainId: number; tokenId: string } | null {
+  const parts = agentId.split(':');
+  if (parts.length !== 2) return null;
+  const chainId = Number.parseInt(parts[0] || '', 10);
+  const tokenId = parts[1] || '';
+  if (Number.isNaN(chainId) || !tokenId) return null;
+  return { chainId, tokenId };
 }
 
 /**
@@ -265,6 +282,14 @@ export const listAgentsQuerySchema = z.object({
     .regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid curator wallet address')
     .optional(),
   isCurated: stringBooleanSchema.optional(),
+  // Gap 4: Declared OASF filters
+  declaredSkill: z.string().max(MAX_LENGTHS.SKILL).optional(),
+  declaredDomain: z.string().max(MAX_LENGTHS.SKILL).optional(),
+  // Gap 5: New endpoint filters
+  hasEmail: stringBooleanSchema.optional(),
+  hasOasfEndpoint: stringBooleanSchema.optional(),
+  // Gap 6: Reachability attestation filters
+  hasRecentReachability: stringBooleanSchema.optional(),
   // Date range filters
   createdAfter: z.string().datetime({ offset: true }).optional(),
   createdBefore: z.string().datetime({ offset: true }).optional(),
@@ -323,6 +348,14 @@ export const searchRequestSchema = z.object({
       // Curation filters (Gap 3)
       curatedBy: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
       isCurated: z.boolean().optional(),
+      // Gap 4: Declared OASF filters
+      declaredSkill: z.string().max(MAX_LENGTHS.SKILL).optional(),
+      declaredDomain: z.string().max(MAX_LENGTHS.SKILL).optional(),
+      // Gap 5: New endpoint filters
+      hasEmail: z.boolean().optional(),
+      hasOasfEndpoint: z.boolean().optional(),
+      // Gap 6: Reachability attestation filters
+      hasRecentReachability: z.boolean().optional(),
       // Registration file filter
       hasRegistrationFile: z.boolean().optional(),
       // Exact match filters (new)

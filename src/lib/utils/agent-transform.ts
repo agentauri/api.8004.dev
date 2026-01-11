@@ -5,6 +5,7 @@
  */
 
 import type { AgentSummary, OASFClassification, OASFSource, TrustMethod } from '@/types';
+import { parseAgentId } from '@/lib/utils/validation';
 
 /**
  * Common OASF classification builder
@@ -55,6 +56,39 @@ export function buildOASFClassification(params: {
 }
 
 /**
+ * Qdrant metadata structure (subset relevant for OASF)
+ */
+interface QdrantMetadataForOASF {
+  skills?: string[];
+  domains?: string[];
+  skills_with_confidence?: Array<{ slug: string; confidence: number }>;
+  domains_with_confidence?: Array<{ slug: string; confidence: number }>;
+  classification_confidence?: number;
+  classification_at?: string;
+  classification_model?: string;
+}
+
+/**
+ * Build OASF classification from Qdrant metadata
+ * Handles both enriched data (with confidence) and basic slugs
+ */
+export function buildOASFFromQdrantMetadata(
+  metadata: QdrantMetadataForOASF | undefined
+): OASFClassification | undefined {
+  if (!metadata) return undefined;
+
+  return buildOASFClassification({
+    skills: metadata.skills ?? [],
+    domains: metadata.domains ?? [],
+    skillsWithConfidence: metadata.skills_with_confidence,
+    domainsWithConfidence: metadata.domains_with_confidence,
+    confidence: metadata.classification_confidence,
+    classifiedAt: metadata.classification_at,
+    modelVersion: metadata.classification_model,
+  });
+}
+
+/**
  * Derive supported trust methods from agent features
  */
 export function deriveSupportedTrust(x402Support: boolean): TrustMethod[] {
@@ -70,18 +104,9 @@ export function determineOASFSource(oasf: OASFClassification | undefined): OASFS
   return oasf ? 'llm-classification' : 'none';
 }
 
-/**
- * Parse agent ID into components
- */
-export function parseAgentIdComponents(agentId: string): { chainId: number; tokenId: string } {
-  const parts = agentId.split(':');
-  const chainIdStr = parts[0] || '0';
-  const tokenId = parts[1] || '0';
-  return {
-    chainId: Number.parseInt(chainIdStr, 10),
-    tokenId,
-  };
-}
+// Re-export parseAgentId for backward compatibility
+// Use parseAgentId from @/lib/utils/validation for new code
+export { parseAgentId };
 
 /**
  * Normalize optional string values
@@ -133,7 +158,7 @@ export function buildAgentSummary(
   input: BaseAgentInput,
   oasf?: OASFClassification
 ): AgentSummary {
-  const { chainId, tokenId } = parseAgentIdComponents(input.agentId);
+  const { chainId, tokenId } = parseAgentId(input.agentId);
 
   return {
     id: input.agentId,

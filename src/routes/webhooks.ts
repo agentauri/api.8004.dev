@@ -5,6 +5,7 @@
 
 import { Hono } from 'hono';
 import { errors } from '@/lib/utils/errors';
+import { SSRFProtectionError, validateUrlForSSRF } from '@/lib/utils/fetch';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import {
   createWebhookService,
@@ -95,6 +96,16 @@ webhooks.post('/', async (c) => {
   }
 
   const { url, events, filters, description } = parseResult.data;
+
+  // Validate URL for SSRF protection
+  try {
+    validateUrlForSSRF(url);
+  } catch (error) {
+    if (error instanceof SSRFProtectionError) {
+      return errors.validationError(c, `Invalid webhook URL: ${error.message}`);
+    }
+    return errors.validationError(c, 'Invalid webhook URL');
+  }
 
   const webhookService = createWebhookService(c.env.DB);
   const { webhook, secret } = await webhookService.createWebhook({
@@ -238,6 +249,16 @@ webhooks.post('/:id/test', async (c) => {
 
   const payloadString = JSON.stringify(testPayload);
   const signature = await generateSignature(payloadString, secret);
+
+  // Validate URL for SSRF protection (defense in depth - also validated on creation)
+  try {
+    validateUrlForSSRF(webhook.url);
+  } catch (error) {
+    return errors.validationError(
+      c,
+      'Webhook URL failed security validation. Please delete and recreate with a valid URL.'
+    );
+  }
 
   // Send test request
   try {

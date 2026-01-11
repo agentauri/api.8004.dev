@@ -539,6 +539,24 @@ export class QdrantSearchService {
         classification_model: payload.classification_model,
         // ERC-8004 version tracking
         erc8004Version: payload.erc_8004_version,
+        // Gap 4: Declared OASF fields
+        declaredOasfSkills: payload.declared_oasf_skills,
+        declaredOasfDomains: payload.declared_oasf_domains,
+        // Gap 5: New endpoint fields
+        emailEndpoint: payload.email_endpoint,
+        oasfEndpoint: payload.oasf_endpoint,
+        oasfVersion: payload.oasf_version,
+        // Gap 6: Reachability attestation fields
+        lastReachabilityCheckMcp: payload.last_reachability_check_mcp,
+        lastReachabilityCheckA2a: payload.last_reachability_check_a2a,
+        reachabilityAttestor: payload.reachability_attestor,
+        // Curation fields (Gap 3)
+        curatedBy: payload.curated_by,
+        isCurated: payload.is_curated,
+        // Trust & reachability status
+        trustScore: payload.trust_score,
+        isReachableMcp: payload.is_reachable_mcp,
+        isReachableA2a: payload.is_reachable_a2a,
       },
       matchReasons: this.generateMatchReasons(payload, score),
     };
@@ -659,6 +677,31 @@ export function searchFiltersToAgentFilters(filters: SearchFilters): AgentFilter
     reachableMcp: filters.reachableMcp,
     // Registration file filter
     hasRegistrationFile: filters.hasRegistrationFile,
+    // Exact match filters
+    ens: filters.ens,
+    did: filters.did,
+    // Exclusion filters
+    excludeChainIds: filters.excludeChainIds,
+    excludeSkills: filters.excludeSkills,
+    excludeDomains: filters.excludeDomains,
+    // Gap 1: Trust score filters
+    trustScoreMin: filters.trustScoreMin,
+    trustScoreMax: filters.trustScoreMax,
+    // Gap 1: Version filters
+    erc8004Version: filters.erc8004Version,
+    mcpVersion: filters.mcpVersion,
+    a2aVersion: filters.a2aVersion,
+    // Gap 3: Curation filters
+    curatedBy: filters.curatedBy,
+    isCurated: filters.isCurated,
+    // Gap 4: Declared OASF filters
+    declaredSkill: filters.declaredSkill,
+    declaredDomain: filters.declaredDomain,
+    // Gap 5: New endpoint filters
+    hasEmail: filters.hasEmail,
+    hasOasfEndpoint: filters.hasOasfEndpoint,
+    // Gap 6: Reachability attestation filters
+    hasRecentReachability: filters.hasRecentReachability,
   };
 }
 

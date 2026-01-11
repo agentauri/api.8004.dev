@@ -24,6 +24,7 @@ import type { NewFeedback } from '@/db/schema';
 import { fetchWithTimeout } from '@/lib/utils/fetch';
 import type { ReputationService } from '../reputation';
 import { createReputationService } from '../reputation';
+import { createQdrantClient, type QdrantClient } from '../qdrant';
 
 /** ERC-8004 spec version */
 type ERC8004Version = 'v0.4' | 'v1.0';
@@ -304,6 +305,69 @@ function timestampToIso(timestamp: string): string {
 }
 
 /**
+ * Reachability tags from watchtower
+ * These tags indicate the feedback is a reachability attestation
+ */
+const REACHABILITY_TAGS = {
+  MCP: 'reachability_mcp',
+  A2A: 'reachability_a2a',
+} as const;
+
+/**
+ * Check if feedback is a reachability attestation and update Qdrant payload
+ * Watchtower posts feedback with tag1: "reachability_mcp" or "reachability_a2a"
+ *
+ * @param qdrant - Qdrant client for updating payloads
+ * @param agentId - Agent ID in format chainId:tokenId
+ * @param feedback - Graph feedback entry
+ * @returns true if this was a reachability attestation
+ */
+async function processReachabilityAttestation(
+  qdrant: QdrantClient | null,
+  agentId: string,
+  feedback: GraphFeedback
+): Promise<boolean> {
+  if (!qdrant || !feedback.tag1) return false;
+
+  const tag1Lower = feedback.tag1.toLowerCase();
+
+  // Check if this is a reachability attestation
+  if (tag1Lower !== REACHABILITY_TAGS.MCP && tag1Lower !== REACHABILITY_TAGS.A2A) {
+    return false;
+  }
+
+  const timestamp = timestampToIso(feedback.createdAt);
+  const attestor = feedback.clientAddress;
+
+  try {
+    // Update the appropriate reachability field based on tag
+    if (tag1Lower === REACHABILITY_TAGS.MCP) {
+      await qdrant.setPayloadByAgentId(agentId, {
+        last_reachability_check_mcp: timestamp,
+        reachability_attestor: attestor,
+        is_reachable_mcp: true,
+      });
+      console.info(`Gap 6: Updated MCP reachability for ${agentId} from attestor ${attestor}`);
+    } else if (tag1Lower === REACHABILITY_TAGS.A2A) {
+      await qdrant.setPayloadByAgentId(agentId, {
+        last_reachability_check_a2a: timestamp,
+        reachability_attestor: attestor,
+        is_reachable_a2a: true,
+      });
+      console.info(`Gap 6: Updated A2A reachability for ${agentId} from attestor ${attestor}`);
+    }
+
+    return true;
+  } catch (error) {
+    console.warn(
+      `Gap 6: Failed to update reachability for ${agentId}:`,
+      error instanceof Error ? error.message : String(error)
+    );
+    return false;
+  }
+}
+
+/**
  * Get current sync state from D1
  */
 async function getSyncState(db: D1Database): Promise<GraphFeedbackSyncState | null> {
@@ -355,12 +419,14 @@ async function feedbackExistsByGraphId(db: D1Database, graphId: string): Promise
 
 /**
  * Process a single feedback entry
- * @returns true if feedback was added, false if skipped
+ * @param qdrant - Optional Qdrant client for reachability attestation updates
+ * @returns status indicating what happened with this feedback
  */
 async function processFeedback(
   db: D1Database,
   reputationService: ReputationService,
-  feedback: GraphFeedback
+  feedback: GraphFeedback,
+  qdrant: QdrantClient | null = null
 ): Promise<'added' | 'exists' | 'unsupported' | 'revoked'> {
   // Skip revoked feedback (should be filtered by query, but double-check)
   if (feedback.isRevoked) {
@@ -400,6 +466,9 @@ async function processFeedback(
     submitted_at: timestampToIso(feedback.createdAt),
   };
 
+  // Gap 6: Check if this is a reachability attestation and update Qdrant payload
+  await processReachabilityAttestation(qdrant, agentId, feedback);
+
   // Add feedback (this also updates reputation incrementally)
   await reputationService.addFeedback(newFeedback);
   return 'added';
@@ -412,7 +481,8 @@ async function processBatch(
   db: D1Database,
   reputationService: ReputationService,
   feedbackBatch: GraphFeedback[],
-  result: GraphFeedbackSyncResult
+  result: GraphFeedbackSyncResult,
+  qdrant: QdrantClient | null = null
 ): Promise<number> {
   let latestCreatedAt = 0;
 
@@ -425,7 +495,7 @@ async function processBatch(
       latestCreatedAt = createdAtNum;
     }
 
-    const status = await processFeedback(db, reputationService, feedback);
+    const status = await processFeedback(db, reputationService, feedback, qdrant);
     if (status === 'added') {
       result.newFeedbackCount++;
     } else if (status === 'revoked') {
@@ -445,16 +515,33 @@ async function processBatch(
  * 3. Filters out revoked feedback
  * 4. Stores in agent_feedback table
  * 5. Updates agent_reputation aggregates
+ * 6. (Gap 6) Updates Qdrant reachability attestations from watchtower feedback
  *
  * @param db - D1 database instance
- * @param env - Environment variables containing optional GRAPH_API_KEY
+ * @param env - Environment variables containing GRAPH_API_KEY and Qdrant config
  * @returns Sync result with counts and status
  */
 export async function syncFeedbackFromGraph(
   db: D1Database,
-  env?: { GRAPH_API_KEY?: string }
+  env?: {
+    GRAPH_API_KEY?: string;
+    // Gap 6: Qdrant config for reachability attestation updates
+    QDRANT_URL?: string;
+    QDRANT_API_KEY?: string;
+    QDRANT_COLLECTION?: string;
+  }
 ): Promise<GraphFeedbackSyncResult> {
   const reputationService = createReputationService(db);
+
+  // Gap 6: Create Qdrant client if config available (for reachability attestation updates)
+  const qdrant =
+    env?.QDRANT_URL && env?.QDRANT_API_KEY
+      ? createQdrantClient({
+          QDRANT_URL: env.QDRANT_URL,
+          QDRANT_API_KEY: env.QDRANT_API_KEY,
+          QDRANT_COLLECTION: env.QDRANT_COLLECTION,
+        })
+      : null;
 
   const result: GraphFeedbackSyncResult = {
     success: true,
@@ -506,7 +593,7 @@ export async function syncFeedbackFromGraph(
           `Graph feedback sync: chain ${chainId} - processing batch of ${feedbackBatch.length} feedback entries`
         );
 
-        const batchLatest = await processBatch(db, reputationService, feedbackBatch, result);
+        const batchLatest = await processBatch(db, reputationService, feedbackBatch, result, qdrant);
         if (batchLatest > latestCreatedAt) {
           latestCreatedAt = batchLatest;
         }

@@ -453,11 +453,31 @@ export class QdrantClient {
       try {
         await this.createPayloadIndex(index.field, index.type, false);
       } catch (error) {
-        // Ignore errors if index already exists
         const errorMessage = error instanceof Error ? error.message : String(error);
-        if (!errorMessage.includes('already exists')) {
-          console.warn(`Failed to create index for ${index.field}:`, errorMessage);
+        const lowerMessage = errorMessage.toLowerCase();
+
+        // Expected case: index already exists
+        if (lowerMessage.includes('already exists')) {
+          continue;
         }
+
+        // Critical errors that should fail the whole operation
+        const isCriticalError =
+          lowerMessage.includes('401') ||
+          lowerMessage.includes('403') ||
+          lowerMessage.includes('unauthorized') ||
+          lowerMessage.includes('forbidden') ||
+          lowerMessage.includes('not found') ||
+          lowerMessage.includes('collection') ||
+          lowerMessage.includes('econnrefused');
+
+        if (isCriticalError) {
+          console.error(`[qdrant] Critical error creating index for ${index.field}:`, errorMessage);
+          throw error;
+        }
+
+        // Non-critical errors: log and continue
+        console.warn(`[qdrant] Failed to create index for ${index.field}:`, errorMessage);
       }
     }
   }

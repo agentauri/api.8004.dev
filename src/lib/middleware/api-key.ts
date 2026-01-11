@@ -7,30 +7,28 @@
  * 2. D1: Individual API keys stored in database with per-key rate limits
  */
 
+import { timingSafeEqual as cryptoTimingSafeEqual } from 'node:crypto';
 import type { MiddlewareHandler } from 'hono';
 import { type ApiKeyTier, DEFAULT_RATE_LIMITS, validateApiKey } from '@/services/api-keys';
 import type { Env, Variables } from '@/types';
 
 /**
  * Constant-time string comparison to prevent timing attacks
- * Uses XOR comparison with fixed iteration count
+ * Uses Node.js crypto.timingSafeEqual for secure comparison
  */
 function timingSafeEqual(a: string, b: string): boolean {
+  // Different lengths are never equal, but we still do constant-time work
+  // to avoid leaking length information via timing
   if (a.length !== b.length) {
-    // Still do a comparison to avoid length timing leak
-    // Compare 'a' against itself to take constant time
-    let result = 0;
-    for (let i = 0; i < a.length; i++) {
-      result |= a.charCodeAt(i) ^ a.charCodeAt(i);
-    }
-    return false; // Different lengths are never equal
+    // Compare 'a' against itself to maintain constant-time behavior
+    const bufA = Buffer.from(a, 'utf8');
+    cryptoTimingSafeEqual(bufA, bufA);
+    return false;
   }
 
-  let result = 0;
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return result === 0;
+  const bufA = Buffer.from(a, 'utf8');
+  const bufB = Buffer.from(b, 'utf8');
+  return cryptoTimingSafeEqual(bufA, bufB);
 }
 
 /**

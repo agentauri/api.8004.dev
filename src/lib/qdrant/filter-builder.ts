@@ -432,6 +432,75 @@ export function buildFilter(params: AgentFilterParams): QdrantFilter | undefined
     });
   }
 
+  // --- Gap 4: Declared OASF filters ---
+
+  // Declared skill filter
+  if (params.declaredSkill) {
+    mustConditions.push({
+      key: 'declared_oasf_skills',
+      match: { any: [params.declaredSkill] },
+    });
+  }
+
+  // Declared domain filter
+  if (params.declaredDomain) {
+    mustConditions.push({
+      key: 'declared_oasf_domains',
+      match: { any: [params.declaredDomain] },
+    });
+  }
+
+  // --- Gap 5: New endpoint filters ---
+
+  // Has email filter
+  if (params.hasEmail !== undefined) {
+    if (params.hasEmail) {
+      mustNotConditions.push({
+        key: 'email_endpoint',
+        match: { value: '' },
+      });
+    } else {
+      mustConditions.push({
+        key: 'email_endpoint',
+        match: { value: '' },
+      });
+    }
+  }
+
+  // Has OASF endpoint filter
+  if (params.hasOasfEndpoint !== undefined) {
+    if (params.hasOasfEndpoint) {
+      mustNotConditions.push({
+        key: 'oasf_endpoint',
+        match: { value: '' },
+      });
+    } else {
+      mustConditions.push({
+        key: 'oasf_endpoint',
+        match: { value: '' },
+      });
+    }
+  }
+
+  // --- Gap 6: Reachability attestation filters ---
+
+  // Has recent reachability check (within 14 days)
+  if (params.hasRecentReachability !== undefined) {
+    if (params.hasRecentReachability) {
+      // Calculate 14 days ago
+      const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+      // At least one of MCP or A2A reachability must be recent
+      shouldConditions.push({
+        key: 'last_reachability_check_mcp',
+        range: { gte: fourteenDaysAgo },
+      });
+      shouldConditions.push({
+        key: 'last_reachability_check_a2a',
+        range: { gte: fourteenDaysAgo },
+      });
+    }
+  }
+
   // --- Exclusion filters (notIn / except) ---
 
   // Exclude chain IDs

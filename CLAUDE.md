@@ -6,7 +6,7 @@ This is the backend service for **8004.dev**, providing a unified REST API that 
 
 ### What This Service Does
 
-1. **Vector Search**: Native Qdrant-based semantic search with 40+ filters
+1. **Vector Search**: Native Qdrant-based semantic search with 50+ filters
 2. **Agent Data Aggregation**: Fetches agent data from The Graph subgraph via agent0-sdk
 3. **OASF Classification**: Multi-provider AI classification (Gemini primary, Claude fallback)
 4. **Reputation System**: Dual feedback from EAS attestations + on-chain data
@@ -294,7 +294,7 @@ intent_template_steps (template_id, step_order, role, required_skills)
 ### 1. Vector Search (Qdrant)
 
 - Native similarity search with Venice AI embeddings (1024 dim)
-- 40+ native filters (chainIds, skills, domains, mcp, a2a, reputation, trustScore, erc8004Version, etc.)
+- 50+ native filters (chainIds, skills, domains, mcp, a2a, reputation, trustScore, erc8004Version, curation, declared OASF, endpoints, reachability, etc.)
 - AND/OR filter modes
 - Cursor-based pagination
 - SDK fallback when Qdrant returns 0 results
@@ -370,15 +370,17 @@ intent_template_steps (template_id, step_order, role, required_skills)
 
 ## Supported Chains
 
-| Chain | Chain ID | Network |
-|-------|----------|---------|
-| Ethereum Sepolia | 11155111 | Testnet |
-| Base Sepolia | 84532 | Testnet |
-| Polygon Amoy | 80002 | Testnet |
-| Linea Sepolia | 59141 | Testnet |
-| Hedera Testnet | 296 | Testnet |
-| HyperEVM Testnet | 998 | Testnet |
-| SKALE Base Sepolia | 1351057110 | Testnet |
+| Chain | Chain ID | Network | Status |
+|-------|----------|---------|--------|
+| Ethereum Sepolia | 11155111 | Testnet | ✅ Active (v1.0) |
+| Base Sepolia | 84532 | Testnet | ✅ Active (v1.0) |
+| Polygon Amoy | 80002 | Testnet | ✅ Active (v1.0) |
+| Linea Sepolia | 59141 | Testnet | ⏳ Pending v1.0 |
+| Hedera Testnet | 296 | Testnet | ⏳ Pending v1.0 |
+| HyperEVM Testnet | 998 | Testnet | ⏳ Pending v1.0 |
+| SKALE Base Sepolia | 1351057110 | Testnet | ⏳ Pending v1.0 |
+
+**Note**: Only active chains are supported for filtering in the API. Pending chains require v1.0 contract deployment and subgraph indexing.
 
 ---
 

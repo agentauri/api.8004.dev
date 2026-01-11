@@ -6,6 +6,7 @@
 
 import { Hono } from 'hono';
 import { enqueueClassificationsBatch, getClassification } from '@/db/queries';
+import { buildOASFFromQdrantMetadata, determineOASFSource } from '@/lib/utils/agent-transform';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import {
@@ -185,7 +186,9 @@ agents.get('/', async (c) => {
     try {
       const decoded = Buffer.from(query.cursor, 'base64url').toString('utf-8');
       const cursorData = JSON.parse(decoded) as { _global_offset?: number };
-      offset = cursorData._global_offset ?? 0;
+      const cursorOffset = cursorData._global_offset ?? 0;
+      // Validate offset bounds to prevent negative values from malicious cursors
+      offset = cursorOffset >= 0 ? cursorOffset : 0;
     } catch {
       // Invalid cursor, start from beginning
       offset = undefined;
@@ -253,7 +256,6 @@ agents.get('/', async (c) => {
   // Note: Only fall back if user is NOT explicitly asking for hasRegistrationFile=false,
   // since SDK only returns agents WITH registration files
   const sdk = createSDKService(c.env, c.env.CACHE);
-  let _usedSdkFallback = false;
 
   const shouldFallback =
     searchResult.results.length === 0 && !query.q && query.hasRegistrationFile !== false; // Don't fallback if user wants agents without reg files
@@ -285,7 +287,6 @@ agents.get('/', async (c) => {
 
       // Convert SDK results to search results format
       if (sdkResult.items.length > 0) {
-        _usedSdkFallback = true;
         const allSdkAgents: AgentSummary[] = sdkResult.items.map((item) => ({
           id: item.id,
           chainId: Number(item.id.split(':')[0]),
@@ -369,35 +370,9 @@ agents.get('/', async (c) => {
 
   // Transform results to AgentSummary format using Qdrant payload directly
   // Classifications are synced from D1 to Qdrant every 15 min via d1-sync-worker
-  // Phase 2 will add confidence scores to Qdrant payload
+  // Phase 2 adds confidence scores to Qdrant payload
   let agents: AgentSummary[] = searchResult.results.map((result) => {
-    const qdrantSkills = result.metadata?.skills ?? [];
-    const qdrantDomains = result.metadata?.domains ?? [];
-
-    // Use Qdrant payload directly - no D1 fetch needed
-    // Use enriched data (skills_with_confidence) when available, fallback to slugs
-    const hasEnrichedOasf = (result.metadata?.skills_with_confidence?.length ?? 0) > 0;
-    const hasOasf = hasEnrichedOasf || qdrantSkills.length > 0 || qdrantDomains.length > 0;
-
-    const oasf = hasEnrichedOasf
-      ? {
-          // Use enriched data with confidence scores
-          skills: result.metadata?.skills_with_confidence ?? [],
-          domains: result.metadata?.domains_with_confidence ?? [],
-          confidence: result.metadata?.classification_confidence ?? 1,
-          classifiedAt: result.metadata?.classification_at ?? new Date().toISOString(),
-          modelVersion: result.metadata?.classification_model ?? 'qdrant-indexed',
-        }
-      : hasOasf
-        ? {
-            // Fallback to slugs with confidence: 1 (for agents not yet synced with Phase 2)
-            skills: qdrantSkills.map((slug) => ({ slug, confidence: 1 })),
-            domains: qdrantDomains.map((slug) => ({ slug, confidence: 1 })),
-            confidence: 1,
-            classifiedAt: new Date().toISOString(),
-            modelVersion: 'qdrant-indexed',
-          }
-        : undefined;
+    const oasf = buildOASFFromQdrantMetadata(result.metadata);
 
     return {
       id: result.agentId,
@@ -417,7 +392,7 @@ agents.get('/', async (c) => {
       did: result.metadata?.did,
       walletAddress: result.metadata?.walletAddress,
       oasf,
-      oasfSource: (oasf ? 'llm-classification' : 'none') as OASFSource,
+      oasfSource: determineOASFSource(oasf),
       searchScore: result.score,
       matchReasons: result.matchReasons,
       reputationScore: result.metadata?.reputation,
