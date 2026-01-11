@@ -7,6 +7,7 @@ import type { SearchParams } from 'agent0-sdk';
 import { SDK } from 'agent0-sdk';
 import { circuitBreakers } from '@/lib/utils/circuit-breaker';
 import { SDKError } from '@/lib/utils/errors';
+import { deriveSupportedTrust } from '@/lib/utils/agent-transform';
 import type {
   AgentDetail,
   AgentHealthCheck,
@@ -16,7 +17,6 @@ import type {
   ChainStats,
   Env,
   SupportedChainId,
-  TrustMethod,
 } from '@/types';
 import { CACHE_TTL, hashQueryParams } from './cache';
 import { createMockSDKService } from './mock/mock-sdk';
@@ -55,16 +55,6 @@ function getExtraString(
   if (!extras) return undefined;
   const value = extras[key];
   return isNonEmptyString(value) ? value : undefined;
-}
-
-/**
- * Derive supported trust methods from agent data
- */
-function deriveSupportedTrust(x402Support: boolean): TrustMethod[] {
-  const methods: TrustMethod[] = [];
-  if (x402Support) methods.push('x402');
-  // EAS attestations will be added in future when reputation system is integrated
-  return methods;
 }
 
 /**

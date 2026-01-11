@@ -700,10 +700,15 @@ agents.get('/:agentId', async (c) => {
 
   const { chainId, tokenId } = parseAgentId(agentId);
 
+  // Validate required env vars
+  if (!c.env.QDRANT_URL || !c.env.QDRANT_API_KEY) {
+    return errors.internalError(c, 'Qdrant configuration missing');
+  }
+
   // Create Qdrant client (needed for both SDK path and fallback)
   const qdrant = createQdrantClient({
-    QDRANT_URL: c.env.QDRANT_URL!,
-    QDRANT_API_KEY: c.env.QDRANT_API_KEY!,
+    QDRANT_URL: c.env.QDRANT_URL,
+    QDRANT_API_KEY: c.env.QDRANT_API_KEY,
     QDRANT_COLLECTION: c.env.QDRANT_COLLECTION ?? 'agents',
   });
 
@@ -722,7 +727,10 @@ agents.get('/:agentId', async (c) => {
 
   // If SDK returned null or failed, try Qdrant fallback
   if (!agent) {
-    const qdrantAgent = await qdrant.getByAgentId(agentId).catch(() => null);
+    const qdrantAgent = await qdrant.getByAgentId(agentId).catch((err) => {
+      console.warn(`Qdrant fallback failed for ${agentId}:`, err);
+      return null;
+    });
 
     if (!qdrantAgent?.payload) {
       // Agent not found in either source
@@ -757,7 +765,10 @@ agents.get('/:agentId', async (c) => {
       : Promise.resolve(null),
     getClassification(c.env.DB, agentId),
     createReputationService(c.env.DB).getAgentReputation(agentId),
-    qdrant.getByAgentId(agentId).catch(() => null), // Graceful fallback if Qdrant fails
+    qdrant.getByAgentId(agentId).catch((err) => {
+      console.warn(`Qdrant lookup failed for ${agentId}:`, err);
+      return null;
+    }), // Graceful fallback if Qdrant fails
   ]);
 
   const dbClassification = parseClassificationRow(classificationRow);

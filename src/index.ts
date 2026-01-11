@@ -4,6 +4,7 @@
  */
 
 import { Hono } from 'hono';
+import { z } from 'zod';
 import {
   enqueueClassificationsBatch,
   getClassifiedAgentIds,
@@ -94,6 +95,21 @@ function validateEnv(env: Env): void {
     throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
   }
 }
+
+/**
+ * Queue job validation schemas
+ */
+const classificationJobSchema = z.object({
+  agentId: z.string(),
+  force: z.boolean(),
+});
+
+const evaluationJobSchema = z.object({
+  queueItemId: z.string(),
+  agentId: z.string(),
+  chainId: z.number(),
+  skills: z.array(z.string()),
+});
 
 // Create Hono app
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -500,22 +516,37 @@ export default {
       batch.messages.map(async (message) => {
         try {
           if (isEvaluationQueue) {
-            // Process evaluation job
-            const job = message.body as EvaluationJob;
+            // Validate and process evaluation job
+            const parseResult = evaluationJobSchema.safeParse(message.body);
+            if (!parseResult.success) {
+              globalLogger.logError('Invalid evaluation job payload', parseResult.error, {
+                body: message.body,
+              });
+              message.ack(); // Ack to prevent retry of invalid messages
+              return { agentId: 'unknown', status: 'invalid' };
+            }
+            const job = parseResult.data;
             await processEvaluationJob(job, env);
             message.ack();
             return { agentId: job.agentId, queueItemId: job.queueItemId, status: 'success' };
           } else {
-            // Process classification job
-            const job = message.body as ClassificationJob;
+            // Validate and process classification job
+            const parseResult = classificationJobSchema.safeParse(message.body);
+            if (!parseResult.success) {
+              globalLogger.logError('Invalid classification job payload', parseResult.error, {
+                body: message.body,
+              });
+              message.ack(); // Ack to prevent retry of invalid messages
+              return { agentId: 'unknown', status: 'invalid' };
+            }
+            const job = parseResult.data;
             await processClassificationJob(job, env);
             message.ack();
             return { agentId: job.agentId, status: 'success' };
           }
         } catch (error) {
-          const agentId = isEvaluationQueue
-            ? (message.body as EvaluationJob).agentId
-            : (message.body as ClassificationJob).agentId;
+          const rawBody = message.body as unknown as Record<string, unknown>;
+          const agentId = typeof rawBody?.agentId === 'string' ? rawBody.agentId : 'unknown';
           globalLogger.logError(
             `${isEvaluationQueue ? 'Evaluation' : 'Classification'} job failed`,
             error,

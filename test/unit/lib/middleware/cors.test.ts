@@ -107,7 +107,7 @@ describe('cors middleware', () => {
 
     const response = await app.fetch(
       new Request('http://localhost/', {
-        headers: { Origin: 'https://example.com' },
+        headers: { Origin: 'https://8004.dev' },
       })
     );
 
@@ -127,7 +127,7 @@ describe('cors middleware', () => {
       new Request('http://localhost/', {
         method: 'OPTIONS',
         headers: {
-          Origin: 'https://example.com',
+          Origin: 'https://8004.dev',
           'Access-Control-Request-Method': 'POST',
           'Access-Control-Request-Headers': 'Content-Type',
         },
@@ -150,7 +150,7 @@ describe('cors middleware', () => {
       new Request('http://localhost/', {
         method: 'OPTIONS',
         headers: {
-          Origin: 'https://example.com',
+          Origin: 'https://8004.dev',
           'Access-Control-Request-Method': 'POST',
         },
       })

@@ -381,7 +381,7 @@ export class QdrantSearchService {
 
     // Sort in-memory
     const sortField = options.sort as 'name' | 'createdAt' | 'reputation';
-    const sorted = this.sortPayloads(allResults, sortField, options.order ?? 'desc');
+    const sorted = this.sortResults(allResults, sortField, options.order ?? 'desc');
 
     // Paginate
     const paginated = sorted.slice(options.offset, options.offset + options.limit);
@@ -399,40 +399,6 @@ export class QdrantSearchService {
     };
   }
 
-  /**
-   * Sort payloads by field (for in-memory sorting)
-   */
-  private sortPayloads(
-    results: Array<{ payload: AgentPayload }>,
-    sort: 'name' | 'createdAt' | 'reputation',
-    order: 'asc' | 'desc'
-  ): Array<{ payload: AgentPayload }> {
-    const multiplier = order === 'desc' ? -1 : 1;
-
-    return [...results].sort((a, b) => {
-      let comparison = 0;
-
-      switch (sort) {
-        case 'name':
-          comparison = a.payload.name.localeCompare(b.payload.name);
-          break;
-        case 'createdAt':
-          comparison =
-            new Date(a.payload.created_at).getTime() - new Date(b.payload.created_at).getTime();
-          break;
-        case 'reputation':
-          comparison = a.payload.reputation - b.payload.reputation;
-          break;
-      }
-
-      // Use agent_id as tie-breaker for stable pagination
-      if (comparison === 0) {
-        comparison = a.payload.agent_id.localeCompare(b.payload.agent_id);
-      }
-
-      return comparison * multiplier;
-    });
-  }
 
   /**
    * Fetch all vector matches (for non-relevance sorting)
@@ -473,11 +439,11 @@ export class QdrantSearchService {
   /**
    * Sort results by field
    */
-  private sortResults(
-    results: Array<{ payload: AgentPayload; score: number }>,
+  private sortResults<T extends { payload: AgentPayload }>(
+    results: T[],
     sort: 'name' | 'createdAt' | 'reputation',
     order: 'asc' | 'desc'
-  ): Array<{ payload: AgentPayload; score: number }> {
+  ): T[] {
     const multiplier = order === 'desc' ? -1 : 1;
 
     return [...results].sort((a, b) => {
@@ -650,59 +616,10 @@ export class QdrantSearchService {
 
 /**
  * Convert SearchFilters to AgentFilterParams
+ * SearchFilters is a subset of AgentFilterParams with identical property names
  */
 export function searchFiltersToAgentFilters(filters: SearchFilters): AgentFilterParams {
-  return {
-    chainIds: filters.chainIds,
-    active: filters.active,
-    mcp: filters.mcp,
-    a2a: filters.a2a,
-    x402: filters.x402,
-    skills: filters.skills,
-    domains: filters.domains,
-    filterMode: filters.filterMode,
-    // Extended filters
-    mcpTools: filters.mcpTools,
-    a2aSkills: filters.a2aSkills,
-    minRep: filters.minRep,
-    maxRep: filters.maxRep,
-    // Wallet filters
-    owner: filters.owner,
-    walletAddress: filters.walletAddress,
-    // Trust model filters
-    trustModels: filters.trustModels,
-    hasTrusts: filters.hasTrusts,
-    // Reachability filters
-    reachableA2a: filters.reachableA2a,
-    reachableMcp: filters.reachableMcp,
-    // Registration file filter
-    hasRegistrationFile: filters.hasRegistrationFile,
-    // Exact match filters
-    ens: filters.ens,
-    did: filters.did,
-    // Exclusion filters
-    excludeChainIds: filters.excludeChainIds,
-    excludeSkills: filters.excludeSkills,
-    excludeDomains: filters.excludeDomains,
-    // Gap 1: Trust score filters
-    trustScoreMin: filters.trustScoreMin,
-    trustScoreMax: filters.trustScoreMax,
-    // Gap 1: Version filters
-    erc8004Version: filters.erc8004Version,
-    mcpVersion: filters.mcpVersion,
-    a2aVersion: filters.a2aVersion,
-    // Gap 3: Curation filters
-    curatedBy: filters.curatedBy,
-    isCurated: filters.isCurated,
-    // Gap 4: Declared OASF filters
-    declaredSkill: filters.declaredSkill,
-    declaredDomain: filters.declaredDomain,
-    // Gap 5: New endpoint filters
-    hasEmail: filters.hasEmail,
-    hasOasfEndpoint: filters.hasOasfEndpoint,
-    // Gap 6: Reachability attestation filters
-    hasRecentReachability: filters.hasRecentReachability,
-  };
+  return { ...filters };
 }
 
 /**

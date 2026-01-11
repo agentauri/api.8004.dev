@@ -6,16 +6,8 @@
  * to ensure comprehensive test coverage.
  */
 
-import type { AgentDetail, AgentSummary, TrustMethod } from '@/types';
-
-/**
- * Helper to derive supported trust methods
- */
-function deriveSupportedTrust(x402Support: boolean): TrustMethod[] {
-  const methods: TrustMethod[] = [];
-  if (x402Support) methods.push('x402');
-  return methods;
-}
+import type { AgentDetail, AgentSummary } from '@/types';
+import { deriveSupportedTrust } from '@/lib/utils/agent-transform';
 
 /**
  * Generate a deterministic agent ID

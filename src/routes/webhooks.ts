@@ -234,7 +234,7 @@ webhooks.post('/:id/test', async (c) => {
   // Get secret for signing
   const secret = await webhookService.getWebhookSecret(id, apiKey);
   if (!secret) {
-    return errors.internal(c, 'Failed to retrieve webhook secret');
+    return errors.internalError(c, 'Failed to retrieve webhook secret');
   }
 
   // Create test payload

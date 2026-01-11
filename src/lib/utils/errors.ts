@@ -88,9 +88,6 @@ export const errors = {
   rateLimitExceeded: (c: Context) =>
     errorResponse(c, 429, 'RATE_LIMIT_EXCEEDED', 'Rate limit exceeded. Please try again later.'),
 
-  internal: (c: Context, message = 'An unexpected error occurred') =>
-    errorResponse(c, 500, 'INTERNAL_ERROR', message),
-
   internalError: (c: Context, message = 'An unexpected error occurred') =>
     errorResponse(c, 500, 'INTERNAL_ERROR', message),
 
