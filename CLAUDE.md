@@ -6,7 +6,7 @@ This is the backend service for **8004.dev**, providing a unified REST API that 
 
 ### What This Service Does
 
-1. **Vector Search**: Native Qdrant-based semantic search with 27+ filters
+1. **Vector Search**: Native Qdrant-based semantic search with 40+ filters
 2. **Agent Data Aggregation**: Fetches agent data from The Graph subgraph via agent0-sdk
 3. **OASF Classification**: Multi-provider AI classification (Gemini primary, Claude fallback)
 4. **Reputation System**: Dual feedback from EAS attestations + on-chain data
@@ -205,7 +205,7 @@ GRAPH_API_KEY              # The Graph API key
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/v1/agents` | List agents with 27+ native filters |
+| GET | `/api/v1/agents` | List agents with 40+ native filters |
 | GET | `/api/v1/agents/:id` | Get agent details |
 | GET | `/api/v1/agents/:id/similar` | Find similar agents |
 | GET | `/api/v1/agents/:id/complementary` | Find complementary agents |
@@ -294,7 +294,7 @@ intent_template_steps (template_id, step_order, role, required_skills)
 ### 1. Vector Search (Qdrant)
 
 - Native similarity search with Venice AI embeddings (1024 dim)
-- 27+ native filters (chainIds, skills, domains, mcp, a2a, reputation, etc.)
+- 40+ native filters (chainIds, skills, domains, mcp, a2a, reputation, trustScore, erc8004Version, etc.)
 - AND/OR filter modes
 - Cursor-based pagination
 - SDK fallback when Qdrant returns 0 results

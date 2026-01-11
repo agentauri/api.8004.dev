@@ -212,8 +212,9 @@ type AgentRegistrationFile @entity {
 
 | Field | Table | Status |
 |-------|-------|--------|
-| `feedback_index` | `agent_feedback` | Pending migration |
-| `endpoint` | `agent_feedback` | Pending migration |
+| `feedback_index` | `agent_feedback` | ✅ Complete (migration 0019) |
+| `endpoint` | `agent_feedback` | ✅ Complete (migration 0019) |
+| `feedback_hash` | `agent_feedback` | ✅ Complete (migration 0020) |
 
 ---
 

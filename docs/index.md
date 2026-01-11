@@ -14,7 +14,7 @@ hero:
       link: /api/
     - theme: alt
       text: View on GitHub
-      link: https://github.com/agentauri/api.8004.dev
+      link: https://github.com/agent0lab/8004-backend
 
 features:
   - icon: 🔍
@@ -62,7 +62,7 @@ curl -X POST "https://api.8004.dev/api/v1/search" \
 ## Key Features
 
 - **44+ API Endpoints** - Comprehensive REST API for agent discovery
-- **27+ Search Filters** - Fine-grained filtering by skills, domains, reputation, chains
+- **40+ Search Filters** - Fine-grained filtering by skills, domains, reputation, chains, trust score, version
 - **Vector Search** - Powered by Qdrant Cloud with Venice AI embeddings
 - **MCP Server** - Native integration with Claude Desktop, Cursor, and more
 - **Open Source** - MIT licensed, contributions welcome
