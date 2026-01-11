@@ -10,7 +10,7 @@
  * @module services/a2a-client
  */
 
-import { fetchWithTimeout } from '../lib/utils/fetch';
+import { fetchWithTimeout, validateUrlForSSRF, SSRFProtectionError } from '../lib/utils/fetch';
 
 /**
  * A2A Skill from AgentCard
@@ -91,63 +91,16 @@ export interface A2AClientConfig {
 const DEFAULT_A2A_TIMEOUT_MS = 5_000;
 
 /**
- * Blocked hostnames to prevent SSRF
- */
-const BLOCKED_HOSTNAMES = [
-  'localhost',
-  '127.0.0.1',
-  '0.0.0.0',
-  '169.254.169.254',
-  'metadata.google.internal',
-  '100.100.100.200',
-];
-
-/**
- * Check if hostname is blocked (security)
- */
-function isBlockedHostname(hostname: string): boolean {
-  const lower = hostname.toLowerCase();
-
-  if (BLOCKED_HOSTNAMES.includes(lower)) {
-    return true;
-  }
-
-  // Block private IP ranges
-  if (
-    /^10\./.test(hostname) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) ||
-    /^192\.168\./.test(hostname)
-  ) {
-    return true;
-  }
-
-  // Block .local and .internal domains
-  if (lower.endsWith('.local') || lower.endsWith('.internal')) {
-    return true;
-  }
-
-  return false;
-}
-
-/**
- * Validate A2A endpoint URL
+ * Validate A2A endpoint URL using shared SSRF protection
  */
 function isValidA2AEndpoint(url: string): boolean {
   try {
-    const parsed = new URL(url);
-
-    // Only allow HTTPS
-    if (parsed.protocol !== 'https:') {
-      return false;
-    }
-
-    // Check blocked hostnames
-    if (isBlockedHostname(parsed.hostname)) {
-      return false;
-    }
-
+    validateUrlForSSRF(url);
     return true;
-  } catch {
+  } catch (error) {
+    if (error instanceof SSRFProtectionError) {
+      return false;
+    }
     return false;
   }
 }
@@ -389,8 +342,12 @@ export function createA2AClient(config: A2AClientConfig = {}): A2AClient {
           const data = await response.json();
           const card = parseAgentCard(data);
           if (card) return card;
-        } catch {
-          // Try next URL
+        } catch (error) {
+          // Log error and try next URL
+          console.warn(
+            `A2A AgentCard fetch failed for ${url}:`,
+            error instanceof Error ? error.message : String(error)
+          );
         }
       }
 

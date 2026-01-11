@@ -12,6 +12,28 @@ import { type ApiKeyTier, DEFAULT_RATE_LIMITS, validateApiKey } from '@/services
 import type { Env, Variables } from '@/types';
 
 /**
+ * Constant-time string comparison to prevent timing attacks
+ * Uses XOR comparison with fixed iteration count
+ */
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) {
+    // Still do a comparison to avoid length timing leak
+    // Compare 'a' against itself to take constant time
+    let result = 0;
+    for (let i = 0; i < a.length; i++) {
+      result |= a.charCodeAt(i) ^ a.charCodeAt(i);
+    }
+    return false; // Different lengths are never equal
+  }
+
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
+
+/**
  * Extended variables with API key info
  */
 export interface ApiKeyVariables extends Variables {
@@ -78,7 +100,7 @@ export function apiKeyAuth(): MiddlewareHandler<{
     if (apiKey) {
       // First check legacy environment API key
       const legacyKey = c.env.API_KEY;
-      if (legacyKey && apiKey === legacyKey) {
+      if (legacyKey && timingSafeEqual(apiKey, legacyKey)) {
         c.set('isAuthenticated', true);
         c.set('apiKeyTier', 'standard');
         c.set('rateLimitRpm', DEFAULT_RATE_LIMITS.standard);
@@ -144,7 +166,7 @@ export function requireApiKey(): MiddlewareHandler<{
 
     // First check legacy environment API key
     const legacyKey = c.env.API_KEY;
-    if (legacyKey && apiKey === legacyKey) {
+    if (legacyKey && timingSafeEqual(apiKey, legacyKey)) {
       c.set('isAuthenticated', true);
       c.set('apiKeyTier', 'standard');
       c.set('rateLimitRpm', DEFAULT_RATE_LIMITS.standard);

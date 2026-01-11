@@ -758,14 +758,20 @@ agents.get('/:agentId/similar', async (c) => {
     try {
       const skills = JSON.parse(classification.skills);
       targetSkills = skills.map((s: { slug: string }) => s.slug);
-    } catch {
-      // Invalid skills JSON
+    } catch (error) {
+      console.error(
+        `Invalid skills JSON for agent ${agentId}:`,
+        error instanceof Error ? error.message : String(error)
+      );
     }
     try {
       const domains = JSON.parse(classification.domains);
       targetDomains = domains.map((d: { slug: string }) => d.slug);
-    } catch {
-      // Invalid domains JSON
+    } catch (error) {
+      console.error(
+        `Invalid domains JSON for agent ${agentId}:`,
+        error instanceof Error ? error.message : String(error)
+      );
     }
 
     if (targetSkills.length === 0 && targetDomains.length === 0) {

@@ -6,6 +6,22 @@
 import { z } from 'zod';
 
 /**
+ * Maximum string lengths for validation
+ * SECURITY: Prevents DoS attacks via extremely long strings
+ */
+const MAX_LENGTHS = {
+  QUERY: 500, // Search query
+  SKILL: 100, // Individual skill/domain name
+  ADDRESS: 42, // Ethereum address (0x + 40 hex chars)
+  ENS: 100, // ENS domain name
+  DID: 200, // DID identifier
+  CURSOR: 500, // Pagination cursor
+  VERSION: 50, // Version string (e.g., "2024-11-05")
+  TRUST_MODEL: 50, // Trust model name
+  ARRAY_ITEMS: 50, // Max items in filter arrays
+} as const;
+
+/**
  * Supported chain IDs
  */
 export const SUPPORTED_CHAIN_IDS = [11155111, 84532, 80002] as const;
@@ -146,7 +162,7 @@ const limitBodySchema = z
  * List agents query parameters schema
  */
 export const listAgentsQuerySchema = z.object({
-  q: z.string().min(1).optional(),
+  q: z.string().min(1).max(MAX_LENGTHS.QUERY).optional(),
   chainId: chainIdSchema.optional(),
   chains: chainsSchema.optional(),
   // Alias for chains - supports chainIds=X,Y format
@@ -161,55 +177,60 @@ export const listAgentsQuerySchema = z.object({
   // Skills filter - supports both CSV (skills=a,b) and array notation (skills[]=a&skills[]=b)
   skills: z
     .string()
-    .transform((val) => val.split(',').map((s) => s.trim()))
+    .max(MAX_LENGTHS.SKILL * MAX_LENGTHS.ARRAY_ITEMS)
+    .transform((val) => val.split(',').map((s) => s.trim().slice(0, MAX_LENGTHS.SKILL)).slice(0, MAX_LENGTHS.ARRAY_ITEMS))
     .optional(),
   'skills[]': z
-    .union([z.string(), z.array(z.string())])
-    .transform((val) => (Array.isArray(val) ? val : [val]))
+    .union([z.string().max(MAX_LENGTHS.SKILL), z.array(z.string().max(MAX_LENGTHS.SKILL)).max(MAX_LENGTHS.ARRAY_ITEMS)])
+    .transform((val) => (Array.isArray(val) ? val : [val]).slice(0, MAX_LENGTHS.ARRAY_ITEMS))
     .optional(),
   // Domains filter - supports both CSV and array notation
   domains: z
     .string()
-    .transform((val) => val.split(',').map((s) => s.trim()))
+    .max(MAX_LENGTHS.SKILL * MAX_LENGTHS.ARRAY_ITEMS)
+    .transform((val) => val.split(',').map((s) => s.trim().slice(0, MAX_LENGTHS.SKILL)).slice(0, MAX_LENGTHS.ARRAY_ITEMS))
     .optional(),
   'domains[]': z
-    .union([z.string(), z.array(z.string())])
-    .transform((val) => (Array.isArray(val) ? val : [val]))
+    .union([z.string().max(MAX_LENGTHS.SKILL), z.array(z.string().max(MAX_LENGTHS.SKILL)).max(MAX_LENGTHS.ARRAY_ITEMS)])
+    .transform((val) => (Array.isArray(val) ? val : [val]).slice(0, MAX_LENGTHS.ARRAY_ITEMS))
     .optional(),
   // MCP tools filter - supports both CSV and array notation
   mcpTools: z
     .string()
-    .transform((val) => val.split(',').map((s) => s.trim()))
+    .max(MAX_LENGTHS.SKILL * MAX_LENGTHS.ARRAY_ITEMS)
+    .transform((val) => val.split(',').map((s) => s.trim().slice(0, MAX_LENGTHS.SKILL)).slice(0, MAX_LENGTHS.ARRAY_ITEMS))
     .optional(),
   'mcpTools[]': z
-    .union([z.string(), z.array(z.string())])
-    .transform((val) => (Array.isArray(val) ? val : [val]))
+    .union([z.string().max(MAX_LENGTHS.SKILL), z.array(z.string().max(MAX_LENGTHS.SKILL)).max(MAX_LENGTHS.ARRAY_ITEMS)])
+    .transform((val) => (Array.isArray(val) ? val : [val]).slice(0, MAX_LENGTHS.ARRAY_ITEMS))
     .optional(),
   // A2A skills filter - supports both CSV and array notation
   a2aSkills: z
     .string()
-    .transform((val) => val.split(',').map((s) => s.trim()))
+    .max(MAX_LENGTHS.SKILL * MAX_LENGTHS.ARRAY_ITEMS)
+    .transform((val) => val.split(',').map((s) => s.trim().slice(0, MAX_LENGTHS.SKILL)).slice(0, MAX_LENGTHS.ARRAY_ITEMS))
     .optional(),
   'a2aSkills[]': z
-    .union([z.string(), z.array(z.string())])
-    .transform((val) => (Array.isArray(val) ? val : [val]))
+    .union([z.string().max(MAX_LENGTHS.SKILL), z.array(z.string().max(MAX_LENGTHS.SKILL)).max(MAX_LENGTHS.ARRAY_ITEMS)])
+    .transform((val) => (Array.isArray(val) ? val : [val]).slice(0, MAX_LENGTHS.ARRAY_ITEMS))
     .optional(),
   filterMode: z.enum(['AND', 'OR']).optional(),
   minScore: z.coerce.number().min(0).max(1).optional(),
   minRep: z.coerce.number().min(0).max(100).optional(),
   maxRep: z.coerce.number().min(0).max(100).optional(),
   // Wallet filters
-  owner: z.string().optional(),
-  walletAddress: z.string().optional(),
+  owner: z.string().max(MAX_LENGTHS.ADDRESS).optional(),
+  walletAddress: z.string().max(MAX_LENGTHS.ADDRESS).optional(),
   // Trust model filters
   trustModels: z
     .string()
-    .transform((val) => val.split(',').map((s) => s.trim()))
+    .max(MAX_LENGTHS.TRUST_MODEL * MAX_LENGTHS.ARRAY_ITEMS)
+    .transform((val) => val.split(',').map((s) => s.trim().slice(0, MAX_LENGTHS.TRUST_MODEL)).slice(0, MAX_LENGTHS.ARRAY_ITEMS))
     .optional(),
   hasTrusts: stringBooleanSchema.optional(),
   // Exact match filters (new)
-  ens: z.string().optional(),
-  did: z.string().optional(),
+  ens: z.string().max(MAX_LENGTHS.ENS).optional(),
+  did: z.string().max(MAX_LENGTHS.DID).optional(),
   // Exclusion filters (notIn)
   excludeChainIds: z
     .string()
@@ -236,8 +257,8 @@ export const listAgentsQuerySchema = z.object({
   trustScoreMax: z.coerce.number().min(0).max(100).optional(),
   // Version filters (Gap 1)
   erc8004Version: z.enum(['v0.4', 'v1.0']).optional(),
-  mcpVersion: z.string().optional(),
-  a2aVersion: z.string().optional(),
+  mcpVersion: z.string().max(MAX_LENGTHS.VERSION).optional(),
+  a2aVersion: z.string().max(MAX_LENGTHS.VERSION).optional(),
   // Curation filters (Gap 3)
   curatedBy: z
     .string()
@@ -252,7 +273,7 @@ export const listAgentsQuerySchema = z.object({
   sort: sortFieldSchema.optional(),
   order: sortOrderSchema.optional(),
   limit: limitSchema,
-  cursor: z.string().optional(),
+  cursor: z.string().max(MAX_LENGTHS.CURSOR).optional(),
   /** Offset-based pagination: skip N items before returning results */
   offset: z.coerce.number().int().min(0).optional(),
   /** Offset-based pagination: page number (1-indexed) */
@@ -267,27 +288,27 @@ export type ListAgentsQuery = z.infer<typeof listAgentsQuerySchema>;
  * Search request body schema
  */
 export const searchRequestSchema = z.object({
-  query: z.string().min(1, 'Query is required'),
+  query: z.string().min(1, 'Query is required').max(MAX_LENGTHS.QUERY),
   filters: z
     .object({
-      chainIds: z.array(chainIdSchema).optional(),
+      chainIds: z.array(chainIdSchema).max(MAX_LENGTHS.ARRAY_ITEMS).optional(),
       active: z.boolean().optional(),
       mcp: z.boolean().optional(),
       a2a: z.boolean().optional(),
       x402: z.boolean().optional(),
-      skills: z.array(z.string()).optional(),
-      domains: z.array(z.string()).optional(),
-      mcpTools: z.array(z.string()).optional(),
-      a2aSkills: z.array(z.string()).optional(),
+      skills: z.array(z.string().max(MAX_LENGTHS.SKILL)).max(MAX_LENGTHS.ARRAY_ITEMS).optional(),
+      domains: z.array(z.string().max(MAX_LENGTHS.SKILL)).max(MAX_LENGTHS.ARRAY_ITEMS).optional(),
+      mcpTools: z.array(z.string().max(MAX_LENGTHS.SKILL)).max(MAX_LENGTHS.ARRAY_ITEMS).optional(),
+      a2aSkills: z.array(z.string().max(MAX_LENGTHS.SKILL)).max(MAX_LENGTHS.ARRAY_ITEMS).optional(),
       filterMode: z.enum(['AND', 'OR']).optional(),
       // Reputation filters
       minRep: z.number().min(0).max(100).optional(),
       maxRep: z.number().min(0).max(100).optional(),
       // Wallet filters
-      owner: z.string().optional(),
-      walletAddress: z.string().optional(),
+      owner: z.string().max(MAX_LENGTHS.ADDRESS).optional(),
+      walletAddress: z.string().max(MAX_LENGTHS.ADDRESS).optional(),
       // Trust model filters
-      trustModels: z.array(z.string()).optional(),
+      trustModels: z.array(z.string().max(MAX_LENGTHS.TRUST_MODEL)).max(MAX_LENGTHS.ARRAY_ITEMS).optional(),
       hasTrusts: z.boolean().optional(),
       // Reachability filters
       reachableA2a: z.boolean().optional(),
@@ -297,25 +318,25 @@ export const searchRequestSchema = z.object({
       trustScoreMax: z.number().min(0).max(100).optional(),
       // Version filters (Gap 1)
       erc8004Version: z.enum(['v0.4', 'v1.0']).optional(),
-      mcpVersion: z.string().optional(),
-      a2aVersion: z.string().optional(),
+      mcpVersion: z.string().max(MAX_LENGTHS.VERSION).optional(),
+      a2aVersion: z.string().max(MAX_LENGTHS.VERSION).optional(),
       // Curation filters (Gap 3)
       curatedBy: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
       isCurated: z.boolean().optional(),
       // Registration file filter
       hasRegistrationFile: z.boolean().optional(),
       // Exact match filters (new)
-      ens: z.string().optional(),
-      did: z.string().optional(),
+      ens: z.string().max(MAX_LENGTHS.ENS).optional(),
+      did: z.string().max(MAX_LENGTHS.DID).optional(),
       // Exclusion filters (notIn)
-      excludeChainIds: z.array(z.number()).optional(),
-      excludeSkills: z.array(z.string()).optional(),
-      excludeDomains: z.array(z.string()).optional(),
+      excludeChainIds: z.array(z.number()).max(MAX_LENGTHS.ARRAY_ITEMS).optional(),
+      excludeSkills: z.array(z.string().max(MAX_LENGTHS.SKILL)).max(MAX_LENGTHS.ARRAY_ITEMS).optional(),
+      excludeDomains: z.array(z.string().max(MAX_LENGTHS.SKILL)).max(MAX_LENGTHS.ARRAY_ITEMS).optional(),
     })
     .optional(),
   minScore: z.number().min(0).max(1).default(0.3),
   limit: limitBodySchema,
-  cursor: z.string().optional(),
+  cursor: z.string().max(MAX_LENGTHS.CURSOR).optional(),
   offset: z.number().int().min(0).optional(),
   /** Search mode: semantic (vector search), name (substring), or auto (semantic with name fallback) */
   searchMode: searchModeInputSchema.optional(),

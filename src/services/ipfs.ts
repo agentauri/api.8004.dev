@@ -4,7 +4,7 @@
  */
 
 import { z } from 'zod';
-import { fetchWithTimeout } from '../lib/utils/fetch';
+import { fetchWithTimeout, validateUrlForSSRF, SSRFProtectionError } from '../lib/utils/fetch';
 import type { IPFSEndpoint, IPFSMetadata, OASFEndpoint, SocialLinks } from '../types/ipfs';
 import type { CacheService } from './cache';
 import { CACHE_KEYS, CACHE_TTL } from './cache';
@@ -94,50 +94,8 @@ export interface IPFSService {
 const ALLOWED_PROTOCOLS = ['https:', 'ipfs:'];
 
 /**
- * Blocked hostnames to prevent SSRF to internal services
- * SECURITY: Block localhost, private IPs, and metadata endpoints
- */
-const BLOCKED_HOSTNAMES = [
-  'localhost',
-  '127.0.0.1',
-  '0.0.0.0',
-  '169.254.169.254', // AWS metadata
-  'metadata.google.internal', // GCP metadata
-  '100.100.100.200', // Alibaba metadata
-];
-
-/**
- * Check if a hostname is blocked (private/internal)
- * SECURITY: Prevents SSRF to internal services
- */
-function isBlockedHostname(hostname: string): boolean {
-  const lower = hostname.toLowerCase();
-
-  // Check exact matches
-  if (BLOCKED_HOSTNAMES.includes(lower)) {
-    return true;
-  }
-
-  // Block private IP ranges
-  if (
-    /^10\./.test(hostname) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) ||
-    /^192\.168\./.test(hostname)
-  ) {
-    return true;
-  }
-
-  // Block .local and .internal domains
-  if (lower.endsWith('.local') || lower.endsWith('.internal')) {
-    return true;
-  }
-
-  return false;
-}
-
-/**
  * Validate a URL for safe fetching
- * SECURITY: Prevents SSRF attacks by validating protocol and hostname
+ * SECURITY: Prevents SSRF attacks using shared validation
  * @param url - URL to validate
  * @returns true if URL is safe to fetch
  */
@@ -150,13 +108,19 @@ export function isValidMetadataUrl(url: string): boolean {
       return false;
     }
 
-    // For https URLs, check hostname
+    // For https URLs, use shared SSRF protection
     if (parsed.protocol === 'https:') {
-      if (isBlockedHostname(parsed.hostname)) {
+      try {
+        validateUrlForSSRF(url);
+      } catch (error) {
+        if (error instanceof SSRFProtectionError) {
+          return false;
+        }
         return false;
       }
     }
 
+    // ipfs: protocol is allowed (will be resolved through gateway)
     return true;
   } catch {
     return false;

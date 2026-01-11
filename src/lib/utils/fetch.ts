@@ -20,8 +20,10 @@ export class SSRFProtectionError extends Error {
 
 /**
  * Private/internal IP ranges that should be blocked for SSRF protection
+ * Covers both IPv4 and IPv6 private/reserved ranges
  */
 const BLOCKED_IP_PATTERNS = [
+  // IPv4 private/reserved ranges
   /^127\./, // 127.0.0.0/8 (localhost)
   /^10\./, // 10.0.0.0/8 (private)
   /^172\.(1[6-9]|2[0-9]|3[0-1])\./, // 172.16.0.0/12 (private)
@@ -30,9 +32,19 @@ const BLOCKED_IP_PATTERNS = [
   /^0\./, // 0.0.0.0/8
   /^224\./, // 224.0.0.0/4 (multicast)
   /^240\./, // 240.0.0.0/4 (reserved)
-  /^::1$/, // IPv6 localhost
-  /^fc00:/i, // IPv6 unique local
+  // IPv6 private/reserved ranges
+  /^::1$/i, // IPv6 localhost
+  /^::$/i, // IPv6 zero address
+  /^::ffff:/i, // IPv4-mapped IPv6 (e.g., ::ffff:127.0.0.1)
+  /^fc00:/i, // IPv6 unique local (fc00::/7)
+  /^fd[0-9a-f]{2}:/i, // IPv6 unique local (fd00::/8)
   /^fe80:/i, // IPv6 link-local
+  /^ff[0-9a-f]{2}:/i, // IPv6 multicast (ff00::/8)
+  /^\[::1\]$/i, // IPv6 localhost in bracket notation
+  /^\[::ffff:/i, // IPv4-mapped IPv6 in bracket notation
+  /^\[fc00:/i, // IPv6 unique local in bracket notation
+  /^\[fd[0-9a-f]{2}:/i, // IPv6 unique local in bracket notation
+  /^\[fe80:/i, // IPv6 link-local in bracket notation
 ];
 
 /**

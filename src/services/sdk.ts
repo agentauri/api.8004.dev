@@ -68,6 +68,44 @@ function deriveSupportedTrust(x402Support: boolean): TrustMethod[] {
 }
 
 /**
+ * Sanitize agentId for GraphQL queries
+ * Validates format (chainId:tokenId) and ensures both parts are numeric
+ * @throws Error if agentId format is invalid
+ */
+function sanitizeAgentIdForGraphQL(agentId: string): string {
+  // Agent IDs must be in format chainId:tokenId (e.g., "11155111:123")
+  const parts = agentId.split(':');
+  if (parts.length !== 2) {
+    throw new SDKError('sanitizeAgentIdForGraphQL', new Error(`Invalid agent ID format: ${agentId}`));
+  }
+
+  const [chainPart, tokenPart] = parts;
+  const chainId = Number(chainPart);
+  const tokenId = Number(tokenPart);
+
+  if (!Number.isInteger(chainId) || chainId <= 0) {
+    throw new SDKError('sanitizeAgentIdForGraphQL', new Error(`Invalid chain ID in agent ID: ${agentId}`));
+  }
+  if (!Number.isInteger(tokenId) || tokenId < 0) {
+    throw new SDKError('sanitizeAgentIdForGraphQL', new Error(`Invalid token ID in agent ID: ${agentId}`));
+  }
+
+  // Return sanitized format (strictly numeric)
+  return `${chainId}:${tokenId}`;
+}
+
+/**
+ * Sanitize numeric values for GraphQL queries
+ * Ensures the value is a valid non-negative integer
+ */
+function sanitizeNumericForGraphQL(value: number, name: string): number {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new SDKError('sanitizeNumericForGraphQL', new Error(`Invalid ${name}: must be a non-negative integer`));
+  }
+  return value;
+}
+
+/**
  * Chain configuration
  */
 export interface ChainConfig {
@@ -428,8 +466,11 @@ async function fetchAgentExtrasFromSubgraph(
   const url = subgraphUrls[chainId];
   if (!url) return {};
 
+  // Sanitize agentId to prevent GraphQL injection
+  const sanitizedAgentId = sanitizeAgentIdForGraphQL(agentId);
+
   const query = `{
-    agent(id: "${agentId}") {
+    agent(id: "${sanitizedAgentId}") {
       agentURI
       updatedAt
       createdAt
@@ -522,8 +563,12 @@ export async function fetchFeedbacksFromSubgraph(
   const url = subgraphUrls[chainId];
   if (!url) return [];
 
+  // Sanitize inputs to prevent GraphQL injection
+  const sanitizedAgentId = sanitizeAgentIdForGraphQL(agentId);
+  const sanitizedLimit = sanitizeNumericForGraphQL(limit, 'limit');
+
   const query = `{
-    feedbacks(where: {agent: "${agentId}"}, first: ${limit}, orderBy: createdAt, orderDirection: desc) {
+    feedbacks(where: {agent: "${sanitizedAgentId}"}, first: ${sanitizedLimit}, orderBy: createdAt, orderDirection: desc) {
       id
       score
       clientAddress
@@ -562,8 +607,12 @@ export async function fetchValidationsFromSubgraph(
   const url = subgraphUrls[chainId];
   if (!url) return [];
 
+  // Sanitize inputs to prevent GraphQL injection
+  const sanitizedAgentId = sanitizeAgentIdForGraphQL(agentId);
+  const sanitizedLimit = sanitizeNumericForGraphQL(limit, 'limit');
+
   const query = `{
-    validations(where: {agent: "${agentId}"}, first: ${limit}, orderBy: createdAt, orderDirection: desc) {
+    validations(where: {agent: "${sanitizedAgentId}"}, first: ${sanitizedLimit}, orderBy: createdAt, orderDirection: desc) {
       id
       validatorAddress
       status

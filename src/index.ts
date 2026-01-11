@@ -447,9 +447,25 @@ export default {
         await env.CACHE.put(rateLimitKey, JSON.stringify({ count, resetAt }), {
           expirationTtl: Math.max(resetAt - now, 60),
         });
-      } catch {
-        // If rate limiting fails, allow request but log
-        console.error('MCP rate limiting error');
+      } catch (error) {
+        // Fail-closed: if rate limiting fails, reject the request for security
+        console.error(
+          'MCP rate limiting error (fail-closed):',
+          error instanceof Error ? error.message : String(error)
+        );
+        return new Response(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            error: { code: -32000, message: 'Service temporarily unavailable. Please retry.' },
+          }),
+          {
+            status: 503,
+            headers: {
+              'Content-Type': 'application/json',
+              'Retry-After': '5',
+            },
+          }
+        );
       }
 
       const mcpHandler = createMcp8004Handler(env);
