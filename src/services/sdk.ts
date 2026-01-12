@@ -1466,17 +1466,22 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
         return pendingChainStatsPromise;
       }
 
-      // Helper to count agents via direct subgraph query (without registrationFile filter)
-      // Uses circuit breaker for resilience
-      async function countAllAgentsDirectly(chainId: number): Promise<number> {
+      /**
+       * Helper to count agents via direct subgraph query with optional filter
+       * Uses circuit breaker for resilience
+       * @param chainId - Chain ID to query
+       * @param whereClause - Optional GraphQL where clause (e.g., "registrationFile_: { active: true }")
+       */
+      async function countAgentsDirectly(chainId: number, whereClause?: string): Promise<number> {
         const url = subgraphUrls[chainId];
         if (!url) return 0;
 
         let total = 0;
         let skip = 0;
+        const whereFilter = whereClause ? `where: { ${whereClause} }, ` : '';
 
         while (true) {
-          const query = `{ agents(first: 1000, skip: ${skip}) { id } }`;
+          const query = `{ agents(first: 1000, skip: ${skip}, ${whereFilter}orderBy: agentId, orderDirection: asc) { id } }`;
           type CountResponse = { data?: { agents?: { id: string }[] } };
           const data = await fetchSubgraphWithCircuitBreaker<CountResponse>(url, query);
 
@@ -1495,38 +1500,23 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
         return total;
       }
 
-      // Helper to count agents with SDK pagination
-      // SECURITY: Limit iterations to prevent DoS from infinite pagination
-      const MAX_COUNT_ITERATIONS = 20; // Max ~20,000 agents (20 * 999)
-      async function countWithSDK(
-        sdk: ReturnType<typeof getSDK>,
-        filter: Record<string, boolean>
-      ): Promise<number> {
-        let count = 0;
-        let cursor: string | undefined;
-        let iterations = 0;
-        do {
-          const result = await sdk.searchAgents(filter, undefined, 999, cursor);
-          count += result.items.length;
-          cursor = result.nextCursor;
-          iterations++;
-          if (iterations >= MAX_COUNT_ITERATIONS) break; // Safety limit
-        } while (cursor);
-        return count;
-      }
+      // Specific count functions using direct subgraph queries
+      const countAllAgents = (chainId: number) => countAgentsDirectly(chainId);
+      const countWithRegistrationFile = (chainId: number) =>
+        countAgentsDirectly(chainId, 'registrationFile_: { id_not: null }');
+      const countActiveAgents = (chainId: number) =>
+        countAgentsDirectly(chainId, 'registrationFile_: { active: true }');
 
-      // Fetch stats for a single chain - all 3 counts in parallel with graceful degradation
+      // Fetch stats for a single chain - all 3 counts in parallel via direct subgraph queries
       async function getStatsForChain(
         chain: (typeof SUPPORTED_CHAINS)[number]
       ): Promise<ChainStats> {
-        const sdk = getSDK(chain.chainId);
-
-        // Run all 3 counts in parallel, handling failures gracefully
-        // The SDK may fail due to schema mismatches, but direct subgraph queries should work
+        // Run all 3 counts in parallel using direct subgraph queries
+        // This bypasses the SDK which has schema mismatches with v1.0 subgraph
         const results = await Promise.allSettled([
-          countAllAgentsDirectly(chain.chainId),
-          countWithSDK(sdk, {}),
-          countWithSDK(sdk, { active: true }),
+          countAllAgents(chain.chainId),
+          countWithRegistrationFile(chain.chainId),
+          countActiveAgents(chain.chainId),
         ]);
 
         // Extract values, falling back to 0 on failure
@@ -1534,25 +1524,19 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
         const withRegFileCount = results[1].status === 'fulfilled' ? results[1].value : 0;
         const activeCount = results[2].status === 'fulfilled' ? results[2].value : 0;
 
-        // Log SDK failures (expected for chains with schema mismatches)
-        const [directResult, sdkResult1, sdkResult2] = results;
-        for (const result of [sdkResult1, sdkResult2]) {
-          if (result.status === 'rejected') {
-            const errorMsg = result.reason?.message || String(result.reason);
-            // Only log unexpected errors - suppress schema mismatch errors
-            if (!errorMsg.includes('has no field') && !errorMsg.includes('subgraph not found')) {
-              console.warn(
-                `SDK count failed for chain ${chain.chainId}:`,
-                errorMsg.slice(0, 200)
-              );
-            }
-          }
+        // Log any failures (expected for chains without subgraphs)
+        const failedResults = results.filter((r) => r.status === 'rejected');
+        if (failedResults.length > 0 && failedResults.length < results.length) {
+          // Only log if some succeeded (not all failed due to missing subgraph)
+          console.warn(
+            `Partial stats failure for chain ${chain.chainId}: ${failedResults.length}/${results.length} queries failed`
+          );
         }
 
-        // Determine status: 'ok' if totalCount succeeded, 'partial' if only direct query worked
-        const directQuerySucceeded = directResult.status === 'fulfilled';
-        const sdkQuerySucceeded = sdkResult1.status === 'fulfilled' || sdkResult2.status === 'fulfilled';
-        const status = directQuerySucceeded && sdkQuerySucceeded ? 'ok' : directQuerySucceeded ? 'partial' : 'error';
+        // Determine status based on query success
+        const allSucceeded = results.every((r) => r.status === 'fulfilled');
+        const anySucceeded = results.some((r) => r.status === 'fulfilled');
+        const status = allSucceeded ? 'ok' : anySucceeded ? 'partial' : 'error';
 
         return {
           chainId: chain.chainId,
