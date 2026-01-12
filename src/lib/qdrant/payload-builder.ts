@@ -66,10 +66,10 @@ export interface PayloadBuilderInput {
   agentUri?: string;
   /** Updated at timestamp */
   updatedAt?: string;
-  /** Agent wallet chain ID (v0.4 only) */
+  /** @deprecated Removed in ERC-8004 v1.0, always 0 */
   agentWalletChainId?: number;
-  /** ERC-8004 version */
-  erc8004Version?: 'v0.4' | 'v1.0';
+  /** ERC-8004 version (always 'v1.0') */
+  erc8004Version?: 'v1.0';
 
   // Gap 4: Declared OASF fields (v1.0)
   /** OASF skills declared in registration file */

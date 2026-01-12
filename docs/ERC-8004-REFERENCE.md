@@ -43,15 +43,16 @@ This document tracks the current state of the ERC-8004 ecosystem. Keep this upda
 
 | Chain | Chain ID | Version | Status | Notes |
 |-------|----------|---------|--------|-------|
-| **ETH Sepolia** | 11155111 | v1.0 | **ACTIVE** | Updated to v1.0 schema |
-| Base Sepolia | 84532 | v0.4 | **ACTIVE** | Backward compatibility |
-| Polygon Amoy | 80002 | v0.4 | **ACTIVE** | Backward compatibility |
-| Linea Sepolia | 59141 | v0.4 | **ACTIVE** | Backward compatibility |
-| Hedera Testnet | 296 | v0.4 | **ACTIVE** | Backward compatibility |
-| HyperEVM Testnet | 998 | v0.4 | **ACTIVE** | Backward compatibility |
-| SKALE Base Sepolia | 1351057110 | v0.4 | **ACTIVE** | Backward compatibility |
+| **ETH Sepolia** | 11155111 | v1.0 | **ACTIVE** | Only active subgraph |
+| Base Sepolia | 84532 | - | **REMOVED** | Awaiting v1.0 contract deployment |
+| Polygon Amoy | 80002 | - | **REMOVED** | Awaiting v1.0 contract deployment |
+| Linea Sepolia | 59141 | - | **REMOVED** | Awaiting v1.0 contract deployment |
+| Hedera Testnet | 296 | - | **REMOVED** | Awaiting v1.0 contract deployment |
+| HyperEVM Testnet | 998 | - | **REMOVED** | Awaiting v1.0 contract deployment |
+| SKALE Base Sepolia | 1351057110 | - | **REMOVED** | Awaiting v1.0 contract deployment |
 
-**Note**: v0.4 subgraphs are synced for backward compatibility with pre-v1.0 agents.
+**Note**: v0.4 subgraphs have been deprecated and removed. Only ETH Sepolia v1.0 is currently active.
+Other chains will be re-enabled when v1.0 contracts are deployed.
 
 **Contact**: @lentan to add more chains
 

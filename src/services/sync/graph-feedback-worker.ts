@@ -26,9 +26,6 @@ import type { ReputationService } from '../reputation';
 import { createReputationService } from '../reputation';
 import { createQdrantClient, type QdrantClient } from '../qdrant';
 
-/** ERC-8004 spec version */
-type ERC8004Version = 'v0.4' | 'v1.0';
-
 import {
   buildSubgraphUrl,
   getGraphKeyManager,
@@ -36,31 +33,10 @@ import {
 } from '@/lib/config/graph';
 
 /**
- * Chain IDs for v1.0 feedback (Jan 2026 update)
- * Only ETH Sepolia has v1.0 contracts deployed currently
+ * Supported chain IDs with deployed v1.0 contracts
+ * Currently only ETH Sepolia has v1.0 contracts deployed
  */
-const CHAINS_V1_0: Set<number> = new Set([11155111]);
-
-/**
- * Chain IDs for v0.4 feedback (pre-v1.0 backward compatibility)
- * NOTE: These subgraphs no longer exist after v1.0 spec update
- * Contracts for these chains are pending deployment
- */
-const CHAINS_V0_4: Set<number> = new Set([]);
-
-/**
- * Supported chain IDs (all chains with Graph endpoints)
- */
-const SUPPORTED_CHAIN_IDS: number[] = [...CHAINS_V1_0, ...CHAINS_V0_4];
-
-/**
- * Get ERC-8004 version for a chain
- */
-function getChainVersion(chainId: number): ERC8004Version {
-  if (CHAINS_V1_0.has(chainId)) return 'v1.0';
-  if (CHAINS_V0_4.has(chainId)) return 'v0.4';
-  return 'v1.0'; // Default to v1.0 for unknown chains
-}
+const SUPPORTED_CHAIN_IDS: number[] = [11155111];
 
 /**
  * Raw Feedback entity from The Graph
@@ -146,37 +122,6 @@ const FEEDBACK_QUERY_V1_0 = `
 `;
 
 /**
- * GraphQL query for v0.4 feedback (no endpoint, feedbackIndex fields)
- */
-const FEEDBACK_QUERY_V0_4 = `
-  query GetFeedback($first: Int!, $skip: Int!, $createdAtGt: BigInt!) {
-    feedbacks(
-      first: $first
-      skip: $skip
-      orderBy: createdAt
-      orderDirection: asc
-      where: {
-        createdAt_gt: $createdAtGt
-        isRevoked: false
-      }
-    ) {
-      id
-      agent {
-        id
-        chainId
-        agentId
-      }
-      clientAddress
-      score
-      tag1
-      tag2
-      isRevoked
-      createdAt
-    }
-  }
-`;
-
-/**
  * Fetch feedback from The Graph with pagination
  * Uses GraphKeyManager for key rotation and retry logic
  * @param chainId - Chain ID to fetch feedback for
@@ -198,9 +143,6 @@ async function fetchFeedbackFromGraph(
     return [];
   }
 
-  const version = getChainVersion(chainId);
-  const query = version === 'v1.0' ? FEEDBACK_QUERY_V1_0 : FEEDBACK_QUERY_V0_4;
-
   // Use key manager with retry for key rotation
   return keyManager.executeWithRetry(async (apiKey) => {
     const endpoint = buildSubgraphUrl(chainId, apiKey);
@@ -214,7 +156,7 @@ async function fetchFeedbackFromGraph(
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          query,
+          query: FEEDBACK_QUERY_V1_0,
           variables: {
             first,
             skip,
@@ -565,8 +507,7 @@ export async function syncFeedbackFromGraph(
       // Check if chain has a subgraph deployment
       if (!(chainId in SUBGRAPH_IDS)) continue;
 
-      const version = getChainVersion(chainId);
-      console.info(`Graph feedback sync: syncing chain ${chainId} (${version})...`);
+      console.info(`Graph feedback sync: syncing chain ${chainId}...`);
 
       let hasMore = true;
       let skip = 0;

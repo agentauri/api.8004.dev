@@ -24,15 +24,12 @@ export {
 /**
  * Subgraph IDs for each chain on The Graph Network
  * These are deployment IDs on the decentralized network
+ *
+ * Currently only ETH Sepolia has v1.0 contracts deployed.
+ * Other chains will be added when their contracts are deployed.
  */
 export const SUBGRAPH_IDS: Record<number, string> = {
-  11155111: '6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT', // Ethereum Sepolia
-  84532: 'GjQEDgEKqoh5Yc8MUgxoQoRATEJdEiH7HbocfR1aFiHa', // Base Sepolia
-  80002: '2A1JB18r1mF2VNP4QBH4mmxd74kbHoM6xLXC8ABAKf7j', // Polygon Amoy
-  59141: '7GyxsUkWZ5aDNEqZQhFnMQk8CDxCDgT9WZKqFkNJ7YPx', // Linea Sepolia
-  296: '5GwJ2UKQK3WQhJNqvCqV9EFKBYD6wPYJvFqEPmBKcFsP', // Hedera Testnet
-  998: '3L8DKCwQwpLEYF7m3mE8PCvr8qJcJBvXTk3a9f9sLQrP', // HyperEVM Testnet
-  1351057110: 'HvYWvsPKqWrSzV8VT4mjLGwPNMgVFgRiNMZFdJUg8BPf', // SKALE Base Sepolia
+  11155111: '6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT', // Ethereum Sepolia (v1.0)
 };
 
 /**
