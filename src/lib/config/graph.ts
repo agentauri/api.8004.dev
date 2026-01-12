@@ -24,6 +24,13 @@ export const SUBGRAPH_IDS: Record<number, string> = {
 export const GRAPH_GATEWAY_URL = 'https://gateway.thegraph.com/api';
 
 /**
+ * Default Graph API key from agent0-sdk (public key for ERC-8004 subgraphs)
+ * This is a public API key provided by agent0lab for querying ERC-8004 subgraphs.
+ * Can be overridden by GRAPH_API_KEY environment variable.
+ */
+export const DEFAULT_GRAPH_API_KEY = '00a452ad3cd1900273ea62c1bf283f93';
+
+/**
  * Build subgraph URL for a specific chain
  * @param chainId - Chain ID
  * @param graphApiKey - The Graph API key

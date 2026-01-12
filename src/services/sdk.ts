@@ -366,7 +366,7 @@ function generateMatchReasons(
 let pendingChainStatsPromise: Promise<ChainStats[]> | null = null;
 
 // Import and re-export buildSubgraphUrls from centralized config
-import { buildSubgraphUrls as _buildSubgraphUrls } from '@/lib/config/graph';
+import { buildSubgraphUrls as _buildSubgraphUrls, DEFAULT_GRAPH_API_KEY } from '@/lib/config/graph';
 export const buildSubgraphUrls = _buildSubgraphUrls;
 
 /**
@@ -1040,11 +1040,9 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
   }
 
   // Build subgraph URLs using the Graph API key
-  const graphApiKey = env.GRAPH_API_KEY;
-  if (!graphApiKey) {
-    console.warn('GRAPH_API_KEY not configured - subgraph queries will fail');
-  }
-  const subgraphUrls = graphApiKey ? buildSubgraphUrls(graphApiKey) : {};
+  // Use env.GRAPH_API_KEY if set, otherwise fall back to the public SDK key
+  const graphApiKey = env.GRAPH_API_KEY || DEFAULT_GRAPH_API_KEY;
+  const subgraphUrls = buildSubgraphUrls(graphApiKey);
 
   // Cache SDK instances per chain
   const sdkInstances = new Map<number, SDK>();

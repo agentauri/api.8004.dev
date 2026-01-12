@@ -29,13 +29,10 @@ import { createQdrantClient, type QdrantClient } from '../qdrant';
 /** ERC-8004 spec version */
 type ERC8004Version = 'v0.4' | 'v1.0';
 
-import { buildSubgraphUrls } from '@/lib/config/graph';
+import { buildSubgraphUrls, DEFAULT_GRAPH_API_KEY } from '@/lib/config/graph';
 
-// The Graph API key from agent0-sdk (public key for ERC-8004 subgraphs)
-const GRAPH_API_KEY = '00a452ad3cd1900273ea62c1bf283f93';
-
-// Build URLs once at module load
-const ALL_SUBGRAPH_URLS = buildSubgraphUrls(GRAPH_API_KEY);
+// Build URLs once at module load using the default public API key
+const ALL_SUBGRAPH_URLS = buildSubgraphUrls(DEFAULT_GRAPH_API_KEY);
 
 /**
  * Graph endpoints for v1.0 feedback (Jan 2026 update)
