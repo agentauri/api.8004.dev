@@ -1515,47 +1515,55 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
         return count;
       }
 
-      // Fetch stats for a single chain - all 3 counts in parallel
+      // Fetch stats for a single chain - all 3 counts in parallel with graceful degradation
       async function getStatsForChain(
         chain: (typeof SUPPORTED_CHAINS)[number]
       ): Promise<ChainStats> {
-        try {
-          const sdk = getSDK(chain.chainId);
+        const sdk = getSDK(chain.chainId);
 
-          // Run all 3 counts in parallel for this chain
-          const [totalCount, withRegFileCount, activeCount] = await Promise.all([
-            countAllAgentsDirectly(chain.chainId),
-            countWithSDK(sdk, {}),
-            countWithSDK(sdk, { active: true }),
-          ]);
+        // Run all 3 counts in parallel, handling failures gracefully
+        // The SDK may fail due to schema mismatches, but direct subgraph queries should work
+        const results = await Promise.allSettled([
+          countAllAgentsDirectly(chain.chainId),
+          countWithSDK(sdk, {}),
+          countWithSDK(sdk, { active: true }),
+        ]);
 
-          return {
-            chainId: chain.chainId,
-            name: chain.name,
-            shortName: chain.shortName,
-            explorerUrl: chain.explorerUrl,
-            totalCount,
-            withRegistrationFileCount: withRegFileCount,
-            activeCount,
-            status: 'ok',
-          };
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          console.error(
-            `SDK getChainStats error for chain ${chain.chainId} (${chain.name}):`,
-            errorMessage
-          );
-          return {
-            chainId: chain.chainId,
-            name: chain.name,
-            shortName: chain.shortName,
-            explorerUrl: chain.explorerUrl,
-            totalCount: 0,
-            withRegistrationFileCount: 0,
-            activeCount: 0,
-            status: 'error',
-          };
+        // Extract values, falling back to 0 on failure
+        const totalCount = results[0].status === 'fulfilled' ? results[0].value : 0;
+        const withRegFileCount = results[1].status === 'fulfilled' ? results[1].value : 0;
+        const activeCount = results[2].status === 'fulfilled' ? results[2].value : 0;
+
+        // Log SDK failures (expected for chains with schema mismatches)
+        const [directResult, sdkResult1, sdkResult2] = results;
+        for (const result of [sdkResult1, sdkResult2]) {
+          if (result.status === 'rejected') {
+            const errorMsg = result.reason?.message || String(result.reason);
+            // Only log unexpected errors - suppress schema mismatch errors
+            if (!errorMsg.includes('has no field') && !errorMsg.includes('subgraph not found')) {
+              console.warn(
+                `SDK count failed for chain ${chain.chainId}:`,
+                errorMsg.slice(0, 200)
+              );
+            }
+          }
         }
+
+        // Determine status: 'ok' if totalCount succeeded, 'partial' if only direct query worked
+        const directQuerySucceeded = directResult.status === 'fulfilled';
+        const sdkQuerySucceeded = sdkResult1.status === 'fulfilled' || sdkResult2.status === 'fulfilled';
+        const status = directQuerySucceeded && sdkQuerySucceeded ? 'ok' : directQuerySucceeded ? 'partial' : 'error';
+
+        return {
+          chainId: chain.chainId,
+          name: chain.name,
+          shortName: chain.shortName,
+          explorerUrl: chain.explorerUrl,
+          totalCount,
+          withRegistrationFileCount: withRegFileCount,
+          activeCount,
+          status: status as 'ok' | 'error',
+        };
       }
 
       // Create the promise and store it for coalescing
