@@ -18,7 +18,7 @@ function generateOpenAPISpec(): object {
       title: '8004 Backend API',
       version: '1.0.0',
       description:
-        'Unified REST API for the ERC-8004 agent explorer. Provides agent discovery, semantic search, OASF classification, and reputation data.',
+        'Unified REST API for the ERC-8004 agent explorer. Provides agent discovery, semantic search, OASF classification, reputation data, team composition, intent templates, and more.',
       license: {
         name: 'MIT',
         url: 'https://github.com/agent0lab/8004-backend/blob/main/LICENSE',
@@ -40,6 +40,16 @@ function generateOpenAPISpec(): object {
       { name: 'Search', description: 'Semantic search for agents' },
       { name: 'Classification', description: 'OASF skill/domain classification' },
       { name: 'Reputation', description: 'Agent reputation and feedback' },
+      { name: 'Compose', description: 'AI-powered team composition' },
+      { name: 'Intents', description: 'Multi-agent workflow templates' },
+      { name: 'Events', description: 'Real-time SSE event streams' },
+      { name: 'Leaderboard', description: 'Agent reputation rankings' },
+      { name: 'Trending', description: 'Trending agents by reputation change' },
+      { name: 'Feedbacks', description: 'Global feedback data' },
+      { name: 'Analytics', description: 'Platform analytics and metrics' },
+      { name: 'Evaluations', description: 'Agent capability evaluations' },
+      { name: 'Verification', description: 'Agent identity verification' },
+      { name: 'Webhooks', description: 'Webhook subscriptions' },
       { name: 'Chains', description: 'Blockchain network statistics' },
       { name: 'Taxonomy', description: 'OASF taxonomy data' },
       { name: 'Stats', description: 'Platform-wide statistics' },
@@ -349,6 +359,36 @@ function generateOpenAPISpec(): object {
               description: 'Page number (1-indexed, alternative to offset)',
               schema: { type: 'integer', minimum: 1 },
             },
+            {
+              name: 'searchMode',
+              in: 'query',
+              description: 'Search mode: semantic (vector search), name (substring), or auto (semantic with name fallback)',
+              schema: { type: 'string', enum: ['semantic', 'name', 'auto'], default: 'auto' },
+            },
+            {
+              name: 'createdAfter',
+              in: 'query',
+              description: 'Filter by creation date (ISO 8601)',
+              schema: { type: 'string', format: 'date-time' },
+            },
+            {
+              name: 'createdBefore',
+              in: 'query',
+              description: 'Filter by creation date (ISO 8601)',
+              schema: { type: 'string', format: 'date-time' },
+            },
+            {
+              name: 'updatedAfter',
+              in: 'query',
+              description: 'Filter by update date (ISO 8601)',
+              schema: { type: 'string', format: 'date-time' },
+            },
+            {
+              name: 'updatedBefore',
+              in: 'query',
+              description: 'Filter by update date (ISO 8601)',
+              schema: { type: 'string', format: 'date-time' },
+            },
           ],
           responses: {
             200: {
@@ -631,6 +671,1312 @@ function generateOpenAPISpec(): object {
               content: {
                 'application/json': {
                   schema: { $ref: '#/components/schemas/TaxonomyResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/agents/batch': {
+        get: {
+          tags: ['Agents'],
+          summary: 'Get multiple agents by IDs',
+          description: 'Fetch multiple agents in a single request. Maximum 50 IDs per request.',
+          parameters: [
+            {
+              name: 'ids',
+              in: 'query',
+              required: true,
+              description: 'Comma-separated list of agent IDs (format: chainId:tokenId)',
+              schema: { type: 'string', example: '11155111:1,11155111:2,84532:1' },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Batch agent results',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/AgentBatchResponse' },
+                },
+              },
+            },
+            400: {
+              description: 'Validation error',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/ErrorResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/agents/{agentId}/similar': {
+        get: {
+          tags: ['Agents'],
+          summary: 'Find similar agents',
+          description: 'Find agents with similar OASF classification (skills and domains overlap).',
+          parameters: [
+            {
+              name: 'agentId',
+              in: 'path',
+              required: true,
+              description: 'Agent ID in format chainId:tokenId',
+              schema: { type: 'string', pattern: '^\\d+:\\d+$' },
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              description: 'Maximum number of similar agents to return',
+              schema: { type: 'integer', minimum: 1, maximum: 20, default: 10 },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Similar agents with similarity scores',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/SimilarAgentsResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/agents/{agentId}/complementary': {
+        get: {
+          tags: ['Agents'],
+          summary: 'Find complementary agents',
+          description: 'Find agents that complement this agent (different skills, domain overlap, compatible protocols).',
+          parameters: [
+            {
+              name: 'agentId',
+              in: 'path',
+              required: true,
+              description: 'Agent ID in format chainId:tokenId',
+              schema: { type: 'string', pattern: '^\\d+:\\d+$' },
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              description: 'Maximum number of complementary agents to return',
+              schema: { type: 'integer', minimum: 1, maximum: 20, default: 10 },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Complementary agents with analysis',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/ComplementaryAgentsResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/agents/{agentId}/compatible': {
+        get: {
+          tags: ['Agents'],
+          summary: 'Find I/O compatible agents',
+          description: 'Find agents that can be chained together in pipelines (upstream/downstream I/O compatibility).',
+          parameters: [
+            {
+              name: 'agentId',
+              in: 'path',
+              required: true,
+              description: 'Agent ID in format chainId:tokenId',
+              schema: { type: 'string', pattern: '^\\d+:\\d+$' },
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              description: 'Maximum number of compatible agents per direction',
+              schema: { type: 'integer', minimum: 1, maximum: 20, default: 10 },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'I/O compatible agents (upstream and downstream)',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/CompatibleAgentsResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/agents/{agentId}/health': {
+        get: {
+          tags: ['Agents'],
+          summary: 'Get agent health status',
+          description: 'Get health and reliability metrics for an agent (uptime, latency, reachability).',
+          parameters: [
+            {
+              name: 'agentId',
+              in: 'path',
+              required: true,
+              description: 'Agent ID in format chainId:tokenId',
+              schema: { type: 'string', pattern: '^\\d+:\\d+$' },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Agent health status',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/AgentHealthResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/agents/{agentId}/evaluations': {
+        get: {
+          tags: ['Evaluations'],
+          summary: 'Get agent evaluation history',
+          description: 'Get paginated list of capability evaluations for a specific agent.',
+          parameters: [
+            {
+              name: 'agentId',
+              in: 'path',
+              required: true,
+              description: 'Agent ID in format chainId:tokenId',
+              schema: { type: 'string', pattern: '^\\d+:\\d+$' },
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              description: 'Number of results per page',
+              schema: { type: 'integer', minimum: 1, maximum: 50, default: 10 },
+            },
+            {
+              name: 'cursor',
+              in: 'query',
+              description: 'Pagination cursor',
+              schema: { type: 'string' },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Agent evaluation history',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/AgentEvaluationsResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/agents/{agentId}/verification': {
+        get: {
+          tags: ['Verification'],
+          summary: 'Get agent verification status',
+          description: 'Get verification status and badge level for an agent.',
+          parameters: [
+            {
+              name: 'agentId',
+              in: 'path',
+              required: true,
+              description: 'Agent ID in format chainId:tokenId',
+              schema: { type: 'string', pattern: '^\\d+:\\d+$' },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Verification status and badge',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/VerificationStatusResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/agents/{agentId}/verification/challenge': {
+        get: {
+          tags: ['Verification'],
+          summary: 'Get challenge status',
+          description: 'Get current verification challenge status for a specific method.',
+          parameters: [
+            {
+              name: 'agentId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string', pattern: '^\\d+:\\d+$' },
+            },
+            {
+              name: 'method',
+              in: 'query',
+              required: true,
+              description: 'Verification method',
+              schema: { type: 'string', enum: ['dns', 'ens', 'github', 'twitter'] },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Challenge status',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/ChallengeStatusResponse' },
+                },
+              },
+            },
+          },
+        },
+        post: {
+          tags: ['Verification'],
+          summary: 'Start verification challenge',
+          description: 'Start a new verification challenge for a specific method.',
+          parameters: [
+            {
+              name: 'agentId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string', pattern: '^\\d+:\\d+$' },
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['method'],
+                  properties: {
+                    method: {
+                      type: 'string',
+                      enum: ['dns', 'ens', 'github', 'twitter'],
+                      description: 'Verification method to use',
+                    },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            201: {
+              description: 'Challenge created',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/ChallengeCreatedResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/agents/{agentId}/verification/verify': {
+        post: {
+          tags: ['Verification'],
+          summary: 'Verify a challenge',
+          description: 'Submit proof and verify a pending challenge.',
+          parameters: [
+            {
+              name: 'agentId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string', pattern: '^\\d+:\\d+$' },
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['method'],
+                  properties: {
+                    method: {
+                      type: 'string',
+                      enum: ['dns', 'ens', 'github', 'twitter'],
+                    },
+                    proofData: {
+                      type: 'string',
+                      description: 'Optional proof data (e.g., tweet URL, gist URL)',
+                    },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            200: {
+              description: 'Verification result',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/VerificationResultResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/compose': {
+        post: {
+          tags: ['Compose'],
+          summary: 'Build agent team',
+          description: 'Build a team of complementary agents for a given task using AI-powered analysis.',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/ComposeRequest' },
+              },
+            },
+          },
+          responses: {
+            200: {
+              description: 'Team composition result',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/ComposeResponse' },
+                },
+              },
+            },
+            400: {
+              description: 'Validation error',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/ErrorResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/compose/info': {
+        get: {
+          tags: ['Compose'],
+          summary: 'Get compose endpoint info',
+          description: 'Get documentation and schema information for the compose endpoint.',
+          responses: {
+            200: {
+              description: 'Compose endpoint documentation',
+              content: {
+                'application/json': {
+                  schema: { type: 'object' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/intents': {
+        get: {
+          tags: ['Intents'],
+          summary: 'List intent templates',
+          description: 'List all available multi-agent workflow templates.',
+          parameters: [
+            {
+              name: 'category',
+              in: 'query',
+              description: 'Filter by category',
+              schema: { type: 'string' },
+            },
+            {
+              name: 'featured',
+              in: 'query',
+              description: 'Filter featured templates only',
+              schema: { type: 'boolean' },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'List of intent templates',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/IntentTemplatesResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/intents/categories': {
+        get: {
+          tags: ['Intents'],
+          summary: 'List template categories',
+          description: 'Get all available intent template categories.',
+          responses: {
+            200: {
+              description: 'List of categories',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      success: { type: 'boolean', enum: [true] },
+                      data: { type: 'array', items: { type: 'string' } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/intents/{templateId}': {
+        get: {
+          tags: ['Intents'],
+          summary: 'Get template details',
+          description: 'Get detailed information about a specific intent template.',
+          parameters: [
+            {
+              name: 'templateId',
+              in: 'path',
+              required: true,
+              description: 'Template ID',
+              schema: { type: 'string' },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Template details',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/IntentTemplateResponse' },
+                },
+              },
+            },
+            404: {
+              description: 'Template not found',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/ErrorResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/intents/{templateId}/match': {
+        get: {
+          tags: ['Intents'],
+          summary: 'Match agents to template (GET)',
+          description: 'Find agents that match each step of the workflow template.',
+          parameters: [
+            {
+              name: 'templateId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' },
+            },
+            {
+              name: 'chainIds',
+              in: 'query',
+              description: 'Filter by chain IDs (comma-separated)',
+              schema: { type: 'string' },
+            },
+            {
+              name: 'minReputation',
+              in: 'query',
+              description: 'Minimum reputation score',
+              schema: { type: 'integer', minimum: 0, maximum: 100 },
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              description: 'Max agents per step',
+              schema: { type: 'integer', minimum: 1, maximum: 20, default: 5 },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Matched agents for template',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/IntentMatchResponse' },
+                },
+              },
+            },
+          },
+        },
+        post: {
+          tags: ['Intents'],
+          summary: 'Match agents to template (POST)',
+          description: 'Find agents that match each step of the workflow template.',
+          parameters: [
+            {
+              name: 'templateId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' },
+            },
+          ],
+          requestBody: {
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    chainIds: { type: 'array', items: { type: 'integer' } },
+                    minReputation: { type: 'integer', minimum: 0, maximum: 100 },
+                    limit: { type: 'integer', minimum: 1, maximum: 20, default: 5 },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            200: {
+              description: 'Matched agents for template',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/IntentMatchResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/events': {
+        get: {
+          tags: ['Events'],
+          summary: 'Subscribe to real-time events',
+          description: 'Server-Sent Events (SSE) stream for real-time updates on agents, reputation, and more.',
+          parameters: [
+            {
+              name: 'agentIds',
+              in: 'query',
+              description: 'Filter by agent IDs (comma-separated)',
+              schema: { type: 'string' },
+            },
+            {
+              name: 'chainIds',
+              in: 'query',
+              description: 'Filter by chain IDs (comma-separated)',
+              schema: { type: 'string' },
+            },
+            {
+              name: 'eventTypes',
+              in: 'query',
+              description: 'Filter by event types (comma-separated)',
+              schema: { type: 'string' },
+            },
+            {
+              name: 'reputation',
+              in: 'query',
+              description: 'Include reputation change events',
+              schema: { type: 'boolean' },
+            },
+            {
+              name: 'reachability',
+              in: 'query',
+              description: 'Include reachability update events',
+              schema: { type: 'boolean' },
+            },
+            {
+              name: 'heartbeat',
+              in: 'query',
+              description: 'Heartbeat interval in seconds (5-60)',
+              schema: { type: 'integer', minimum: 5, maximum: 60, default: 30 },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'SSE event stream',
+              content: {
+                'text/event-stream': {
+                  schema: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/events/info': {
+        get: {
+          tags: ['Events'],
+          summary: 'Get SSE event info',
+          description: 'Get documentation about available SSE event types and filters.',
+          responses: {
+            200: {
+              description: 'SSE event documentation',
+              content: {
+                'application/json': {
+                  schema: { type: 'object' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/leaderboard': {
+        get: {
+          tags: ['Leaderboard'],
+          summary: 'Get reputation leaderboard',
+          description: 'Get agents ranked by reputation score with optional filters.',
+          parameters: [
+            {
+              name: 'period',
+              in: 'query',
+              description: 'Time period for ranking',
+              schema: { type: 'string', enum: ['all', '30d', '7d', '24h'], default: 'all' },
+            },
+            {
+              name: 'chainIds',
+              in: 'query',
+              description: 'Filter by chain IDs (comma-separated)',
+              schema: { type: 'string' },
+            },
+            {
+              name: 'mcp',
+              in: 'query',
+              description: 'Filter by MCP support',
+              schema: { type: 'boolean' },
+            },
+            {
+              name: 'a2a',
+              in: 'query',
+              description: 'Filter by A2A support',
+              schema: { type: 'boolean' },
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              description: 'Number of results',
+              schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+            },
+            {
+              name: 'cursor',
+              in: 'query',
+              description: 'Pagination cursor',
+              schema: { type: 'string' },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Leaderboard entries',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/LeaderboardResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/trending': {
+        get: {
+          tags: ['Trending'],
+          summary: 'Get trending agents',
+          description: 'Get agents with highest reputation changes in the specified period.',
+          parameters: [
+            {
+              name: 'period',
+              in: 'query',
+              description: 'Time period',
+              schema: { type: 'string', enum: ['24h', '7d', '30d'], default: '7d' },
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              description: 'Number of results',
+              schema: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Trending agents',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/TrendingResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/feedbacks': {
+        get: {
+          tags: ['Feedbacks'],
+          summary: 'Get all feedbacks',
+          description: 'Get paginated list of all feedbacks across all agents.',
+          parameters: [
+            {
+              name: 'chainIds',
+              in: 'query',
+              description: 'Filter by chain IDs (comma-separated)',
+              schema: { type: 'string' },
+            },
+            {
+              name: 'scoreCategory',
+              in: 'query',
+              description: 'Filter by score category',
+              schema: { type: 'string', enum: ['positive', 'neutral', 'negative'] },
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              description: 'Number of results',
+              schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+            },
+            {
+              name: 'cursor',
+              in: 'query',
+              description: 'Pagination cursor',
+              schema: { type: 'string' },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Global feedbacks with stats',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/GlobalFeedbacksResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/analytics': {
+        get: {
+          tags: ['Analytics'],
+          summary: 'Get analytics summary',
+          description: 'Get analytics summary for a specified period.',
+          parameters: [
+            {
+              name: 'period',
+              in: 'query',
+              description: 'Time period',
+              schema: { type: 'string', enum: ['hour', 'day', 'week', 'month'], default: 'day' },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Analytics summary',
+              content: {
+                'application/json': {
+                  schema: { type: 'object' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/analytics/stats': {
+        get: {
+          tags: ['Analytics'],
+          summary: 'Get platform stats',
+          description: 'Get current platform statistics.',
+          responses: {
+            200: {
+              description: 'Platform statistics',
+              content: {
+                'application/json': {
+                  schema: { type: 'object' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/analytics/filters': {
+        get: {
+          tags: ['Analytics'],
+          summary: 'Get popular filters',
+          description: 'Get popular filter usage analytics.',
+          parameters: [
+            {
+              name: 'period',
+              in: 'query',
+              schema: { type: 'string', enum: ['hour', 'day', 'week', 'month'], default: 'day' },
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Popular filters',
+              content: {
+                'application/json': {
+                  schema: { type: 'object' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/analytics/endpoints': {
+        get: {
+          tags: ['Analytics'],
+          summary: 'Get top endpoints',
+          description: 'Get top API endpoint usage.',
+          parameters: [
+            {
+              name: 'period',
+              in: 'query',
+              schema: { type: 'string', enum: ['hour', 'day', 'week', 'month'], default: 'day' },
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Top endpoints',
+              content: {
+                'application/json': {
+                  schema: { type: 'object' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/analytics/search': {
+        get: {
+          tags: ['Analytics'],
+          summary: 'Get search volume',
+          description: 'Get search volume statistics.',
+          parameters: [
+            {
+              name: 'period',
+              in: 'query',
+              schema: { type: 'string', enum: ['hour', 'day', 'week', 'month'], default: 'day' },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Search volume stats',
+              content: {
+                'application/json': {
+                  schema: { type: 'object' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/analytics/chains': {
+        get: {
+          tags: ['Analytics'],
+          summary: 'Get chain activity',
+          description: 'Get activity breakdown by chain.',
+          parameters: [
+            {
+              name: 'period',
+              in: 'query',
+              schema: { type: 'string', enum: ['hour', 'day', 'week', 'month'], default: 'day' },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Chain activity',
+              content: {
+                'application/json': {
+                  schema: { type: 'object' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/analytics/history/{metricType}': {
+        get: {
+          tags: ['Analytics'],
+          summary: 'Get historical metrics',
+          description: 'Get historical metrics data for a specific metric type.',
+          parameters: [
+            {
+              name: 'metricType',
+              in: 'path',
+              required: true,
+              description: 'Type of metric',
+              schema: { type: 'string', enum: ['agents', 'search', 'classification', 'feedback', 'api_usage'] },
+            },
+            {
+              name: 'period',
+              in: 'query',
+              schema: { type: 'string', enum: ['hour', 'day', 'week', 'month'], default: 'day' },
+            },
+            {
+              name: 'chainId',
+              in: 'query',
+              description: 'Filter by chain ID',
+              schema: { type: 'integer' },
+            },
+            {
+              name: 'startDate',
+              in: 'query',
+              description: 'Start date (ISO 8601)',
+              schema: { type: 'string', format: 'date-time' },
+            },
+            {
+              name: 'endDate',
+              in: 'query',
+              description: 'End date (ISO 8601)',
+              schema: { type: 'string', format: 'date-time' },
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              schema: { type: 'integer', minimum: 1, maximum: 1000, default: 168 },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Historical metrics',
+              content: {
+                'application/json': {
+                  schema: { type: 'object' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/evaluations': {
+        get: {
+          tags: ['Evaluations'],
+          summary: 'List evaluations',
+          description: 'Get paginated list of all agent evaluations.',
+          parameters: [
+            {
+              name: 'agentId',
+              in: 'query',
+              description: 'Filter by agent ID',
+              schema: { type: 'string' },
+            },
+            {
+              name: 'chainIds',
+              in: 'query',
+              description: 'Filter by chain IDs (comma-separated)',
+              schema: { type: 'string' },
+            },
+            {
+              name: 'status',
+              in: 'query',
+              description: 'Filter by status',
+              schema: { type: 'string', enum: ['pending', 'processing', 'completed', 'failed'] },
+            },
+            {
+              name: 'minScore',
+              in: 'query',
+              description: 'Minimum score filter',
+              schema: { type: 'integer', minimum: 0, maximum: 100 },
+            },
+            {
+              name: 'maxScore',
+              in: 'query',
+              description: 'Maximum score filter',
+              schema: { type: 'integer', minimum: 0, maximum: 100 },
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+            },
+            {
+              name: 'cursor',
+              in: 'query',
+              schema: { type: 'string' },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'List of evaluations',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/EvaluationsListResponse' },
+                },
+              },
+            },
+          },
+        },
+        post: {
+          tags: ['Evaluations'],
+          summary: 'Queue evaluation',
+          description: 'Queue a new evaluation for an agent.',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/QueueEvaluationRequest' },
+              },
+            },
+          },
+          responses: {
+            202: {
+              description: 'Evaluation queued',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/EvaluationQueuedResponse' },
+                },
+              },
+            },
+            409: {
+              description: 'Already queued',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/ErrorResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/evaluations/{id}': {
+        get: {
+          tags: ['Evaluations'],
+          summary: 'Get evaluation details',
+          description: 'Get detailed results of a specific evaluation.',
+          parameters: [
+            {
+              name: 'id',
+              in: 'path',
+              required: true,
+              description: 'Evaluation ID',
+              schema: { type: 'string' },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Evaluation details',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/EvaluationDetailResponse' },
+                },
+              },
+            },
+            404: {
+              description: 'Not found',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/ErrorResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/evaluate/info': {
+        get: {
+          tags: ['Evaluations'],
+          summary: 'Get evaluate endpoint info',
+          description: 'Get documentation about the evaluation system.',
+          responses: {
+            200: {
+              description: 'Evaluation system documentation',
+              content: {
+                'application/json': {
+                  schema: { type: 'object' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/evaluate/benchmarks': {
+        get: {
+          tags: ['Evaluations'],
+          summary: 'List benchmarks',
+          description: 'List available benchmark tests by skill.',
+          responses: {
+            200: {
+              description: 'Available benchmarks',
+              content: {
+                'application/json': {
+                  schema: { type: 'object' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/evaluate/{agentId}': {
+        get: {
+          tags: ['Evaluations'],
+          summary: 'Get latest evaluation',
+          description: 'Get the most recent evaluation result for an agent.',
+          parameters: [
+            {
+              name: 'agentId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string', pattern: '^\\d+:\\d+$' },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Latest evaluation result',
+              content: {
+                'application/json': {
+                  schema: { type: 'object' },
+                },
+              },
+            },
+          },
+        },
+        post: {
+          tags: ['Evaluations'],
+          summary: 'Trigger evaluation',
+          description: 'Trigger a new capability evaluation for an agent.',
+          parameters: [
+            {
+              name: 'agentId',
+              in: 'path',
+              required: true,
+              schema: { type: 'string', pattern: '^\\d+:\\d+$' },
+            },
+          ],
+          requestBody: {
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    force: { type: 'boolean', default: false, description: 'Force re-evaluation' },
+                    skills: { type: 'array', items: { type: 'string' }, description: 'Skills to test' },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            200: {
+              description: 'Evaluation result',
+              content: {
+                'application/json': {
+                  schema: { type: 'object' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/webhooks': {
+        get: {
+          tags: ['Webhooks'],
+          summary: 'List webhooks',
+          description: 'List all webhooks for the authenticated user.',
+          responses: {
+            200: {
+              description: 'List of webhooks',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/WebhooksListResponse' },
+                },
+              },
+            },
+            401: {
+              description: 'Unauthorized',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/ErrorResponse' },
+                },
+              },
+            },
+          },
+        },
+        post: {
+          tags: ['Webhooks'],
+          summary: 'Create webhook',
+          description: 'Create a new webhook subscription.',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/CreateWebhookRequest' },
+              },
+            },
+          },
+          responses: {
+            201: {
+              description: 'Webhook created',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/WebhookCreatedResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/webhooks/{id}': {
+        get: {
+          tags: ['Webhooks'],
+          summary: 'Get webhook details',
+          description: 'Get webhook details including recent deliveries.',
+          parameters: [
+            {
+              name: 'id',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Webhook details',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/WebhookDetailResponse' },
+                },
+              },
+            },
+          },
+        },
+        delete: {
+          tags: ['Webhooks'],
+          summary: 'Delete webhook',
+          description: 'Delete a webhook subscription.',
+          parameters: [
+            {
+              name: 'id',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Webhook deleted',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      success: { type: 'boolean', enum: [true] },
+                      message: { type: 'string' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/webhooks/{id}/test': {
+        post: {
+          tags: ['Webhooks'],
+          summary: 'Test webhook',
+          description: 'Send a test event to the webhook.',
+          parameters: [
+            {
+              name: 'id',
+              in: 'path',
+              required: true,
+              schema: { type: 'string' },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Test result',
+              content: {
+                'application/json': {
+                  schema: { type: 'object' },
                 },
               },
             },
@@ -1182,6 +2528,685 @@ function generateOpenAPISpec(): object {
                   items: { $ref: '#/components/schemas/TaxonomyCategory' },
                 },
               },
+            },
+          },
+        },
+        // New schemas for additional endpoints
+        AgentBatchResponse: {
+          type: 'object',
+          required: ['success', 'data', 'meta'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: {
+              type: 'array',
+              items: { $ref: '#/components/schemas/AgentSummary' },
+            },
+            meta: {
+              type: 'object',
+              properties: {
+                requested: { type: 'integer' },
+                found: { type: 'integer' },
+                missing: { type: 'array', items: { type: 'string' } },
+                invalid: { type: 'array', items: { type: 'string' } },
+              },
+            },
+          },
+        },
+        SimilarAgentsResponse: {
+          type: 'object',
+          required: ['success', 'data', 'meta'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: {
+              type: 'array',
+              items: {
+                allOf: [
+                  { $ref: '#/components/schemas/AgentSummary' },
+                  {
+                    type: 'object',
+                    properties: {
+                      similarityScore: { type: 'number', minimum: 0, maximum: 1 },
+                      matchedSkills: { type: 'array', items: { type: 'string' } },
+                      matchedDomains: { type: 'array', items: { type: 'string' } },
+                    },
+                  },
+                ],
+              },
+            },
+            meta: {
+              type: 'object',
+              properties: {
+                total: { type: 'integer' },
+                limit: { type: 'integer' },
+                targetAgent: { type: 'string' },
+              },
+            },
+          },
+        },
+        ComplementaryAgentsResponse: {
+          type: 'object',
+          required: ['success', 'data', 'meta'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: {
+              type: 'array',
+              items: {
+                allOf: [
+                  { $ref: '#/components/schemas/AgentSummary' },
+                  {
+                    type: 'object',
+                    properties: {
+                      complementarityScore: { type: 'number', minimum: 0, maximum: 1 },
+                      complementarySkills: { type: 'array', items: { type: 'string' } },
+                      sharedDomains: { type: 'array', items: { type: 'string' } },
+                    },
+                  },
+                ],
+              },
+            },
+            meta: {
+              type: 'object',
+              properties: {
+                sourceAgentId: { type: 'string' },
+                sourceSkills: { type: 'array', items: { type: 'string' } },
+                sourceDomains: { type: 'array', items: { type: 'string' } },
+                analysisTimeMs: { type: 'integer' },
+              },
+            },
+          },
+        },
+        CompatibleAgentsResponse: {
+          type: 'object',
+          required: ['success', 'data', 'meta'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: {
+              type: 'object',
+              properties: {
+                upstream: {
+                  type: 'array',
+                  items: { $ref: '#/components/schemas/AgentSummary' },
+                  description: 'Agents that can send data TO the source agent',
+                },
+                downstream: {
+                  type: 'array',
+                  items: { $ref: '#/components/schemas/AgentSummary' },
+                  description: 'Agents that can receive data FROM the source agent',
+                },
+              },
+            },
+            meta: {
+              type: 'object',
+              properties: {
+                sourceAgentId: { type: 'string' },
+                sourceInputModes: { type: 'array', items: { type: 'string' } },
+                sourceOutputModes: { type: 'array', items: { type: 'string' } },
+                upstreamCount: { type: 'integer' },
+                downstreamCount: { type: 'integer' },
+                analysisTimeMs: { type: 'integer' },
+              },
+            },
+          },
+        },
+        AgentHealthResponse: {
+          type: 'object',
+          required: ['success', 'data'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: {
+              type: 'object',
+              properties: {
+                agentId: { type: 'string' },
+                status: { type: 'string', enum: ['healthy', 'degraded', 'unhealthy', 'unknown'] },
+                uptimePercentage: { type: 'number', minimum: 0, maximum: 100 },
+                mcp: {
+                  type: 'object',
+                  properties: {
+                    reachable: { type: 'boolean' },
+                    latencyMs: { type: 'integer' },
+                    successRate: { type: 'number' },
+                  },
+                },
+                a2a: {
+                  type: 'object',
+                  properties: {
+                    reachable: { type: 'boolean' },
+                    latencyMs: { type: 'integer' },
+                    successRate: { type: 'number' },
+                  },
+                },
+                lastCheckedAt: { type: 'string', format: 'date-time' },
+              },
+            },
+          },
+        },
+        AgentEvaluationsResponse: {
+          type: 'object',
+          required: ['success', 'data', 'meta'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: { type: 'array', items: { type: 'object' } },
+            meta: {
+              type: 'object',
+              properties: {
+                total: { type: 'integer' },
+                hasMore: { type: 'boolean' },
+                nextCursor: { type: 'string' },
+              },
+            },
+          },
+        },
+        VerificationStatusResponse: {
+          type: 'object',
+          required: ['success', 'data'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: {
+              type: 'object',
+              properties: {
+                agentId: { type: 'string' },
+                badge: {
+                  type: 'object',
+                  properties: {
+                    level: { type: 'string', enum: ['none', 'basic', 'verified', 'trusted'] },
+                    verifiedMethods: { type: 'array', items: { type: 'string' } },
+                    verificationCount: { type: 'integer' },
+                    lastVerifiedAt: { type: 'string', format: 'date-time' },
+                  },
+                },
+                verifications: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      method: { type: 'string' },
+                      status: { type: 'string' },
+                      verifiedAt: { type: 'string', format: 'date-time' },
+                      expiresAt: { type: 'string', format: 'date-time' },
+                    },
+                  },
+                },
+                availableMethods: { type: 'array', items: { type: 'string' } },
+              },
+            },
+          },
+        },
+        ChallengeStatusResponse: {
+          type: 'object',
+          required: ['success', 'data'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: {
+              type: 'object',
+              properties: {
+                hasChallenge: { type: 'boolean' },
+                method: { type: 'string' },
+                challengeCode: { type: 'string' },
+                expiresAt: { type: 'string', format: 'date-time' },
+                attemptsRemaining: { type: 'integer' },
+              },
+            },
+          },
+        },
+        ChallengeCreatedResponse: {
+          type: 'object',
+          required: ['success', 'data'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: {
+              type: 'object',
+              properties: {
+                challengeId: { type: 'string' },
+                method: { type: 'string' },
+                challengeCode: { type: 'string' },
+                expiresAt: { type: 'string', format: 'date-time' },
+                instructions: { type: 'string' },
+                attemptsRemaining: { type: 'integer' },
+              },
+            },
+            message: { type: 'string' },
+          },
+        },
+        VerificationResultResponse: {
+          type: 'object',
+          required: ['success', 'data'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: {
+              type: 'object',
+              properties: {
+                verified: { type: 'boolean' },
+                method: { type: 'string' },
+                badge: { type: 'object' },
+                error: { type: 'string' },
+                attemptsRemaining: { type: 'integer' },
+              },
+            },
+            message: { type: 'string' },
+          },
+        },
+        ComposeRequest: {
+          type: 'object',
+          required: ['task'],
+          properties: {
+            task: {
+              type: 'string',
+              minLength: 10,
+              maxLength: 2000,
+              description: 'Task or goal description',
+            },
+            teamSize: {
+              type: 'integer',
+              minimum: 1,
+              maximum: 10,
+              description: 'Preferred team size',
+            },
+            requiredSkills: {
+              type: 'array',
+              items: { type: 'string' },
+              maxItems: 20,
+              description: 'OASF skill slugs that must be covered',
+            },
+            requiredDomains: {
+              type: 'array',
+              items: { type: 'string' },
+              maxItems: 20,
+              description: 'OASF domain slugs that must be covered',
+            },
+            minReputation: {
+              type: 'integer',
+              minimum: 0,
+              maximum: 100,
+              description: 'Minimum agent reputation score',
+            },
+            requireMcp: { type: 'boolean', description: 'Only include agents with MCP endpoints' },
+            requireA2a: { type: 'boolean', description: 'Only include agents with A2A endpoints' },
+            chainIds: {
+              type: 'array',
+              items: { type: 'integer' },
+              maxItems: 10,
+              description: 'Filter by chain IDs',
+            },
+          },
+        },
+        ComposeResponse: {
+          type: 'object',
+          required: ['success', 'data'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: {
+              type: 'object',
+              properties: {
+                analysis: { type: 'object', description: 'Task analysis with identified skills' },
+                team: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      agentId: { type: 'string' },
+                      role: { type: 'string' },
+                      contributedSkills: { type: 'array', items: { type: 'string' } },
+                      fitnessScore: { type: 'number' },
+                    },
+                  },
+                },
+                teamFitnessScore: { type: 'number', minimum: 0, maximum: 1 },
+                coveredSkills: { type: 'array', items: { type: 'string' } },
+                skillGaps: { type: 'array', items: { type: 'string' } },
+                coveredDomains: { type: 'array', items: { type: 'string' } },
+                compositionTimeMs: { type: 'integer' },
+              },
+            },
+          },
+        },
+        IntentTemplatesResponse: {
+          type: 'object',
+          required: ['success', 'data', 'meta'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: {
+              type: 'array',
+              items: { $ref: '#/components/schemas/IntentTemplate' },
+            },
+            meta: {
+              type: 'object',
+              properties: {
+                total: { type: 'integer' },
+                category: { type: 'string' },
+                featuredOnly: { type: 'boolean' },
+              },
+            },
+          },
+        },
+        IntentTemplate: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            name: { type: 'string' },
+            description: { type: 'string' },
+            category: { type: 'string' },
+            isFeatured: { type: 'boolean' },
+            steps: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  stepOrder: { type: 'integer' },
+                  role: { type: 'string' },
+                  description: { type: 'string' },
+                  requiredSkills: { type: 'array', items: { type: 'string' } },
+                },
+              },
+            },
+          },
+        },
+        IntentTemplateResponse: {
+          type: 'object',
+          required: ['success', 'data'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: { $ref: '#/components/schemas/IntentTemplate' },
+          },
+        },
+        IntentMatchResponse: {
+          type: 'object',
+          required: ['success', 'data'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: {
+              type: 'object',
+              properties: {
+                template: { $ref: '#/components/schemas/IntentTemplate' },
+                steps: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      step: { type: 'object' },
+                      matchedAgents: { type: 'array', items: { $ref: '#/components/schemas/AgentSummary' } },
+                      bestMatch: { $ref: '#/components/schemas/AgentSummary' },
+                      ioCompatible: {
+                        type: 'object',
+                        properties: {
+                          withPrevious: { type: 'boolean' },
+                          withNext: { type: 'boolean' },
+                        },
+                      },
+                    },
+                  },
+                },
+                summary: {
+                  type: 'object',
+                  properties: {
+                    isComplete: { type: 'boolean' },
+                    canExecute: { type: 'boolean' },
+                    totalAgentsMatched: { type: 'integer' },
+                    stepsWithMatches: { type: 'integer' },
+                    totalSteps: { type: 'integer' },
+                  },
+                },
+              },
+            },
+          },
+        },
+        LeaderboardResponse: {
+          type: 'object',
+          required: ['success', 'data', 'meta'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: {
+              type: 'array',
+              items: {
+                allOf: [
+                  { $ref: '#/components/schemas/AgentSummary' },
+                  {
+                    type: 'object',
+                    properties: {
+                      rank: { type: 'integer' },
+                      reputationScore: { type: 'number' },
+                      feedbackCount: { type: 'integer' },
+                    },
+                  },
+                ],
+              },
+            },
+            meta: {
+              type: 'object',
+              properties: {
+                total: { type: 'integer' },
+                limit: { type: 'integer' },
+                hasMore: { type: 'boolean' },
+                nextCursor: { type: 'string' },
+                period: { type: 'string' },
+                generatedAt: { type: 'string', format: 'date-time' },
+              },
+            },
+          },
+        },
+        TrendingResponse: {
+          type: 'object',
+          required: ['success', 'data', 'meta'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: {
+              type: 'object',
+              properties: {
+                agents: {
+                  type: 'array',
+                  items: {
+                    allOf: [
+                      { $ref: '#/components/schemas/AgentSummary' },
+                      {
+                        type: 'object',
+                        properties: {
+                          reputationChange: { type: 'number' },
+                          previousScore: { type: 'number' },
+                          currentScore: { type: 'number' },
+                        },
+                      },
+                    ],
+                  },
+                },
+                period: { type: 'string' },
+                generatedAt: { type: 'string', format: 'date-time' },
+                nextRefreshAt: { type: 'string', format: 'date-time' },
+              },
+            },
+            meta: {
+              type: 'object',
+              properties: {
+                dataAvailable: { type: 'boolean' },
+                message: { type: 'string' },
+              },
+            },
+          },
+        },
+        GlobalFeedbacksResponse: {
+          type: 'object',
+          required: ['success', 'data', 'meta', 'stats'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: {
+              type: 'array',
+              items: {
+                allOf: [
+                  { $ref: '#/components/schemas/FeedbackItem' },
+                  {
+                    type: 'object',
+                    properties: {
+                      agentId: { type: 'string' },
+                      agentName: { type: 'string' },
+                      agentChainId: { type: 'integer' },
+                    },
+                  },
+                ],
+              },
+            },
+            meta: {
+              type: 'object',
+              properties: {
+                total: { type: 'integer' },
+                limit: { type: 'integer' },
+                hasMore: { type: 'boolean' },
+                nextCursor: { type: 'string' },
+              },
+            },
+            stats: {
+              type: 'object',
+              properties: {
+                total: { type: 'integer' },
+                positive: { type: 'integer' },
+                neutral: { type: 'integer' },
+                negative: { type: 'integer' },
+              },
+            },
+          },
+        },
+        EvaluationsListResponse: {
+          type: 'object',
+          required: ['success', 'data', 'meta'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: { type: 'array', items: { type: 'object' } },
+            meta: {
+              type: 'object',
+              properties: {
+                total: { type: 'integer' },
+                hasMore: { type: 'boolean' },
+                nextCursor: { type: 'string' },
+                queue: { type: 'object' },
+              },
+            },
+          },
+        },
+        QueueEvaluationRequest: {
+          type: 'object',
+          required: ['agentId'],
+          properties: {
+            agentId: { type: 'string', pattern: '^\\d+:\\d+$' },
+            skills: { type: 'array', items: { type: 'string' } },
+            priority: { type: 'integer', minimum: 0, maximum: 10, default: 0 },
+            force: { type: 'boolean', default: false },
+          },
+        },
+        EvaluationQueuedResponse: {
+          type: 'object',
+          required: ['success', 'data'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: { type: 'object' },
+            message: { type: 'string' },
+          },
+        },
+        EvaluationDetailResponse: {
+          type: 'object',
+          required: ['success', 'data'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: { type: 'object' },
+          },
+        },
+        WebhooksListResponse: {
+          type: 'object',
+          required: ['success', 'data', 'meta'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: {
+              type: 'array',
+              items: { $ref: '#/components/schemas/Webhook' },
+            },
+            meta: {
+              type: 'object',
+              properties: {
+                total: { type: 'integer' },
+              },
+            },
+          },
+        },
+        Webhook: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            url: { type: 'string', format: 'uri' },
+            events: { type: 'array', items: { type: 'string' } },
+            filters: { type: 'object' },
+            active: { type: 'boolean' },
+            description: { type: 'string' },
+            lastDeliveryAt: { type: 'string', format: 'date-time' },
+            lastDeliveryStatus: { type: 'string' },
+            failureCount: { type: 'integer' },
+            createdAt: { type: 'string', format: 'date-time' },
+          },
+        },
+        CreateWebhookRequest: {
+          type: 'object',
+          required: ['url', 'events'],
+          properties: {
+            url: { type: 'string', format: 'uri' },
+            events: {
+              type: 'array',
+              items: { type: 'string' },
+              minItems: 1,
+              description: 'Event types to subscribe to',
+            },
+            filters: {
+              type: 'object',
+              properties: {
+                chainIds: { type: 'array', items: { type: 'integer' } },
+                agentIds: { type: 'array', items: { type: 'string' } },
+              },
+            },
+            description: { type: 'string', maxLength: 500 },
+          },
+        },
+        WebhookCreatedResponse: {
+          type: 'object',
+          required: ['success', 'data'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: {
+              allOf: [
+                { $ref: '#/components/schemas/Webhook' },
+                {
+                  type: 'object',
+                  properties: {
+                    secret: { type: 'string', description: 'Webhook secret (only shown once)' },
+                  },
+                },
+              ],
+            },
+            message: { type: 'string' },
+          },
+        },
+        WebhookDetailResponse: {
+          type: 'object',
+          required: ['success', 'data'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: {
+              allOf: [
+                { $ref: '#/components/schemas/Webhook' },
+                {
+                  type: 'object',
+                  properties: {
+                    recentDeliveries: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          id: { type: 'string' },
+                          eventType: { type: 'string' },
+                          status: { type: 'string' },
+                          attempts: { type: 'integer' },
+                          responseStatus: { type: 'integer' },
+                          error: { type: 'string' },
+                          createdAt: { type: 'string', format: 'date-time' },
+                        },
+                      },
+                    },
+                  },
+                },
+              ],
             },
           },
         },

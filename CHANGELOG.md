@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **MCP Capabilities Crawl Worker**: Background worker to fetch detailed MCP tool/prompt/resource information
+  - Crawls MCP endpoints to populate `mcp_tools_detailed`, `mcp_prompts_detailed`, `mcp_resources_detailed`
+  - Configurable batch processing with concurrency control
+  - Staleness-based re-crawl (default: 24 hours)
+  - Graceful error handling preserves previous data on failure
+
+- **Advanced Filters**: Extended filtering capabilities
+  - `curatedBy` - Filter by curator wallet address
+  - `isCurated` - Filter by curated status
+  - `declaredSkill` - Filter by declared OASF skill from registration file
+  - `declaredDomain` - Filter by declared OASF domain from registration file
+  - `mcpVersion` / `a2aVersion` - Filter by protocol version
+  - `reachabilityAttestor` - Filter by reachability attestor address
+
+- **Curated Agents Support**: Track and filter agents curated by known curators
+  - `curated_by` array in Qdrant payload stores curator addresses
+  - `is_curated` boolean for quick filtering
+  - Derived from STAR feedback submissions
+
+### Fixed
+
+- Use placeholder name for agents without `registrationFile` in embedding generation
+- Use SDK's embedded Graph API key for subgraph access when `GRAPH_API_KEY` not set
+- Updated E2E tests for new filter parameters
+
 ## [2.0.0] - 2026-01-02
 
 ### Added
