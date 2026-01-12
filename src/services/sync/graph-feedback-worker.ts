@@ -29,44 +29,38 @@ import { createQdrantClient, type QdrantClient } from '../qdrant';
 /** ERC-8004 spec version */
 type ERC8004Version = 'v0.4' | 'v1.0';
 
-import { buildSubgraphUrls, DEFAULT_GRAPH_API_KEY } from '@/lib/config/graph';
-
-// Build URLs once at module load using the default public API key
-const ALL_SUBGRAPH_URLS = buildSubgraphUrls(DEFAULT_GRAPH_API_KEY);
+import {
+  buildSubgraphUrl,
+  getGraphKeyManager,
+  SUBGRAPH_IDS,
+} from '@/lib/config/graph';
 
 /**
- * Graph endpoints for v1.0 feedback (Jan 2026 update)
+ * Chain IDs for v1.0 feedback (Jan 2026 update)
  * Only ETH Sepolia has v1.0 contracts deployed currently
  */
-const GRAPH_ENDPOINTS_V1_0: Record<number, string> = Object.fromEntries(
-  Object.entries(ALL_SUBGRAPH_URLS).filter(([chainId]) => chainId === '11155111')
-);
+const CHAINS_V1_0: Set<number> = new Set([11155111]);
 
 /**
- * Graph endpoints for v0.4 feedback (pre-v1.0 backward compatibility)
+ * Chain IDs for v0.4 feedback (pre-v1.0 backward compatibility)
  * NOTE: These subgraphs no longer exist after v1.0 spec update
  * Contracts for these chains are pending deployment
  */
-const GRAPH_ENDPOINTS_V0_4: Record<number, string> = {
-  // All v0.4 subgraphs deprecated - chains pending v1.0 contract deployment
-};
-
-/**
- * All Graph endpoints (combined)
- */
-const ALL_GRAPH_ENDPOINTS: Record<number, { url: string; version: ERC8004Version }> = {
-  ...Object.fromEntries(
-    Object.entries(GRAPH_ENDPOINTS_V1_0).map(([k, v]) => [k, { url: v, version: 'v1.0' as const }])
-  ),
-  ...Object.fromEntries(
-    Object.entries(GRAPH_ENDPOINTS_V0_4).map(([k, v]) => [k, { url: v, version: 'v0.4' as const }])
-  ),
-};
+const CHAINS_V0_4: Set<number> = new Set([]);
 
 /**
  * Supported chain IDs (all chains with Graph endpoints)
  */
-const SUPPORTED_CHAIN_IDS = Object.keys(ALL_GRAPH_ENDPOINTS).map(Number);
+const SUPPORTED_CHAIN_IDS: number[] = [...CHAINS_V1_0, ...CHAINS_V0_4];
+
+/**
+ * Get ERC-8004 version for a chain
+ */
+function getChainVersion(chainId: number): ERC8004Version {
+  if (CHAINS_V1_0.has(chainId)) return 'v1.0';
+  if (CHAINS_V0_4.has(chainId)) return 'v0.4';
+  return 'v1.0'; // Default to v1.0 for unknown chains
+}
 
 /**
  * Raw Feedback entity from The Graph
@@ -184,66 +178,69 @@ const FEEDBACK_QUERY_V0_4 = `
 
 /**
  * Fetch feedback from The Graph with pagination
+ * Uses GraphKeyManager for key rotation and retry logic
  * @param chainId - Chain ID to fetch feedback for
+ * @param keyManager - GraphKeyManager for key rotation
  * @param first - Number of items to fetch
  * @param skip - Number of items to skip
  * @param createdAtGt - Minimum createdAt timestamp
- * @param graphApiKey - Optional Graph API key
  */
 async function fetchFeedbackFromGraph(
   chainId: number,
+  keyManager: ReturnType<typeof getGraphKeyManager>,
   first: number,
   skip: number,
-  createdAtGt: number,
-  graphApiKey?: string
+  createdAtGt: number
 ): Promise<GraphFeedback[]> {
-  const endpoint = ALL_GRAPH_ENDPOINTS[chainId];
-  if (!endpoint) {
-    console.warn(`No Graph endpoint for chain ${chainId}, skipping feedback sync`);
+  // Check if chain has a subgraph deployment
+  if (!(chainId in SUBGRAPH_IDS)) {
+    console.warn(`No Graph subgraph for chain ${chainId}, skipping feedback sync`);
     return [];
   }
 
-  const query = endpoint.version === 'v1.0' ? FEEDBACK_QUERY_V1_0 : FEEDBACK_QUERY_V0_4;
+  const version = getChainVersion(chainId);
+  const query = version === 'v1.0' ? FEEDBACK_QUERY_V1_0 : FEEDBACK_QUERY_V0_4;
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-  if (graphApiKey) {
-    headers.Authorization = `Bearer ${graphApiKey}`;
-  }
+  // Use key manager with retry for key rotation
+  return keyManager.executeWithRetry(async (apiKey) => {
+    const endpoint = buildSubgraphUrl(chainId, apiKey);
+    if (!endpoint) {
+      throw new Error(`Failed to build endpoint for chain ${chainId}`);
+    }
 
-  const response = await fetchWithTimeout(
-    endpoint.url,
-    {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        query,
-        variables: {
-          first,
-          skip,
-          createdAtGt: createdAtGt.toString(),
-        },
-      }),
-    },
-    30_000 // 30 second timeout
-  );
+    const response = await fetchWithTimeout(
+      endpoint,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query,
+          variables: {
+            first,
+            skip,
+            createdAtGt: createdAtGt.toString(),
+          },
+        }),
+      },
+      30_000 // 30 second timeout
+    );
 
-  if (!response.ok) {
-    throw new Error(`Graph API error for chain ${chainId}: ${response.status} ${response.statusText}`);
-  }
+    if (!response.ok) {
+      throw new Error(`Graph API error ${response.status} for chain ${chainId}: ${response.statusText}`);
+    }
 
-  const result = (await response.json()) as {
-    data?: { feedbacks: GraphFeedback[] };
-    errors?: Array<{ message: string }>;
-  };
+    const result = (await response.json()) as {
+      data?: { feedbacks: GraphFeedback[] };
+      errors?: Array<{ message: string }>;
+    };
 
-  if (result.errors?.length) {
-    const firstError = result.errors[0];
-    throw new Error(`Graph query error for chain ${chainId}: ${firstError?.message ?? 'Unknown error'}`);
-  }
+    if (result.errors?.length) {
+      const firstError = result.errors[0];
+      throw new Error(`Graph query error for chain ${chainId}: ${firstError?.message ?? 'Unknown error'}`);
+    }
 
-  return result.data?.feedbacks ?? [];
+    return result.data?.feedbacks ?? [];
+  });
 }
 
 /**
@@ -530,6 +527,10 @@ export async function syncFeedbackFromGraph(
 ): Promise<GraphFeedbackSyncResult> {
   const reputationService = createReputationService(db);
 
+  // Create key manager for Graph API requests
+  // Uses user-priority strategy for sync workers to prefer user key when available
+  const keyManager = getGraphKeyManager(env?.GRAPH_API_KEY, 'user-priority');
+
   // Gap 6: Create Qdrant client if config available (for reachability attestation updates)
   const qdrant =
     env?.QDRANT_URL && env?.QDRANT_API_KEY
@@ -561,10 +562,11 @@ export async function syncFeedbackFromGraph(
 
     // Sync feedback from all chains
     for (const chainId of SUPPORTED_CHAIN_IDS) {
-      const endpoint = ALL_GRAPH_ENDPOINTS[chainId];
-      if (!endpoint) continue;
+      // Check if chain has a subgraph deployment
+      if (!(chainId in SUBGRAPH_IDS)) continue;
 
-      console.info(`Graph feedback sync: syncing chain ${chainId} (${endpoint.version})...`);
+      const version = getChainVersion(chainId);
+      console.info(`Graph feedback sync: syncing chain ${chainId} (${version})...`);
 
       let hasMore = true;
       let skip = 0;
@@ -575,10 +577,10 @@ export async function syncFeedbackFromGraph(
         // Fetch batch of feedback for this chain
         const feedbackBatch = await fetchFeedbackFromGraph(
           chainId,
+          keyManager,
           first,
           skip,
-          lastCreatedAt,
-          env?.GRAPH_API_KEY
+          lastCreatedAt
         );
 
         if (feedbackBatch.length === 0) {

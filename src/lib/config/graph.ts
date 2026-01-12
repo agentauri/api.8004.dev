@@ -4,6 +4,23 @@
  * @module lib/config/graph
  */
 
+// Import and re-export key manager
+import {
+  GraphKeyManager as GraphKeyManagerClass,
+  createGraphKeyManager as createKeyManager,
+  isGraphRetryableError as isRetryableError,
+  type KeyRotationStrategy as RotationStrategy,
+  type GraphKeyManagerConfig as KeyManagerConfig,
+} from './graph-key-manager';
+
+export {
+  GraphKeyManagerClass as GraphKeyManager,
+  createKeyManager as createGraphKeyManager,
+  isRetryableError as isGraphRetryableError,
+  type RotationStrategy as KeyRotationStrategy,
+  type KeyManagerConfig as GraphKeyManagerConfig,
+};
+
 /**
  * Subgraph IDs for each chain on The Graph Network
  * These are deployment IDs on the decentralized network
@@ -69,4 +86,21 @@ export function getSupportedGraphChainIds(): number[] {
  */
 export function hasSubgraphDeployment(chainId: number): boolean {
   return chainId in SUBGRAPH_IDS;
+}
+
+/**
+ * Create a GraphKeyManager for the given environment
+ * Uses round-robin strategy by default
+ * @param userKey - User-provided API key (env.GRAPH_API_KEY)
+ * @param strategy - Key rotation strategy (default: 'round-robin')
+ */
+export function getGraphKeyManager(
+  userKey?: string,
+  strategy: RotationStrategy = 'round-robin'
+): GraphKeyManagerClass {
+  return createKeyManager({
+    sdkKey: DEFAULT_GRAPH_API_KEY,
+    userKey,
+    strategy,
+  });
 }

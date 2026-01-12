@@ -366,7 +366,13 @@ function generateMatchReasons(
 let pendingChainStatsPromise: Promise<ChainStats[]> | null = null;
 
 // Import and re-export buildSubgraphUrls from centralized config
-import { buildSubgraphUrls as _buildSubgraphUrls, DEFAULT_GRAPH_API_KEY } from '@/lib/config/graph';
+import {
+  buildSubgraphUrls as _buildSubgraphUrls,
+  buildSubgraphUrl,
+  DEFAULT_GRAPH_API_KEY,
+  getGraphKeyManager,
+  SUBGRAPH_IDS,
+} from '@/lib/config/graph';
 export const buildSubgraphUrls = _buildSubgraphUrls;
 
 /**
@@ -1044,6 +1050,10 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
   const graphApiKey = env.GRAPH_API_KEY || DEFAULT_GRAPH_API_KEY;
   const subgraphUrls = buildSubgraphUrls(graphApiKey);
 
+  // Create key manager for direct subgraph queries (stats, etc.)
+  // Uses round-robin rotation between SDK key and user key (if different)
+  const keyManager = getGraphKeyManager(env.GRAPH_API_KEY, 'round-robin');
+
   // Cache SDK instances per chain
   const sdkInstances = new Map<number, SDK>();
 
@@ -1468,36 +1478,45 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
 
       /**
        * Helper to count agents via direct subgraph query with optional filter
-       * Uses circuit breaker for resilience
+       * Uses GraphKeyManager for key rotation and circuit breaker for resilience
        * @param chainId - Chain ID to query
        * @param whereClause - Optional GraphQL where clause (e.g., "registrationFile_: { active: true }")
        */
       async function countAgentsDirectly(chainId: number, whereClause?: string): Promise<number> {
-        const url = subgraphUrls[chainId];
-        if (!url) return 0;
+        // Check if chain has a subgraph deployment
+        if (!(chainId in SUBGRAPH_IDS)) return 0;
 
-        let total = 0;
-        let skip = 0;
-        const whereFilter = whereClause ? `where: { ${whereClause} }, ` : '';
+        // Use key manager with retry for key rotation
+        return keyManager.executeWithRetry(async (apiKey) => {
+          const url = buildSubgraphUrl(chainId, apiKey);
+          if (!url) return 0;
 
-        while (true) {
-          const query = `{ agents(first: 1000, skip: ${skip}, ${whereFilter}orderBy: agentId, orderDirection: asc) { id } }`;
-          type CountResponse = { data?: { agents?: { id: string }[] } };
-          const data = await fetchSubgraphWithCircuitBreaker<CountResponse>(url, query);
+          let total = 0;
+          let skip = 0;
+          const whereFilter = whereClause ? `where: { ${whereClause} }, ` : '';
 
-          if (!data) break; // Circuit breaker triggered or request failed
+          while (true) {
+            const query = `{ agents(first: 1000, skip: ${skip}, ${whereFilter}orderBy: agentId, orderDirection: asc) { id } }`;
+            type CountResponse = { data?: { agents?: { id: string }[] } };
+            const data = await fetchSubgraphWithCircuitBreaker<CountResponse>(url, query);
 
-          const agents = data?.data?.agents || [];
-          const count = agents.length;
+            if (!data) {
+              // Circuit breaker triggered - throw to trigger key rotation
+              throw new Error(`Subgraph query failed for chain ${chainId}`);
+            }
 
-          if (count === 0) break;
-          total += count;
-          if (count < 1000) break;
-          skip += 1000;
-          if (skip > 10000) break; // Safety limit
-        }
+            const agents = data?.data?.agents || [];
+            const count = agents.length;
 
-        return total;
+            if (count === 0) break;
+            total += count;
+            if (count < 1000) break;
+            skip += 1000;
+            if (skip > 10000) break; // Safety limit
+          }
+
+          return total;
+        });
       }
 
       // Specific count functions using direct subgraph queries

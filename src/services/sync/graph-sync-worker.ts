@@ -25,31 +25,30 @@ import { type ContentFields, computeContentHash, computeEmbedHash } from './cont
 // ERC-8004 spec version types
 type ERC8004Version = 'v0.4' | 'v1.0';
 
-import { buildSubgraphUrls, DEFAULT_GRAPH_API_KEY, SUBGRAPH_IDS } from '@/lib/config/graph';
+import {
+  buildSubgraphUrl,
+  DEFAULT_GRAPH_API_KEY,
+  getGraphKeyManager,
+  SUBGRAPH_IDS,
+  isGraphRetryableError,
+} from '@/lib/config/graph';
 
-// Build URLs once at module load using the default public API key
-const ALL_SUBGRAPH_URLS = buildSubgraphUrls(DEFAULT_GRAPH_API_KEY);
-
-// Graph endpoints for v1.0 (Jan 2026 update - new contracts)
+// Chain IDs for v1.0 (Jan 2026 update - new contracts)
 // Only ETH Sepolia has v1.0 contracts deployed currently
 // Other chains are pending contract deployment
-const GRAPH_ENDPOINTS_V1_0: Record<number, string> = Object.fromEntries(
-  Object.entries(ALL_SUBGRAPH_URLS).filter(([chainId]) => chainId === '11155111')
-);
+const CHAINS_V1_0: Set<number> = new Set([11155111]);
 
-// Graph endpoints for v0.4 (pre-v1.0 - backward compatibility)
+// Chain IDs for v0.4 (pre-v1.0 - backward compatibility)
 // NOTE: These subgraphs no longer exist after the v1.0 spec update
 // Contracts for these chains are pending deployment
 // Keep empty for now - will be populated when chains deploy v1.0 contracts
-const GRAPH_ENDPOINTS_V0_4: Record<number, string> = {
-  // Chains pending v1.0 contract deployment will be added here
-};
+const CHAINS_V0_4: Set<number> = new Set([]);
 
-// Combined endpoints (used by fetchAllAgentsFromGraph)
-const GRAPH_ENDPOINTS: Record<number, string> = {
-  ...GRAPH_ENDPOINTS_V1_0,
-  ...GRAPH_ENDPOINTS_V0_4,
-};
+// All supported chain IDs (used by fetchAllAgentsFromGraph)
+const SUPPORTED_CHAIN_IDS: number[] = [
+  ...CHAINS_V1_0,
+  ...CHAINS_V0_4,
+];
 
 /**
  * Graph agent structure for v1.0 (current spec)
@@ -261,10 +260,10 @@ function buildAgentQueryV0_4(): string {
  * Determine which ERC-8004 version a chain uses
  */
 function getChainVersion(chainId: number): ERC8004Version {
-  if (chainId in GRAPH_ENDPOINTS_V1_0) {
+  if (CHAINS_V1_0.has(chainId)) {
     return 'v1.0';
   }
-  if (chainId in GRAPH_ENDPOINTS_V0_4) {
+  if (CHAINS_V0_4.has(chainId)) {
     return 'v0.4';
   }
   // Default to v1.0 for unknown chains
@@ -272,48 +271,52 @@ function getChainVersion(chainId: number): ERC8004Version {
 }
 
 /**
- * Fetch all agents from a single chain's Graph endpoint
+ * Fetch all agents from a single chain's Graph endpoint with key rotation
+ * Uses GraphKeyManager for retry logic between SDK key and user key
  */
 async function fetchAgentsFromGraph(
   chainId: number,
-  graphApiKey?: string,
+  keyManager: ReturnType<typeof getGraphKeyManager>,
   first = 1000,
   skip = 0
 ): Promise<{ agents: GraphAgent[]; version: ERC8004Version }> {
-  const endpoint = GRAPH_ENDPOINTS[chainId];
-  if (!endpoint) {
-    throw new Error(`No Graph endpoint for chain ${chainId}`);
+  // Check if chain has a subgraph deployment
+  if (!(chainId in SUBGRAPH_IDS)) {
+    throw new Error(`No Graph subgraph for chain ${chainId}`);
   }
 
   const version = getChainVersion(chainId);
   const query = version === 'v1.0' ? buildAgentQueryV1_0() : buildAgentQueryV0_4();
 
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (graphApiKey) {
-    headers.Authorization = `Bearer ${graphApiKey}`;
-  }
+  // Use key manager with retry for key rotation
+  return keyManager.executeWithRetry(async (apiKey) => {
+    const endpoint = buildSubgraphUrl(chainId, apiKey);
+    if (!endpoint) {
+      throw new Error(`Failed to build endpoint for chain ${chainId}`);
+    }
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ query, variables: { first, skip } }),
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, variables: { first, skip } }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Graph API error ${response.status}: ${text}`);
+    }
+
+    const data = (await response.json()) as {
+      data?: { agents: GraphAgent[] };
+      errors?: Array<{ message: string }>;
+    };
+
+    if (data.errors?.length) {
+      throw new Error(`Graph query error: ${data.errors[0]?.message}`);
+    }
+
+    return { agents: data.data?.agents ?? [], version };
   });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Graph API error: ${response.status} - ${text}`);
-  }
-
-  const data = (await response.json()) as {
-    data?: { agents: GraphAgent[] };
-    errors?: Array<{ message: string }>;
-  };
-
-  if (data.errors?.length) {
-    throw new Error(`Graph query error: ${data.errors[0]?.message}`);
-  }
-
-  return { agents: data.data?.agents ?? [], version };
 }
 
 /** Agent with version metadata */
@@ -324,19 +327,19 @@ interface AgentWithVersion {
 
 /**
  * Fetch all agents from all chains with version tracking
+ * Uses GraphKeyManager for key rotation and retry logic
  */
 async function fetchAllAgentsFromGraph(
-  graphApiKey?: string
+  keyManager: ReturnType<typeof getGraphKeyManager>
 ): Promise<AgentWithVersion[]> {
   const allAgents: AgentWithVersion[] = [];
 
-  for (const chainId of Object.keys(GRAPH_ENDPOINTS)) {
-    const chain = Number(chainId);
+  for (const chainId of SUPPORTED_CHAIN_IDS) {
     let skip = 0;
     const first = 1000;
 
     while (true) {
-      const { agents: batch, version } = await fetchAgentsFromGraph(chain, graphApiKey, first, skip);
+      const { agents: batch, version } = await fetchAgentsFromGraph(chainId, keyManager, first, skip);
       if (batch.length === 0) break;
 
       // Add version metadata to each agent
@@ -546,6 +549,11 @@ export async function syncFromGraph(
   const qdrant = createQdrantClient(env);
   const a2aClient = createA2AClient({ timeoutMs: 5000 });
   const reachabilityService = createReachabilityService(db);
+
+  // Create key manager for Graph API requests
+  // Uses user-priority strategy for sync workers to prefer user key when available
+  const keyManager = getGraphKeyManager(env.GRAPH_API_KEY, 'user-priority');
+
   const result: GraphSyncResult = {
     newAgents: 0,
     updatedAgents: 0,
@@ -558,7 +566,7 @@ export async function syncFromGraph(
   logger.start('Fetching agents from Graph');
 
   // Fetch all agents from Graph (including those without registrationFile)
-  const agentsWithVersions = await fetchAllAgentsFromGraph(env.GRAPH_API_KEY);
+  const agentsWithVersions = await fetchAllAgentsFromGraph(keyManager);
   const agentsWithReg = agentsWithVersions.filter((a) => a.agent.registrationFile);
   const agentsWithoutReg = agentsWithVersions.length - agentsWithReg.length;
 
