@@ -92,7 +92,6 @@ api.8004.dev/
 │   │   ├── stats.ts                # /api/v1/stats
 │   │   ├── taxonomy.ts             # /api/v1/taxonomy
 │   │   ├── verification.ts         # /api/v1/verification
-│   │   ├── webhooks.ts             # /api/v1/webhooks
 │   │   └── validations.ts          # Request validation schemas
 │   ├── services/                   # Business logic (30+ services)
 │   │   ├── qdrant.ts               # Qdrant Cloud client

@@ -26,4 +26,3 @@ export { stats } from './stats';
 export { taxonomy } from './taxonomy';
 export { trending } from './trending';
 export { verification } from './verification';
-export { webhooks } from './webhooks';

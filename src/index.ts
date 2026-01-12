@@ -47,7 +47,6 @@ import {
   stats,
   taxonomy,
   trending,
-  webhooks,
 } from '@/routes';
 import { createClassifierService } from '@/services/classifier';
 import { createEASIndexerService } from '@/services/eas-indexer';
@@ -150,8 +149,6 @@ app.use('/api/v1/trending', requireApiKey());
 app.use('/api/v1/trending/*', requireApiKey());
 app.use('/api/v1/evaluations', requireApiKey());
 app.use('/api/v1/evaluations/*', requireApiKey());
-app.use('/api/v1/webhooks', requireApiKey());
-app.use('/api/v1/webhooks/*', requireApiKey());
 app.use('/api/v1/keys', requireApiKey());
 app.use('/api/v1/keys/*', requireApiKey());
 app.use('/api/v1/analytics', requireApiKey());
@@ -174,7 +171,6 @@ app.route('/api/v1/feedbacks', feedbacks);
 app.route('/api/v1/leaderboard', leaderboard);
 app.route('/api/v1/trending', trending);
 app.route('/api/v1/evaluations', evaluations);
-app.route('/api/v1/webhooks', webhooks);
 app.route('/api/v1/keys', keys);
 app.route('/api/v1/analytics', analytics);
 
