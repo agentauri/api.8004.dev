@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-01-12
+
 ### Added
 
 - **MCP Capabilities Crawl Worker**: Background worker to fetch detailed MCP tool/prompt/resource information
@@ -28,10 +30,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `is_curated` boolean for quick filtering
   - Derived from STAR feedback submissions
 
+- **OpenAPI Specification Update**: Complete API documentation (10 → 45 endpoints)
+  - Added 41 missing endpoint documentations
+  - Added 26 new component schemas
+  - Added 10 new API tags (Compose, Intents, Events, Leaderboard, etc.)
+  - Full coverage of all routes including verification, webhooks, analytics
+
+### Changed
+
+- **Code Quality Improvements** (Sprint 5):
+  - Consolidated duplicate `deriveSupportedTrust` function into `agent-transform.ts`
+  - Consolidated sorting functions in `qdrant-search.ts` using generics
+  - Simplified `searchFiltersToAgentFilters` with spread operator (~50 lines → 1)
+  - Added Zod validation to queue job processing
+  - Environment-aware CORS (localhost only in development)
+  - Replaced non-null assertions with explicit env validation
+
+- **Documentation Consolidation**:
+  - Consolidated `docs/contributing/deployment.md` → references `DEPLOY.md`
+  - Consolidated `docs/mcp/frontend.md` → references `FRONTEND_MCP_INTEGRATION.md`
+
 ### Fixed
 
 - Use placeholder name for agents without `registrationFile` in embedding generation
 - Use SDK's embedded Graph API key for subgraph access when `GRAPH_API_KEY` not set
+- Qdrant fallback for agent detail when SDK fails (agents without registrationFile)
+- Added logging to silent error catches in route handlers
+- Removed duplicate `internal` error helper (kept `internalError`)
 - Updated E2E tests for new filter parameters
 
 ## [2.0.0] - 2026-01-02
