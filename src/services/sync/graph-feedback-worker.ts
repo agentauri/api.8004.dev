@@ -217,17 +217,50 @@ function normalizeScore(score: string): number {
 }
 
 /**
+ * Normalize a tag value - handles both bytes32 hex strings and regular strings
+ * In v0.4, tags were bytes32 encoded, in v1.0 they're regular strings
+ * bytes32 format: 0x + 64 hex chars, null-padded ASCII
+ */
+function normalizeTag(tag: string | null): string | null {
+  if (!tag) return null;
+  const trimmed = tag.trim();
+  if (!trimmed) return null;
+
+  // Check if it's a bytes32 hex string (0x + 64 hex chars)
+  if (/^0x[0-9a-fA-F]{64}$/.test(trimmed)) {
+    try {
+      // Remove 0x prefix and decode hex pairs to ASCII
+      const hex = trimmed.slice(2);
+      let decoded = '';
+      for (let i = 0; i < hex.length; i += 2) {
+        const byte = Number.parseInt(hex.slice(i, i + 2), 16);
+        // Stop at null byte (end of string in bytes32)
+        if (byte === 0) break;
+        decoded += String.fromCharCode(byte);
+      }
+      return decoded || null;
+    } catch {
+      // If decoding fails, return original
+      return trimmed;
+    }
+  }
+
+  return trimmed;
+}
+
+/**
  * Build tags array from tag1 and tag2 fields
+ * Normalizes both bytes32 hex strings (v0.4) and regular strings (v1.0)
  */
 function buildTags(tag1: string | null, tag2: string | null): string[] {
   const tags: string[] = [];
-  const trimmed1 = tag1?.trim();
-  const trimmed2 = tag2?.trim();
-  if (trimmed1) {
-    tags.push(trimmed1);
+  const normalized1 = normalizeTag(tag1);
+  const normalized2 = normalizeTag(tag2);
+  if (normalized1) {
+    tags.push(normalized1);
   }
-  if (trimmed2) {
-    tags.push(trimmed2);
+  if (normalized2) {
+    tags.push(normalized2);
   }
   return tags;
 }
@@ -248,6 +281,12 @@ const REACHABILITY_TAGS = {
   MCP: 'reachability_mcp',
   A2A: 'reachability_a2a',
 } as const;
+
+/**
+ * STAR feedback threshold (score >= 90 is considered a high-quality endorsement)
+ * Feedback with scores at or above this threshold marks the submitter as a curator
+ */
+const STAR_SCORE_THRESHOLD = 90;
 
 /**
  * Check if feedback is a reachability attestation and update Qdrant payload
@@ -297,6 +336,60 @@ async function processReachabilityAttestation(
   } catch (error) {
     console.warn(
       `Gap 6: Failed to update reachability for ${agentId}:`,
+      error instanceof Error ? error.message : String(error)
+    );
+    return false;
+  }
+}
+
+/**
+ * Process STAR feedback for curation tracking
+ * STAR feedback (score >= 90) adds the submitter to the agent's curators list
+ *
+ * @param qdrant - Qdrant client for updating payloads
+ * @param agentId - Agent ID in format chainId:tokenId
+ * @param feedback - Graph feedback entry
+ * @returns true if this was STAR feedback and curation was updated
+ */
+async function processCurationFeedback(
+  qdrant: QdrantClient | null,
+  agentId: string,
+  feedback: GraphFeedback
+): Promise<boolean> {
+  if (!qdrant) return false;
+
+  const score = normalizeScore(feedback.score);
+
+  // Only process STAR feedback (high score endorsements)
+  if (score < STAR_SCORE_THRESHOLD) {
+    return false;
+  }
+
+  const curatorAddress = feedback.clientAddress.toLowerCase();
+
+  try {
+    // Get current curators list
+    const existingAgent = await qdrant.getByAgentId(agentId);
+    const currentCurators: string[] = existingAgent?.payload?.curated_by ?? [];
+
+    // Add curator if not already in list
+    if (!currentCurators.includes(curatorAddress)) {
+      const updatedCurators = [...currentCurators, curatorAddress];
+
+      await qdrant.setPayloadByAgentId(agentId, {
+        curated_by: updatedCurators,
+        is_curated: true,
+      });
+
+      console.info(
+        `Curation: Added curator ${curatorAddress} to ${agentId} (score: ${score}, total curators: ${updatedCurators.length})`
+      );
+    }
+
+    return true;
+  } catch (error) {
+    console.warn(
+      `Curation: Failed to update curators for ${agentId}:`,
       error instanceof Error ? error.message : String(error)
     );
     return false;
@@ -404,6 +497,9 @@ async function processFeedback(
 
   // Gap 6: Check if this is a reachability attestation and update Qdrant payload
   await processReachabilityAttestation(qdrant, agentId, feedback);
+
+  // Process STAR feedback for curation tracking (score >= 90)
+  await processCurationFeedback(qdrant, agentId, feedback);
 
   // Add feedback (this also updates reputation incrementally)
   await reputationService.addFeedback(newFeedback);

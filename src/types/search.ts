@@ -196,6 +196,25 @@ export interface SearchResultMetadata {
   isReachableMcp?: boolean;
   /** A2A endpoint reachability status */
   isReachableA2a?: boolean;
+  // Missing fields from Qdrant payload
+  /** Token ID on the chain */
+  tokenId?: string;
+  /** Whether agent has registration file */
+  hasRegistrationFile?: boolean;
+  /** MCP endpoint URL */
+  mcpEndpoint?: string;
+  /** A2A endpoint URL */
+  a2aEndpoint?: string;
+  /** MCP protocol version */
+  mcpVersion?: string;
+  /** A2A protocol version */
+  a2aVersion?: string;
+  /** Creation timestamp (ISO string) */
+  createdAt?: string;
+  /** Last update timestamp (ISO string) */
+  updatedAt?: string;
+  /** Agent metadata URI */
+  agentUri?: string;
 }
 
 /**

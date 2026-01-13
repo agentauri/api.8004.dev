@@ -512,14 +512,6 @@ export interface AgentFilterParams {
   /** Maximum trust score (0-100) */
   trustScoreMax?: number;
 
-  // Version filters (Gap 1)
-  /** Filter by ERC-8004 spec version ('v0.4' or 'v1.0') */
-  erc8004Version?: string;
-  /** Filter by MCP protocol version */
-  mcpVersion?: string;
-  /** Filter by A2A protocol version */
-  a2aVersion?: string;
-
   // Curation filters (Gap 3)
   /** Filter by curator wallet address */
   curatedBy?: string;

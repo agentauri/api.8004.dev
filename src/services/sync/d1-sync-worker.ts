@@ -24,6 +24,12 @@ interface ReputationRow {
   updated_at: string;
 }
 
+interface TrustScoreRow {
+  agent_id: string;
+  trust_score: number;
+  computed_at: string;
+}
+
 interface SkillOrDomain {
   slug: string;
   confidence: number;
@@ -33,6 +39,7 @@ interface SkillOrDomain {
 export interface D1SyncResult {
   classificationsUpdated: number;
   reputationUpdated: number;
+  trustScoresUpdated: number;
   agentsMarkedForReembed: number;
   errors: string[];
 }
@@ -48,6 +55,7 @@ export async function syncD1ToQdrant(
   const result: D1SyncResult = {
     classificationsUpdated: 0,
     reputationUpdated: 0,
+    trustScoresUpdated: 0,
     agentsMarkedForReembed: 0,
     errors: [],
   };
@@ -180,6 +188,28 @@ export async function syncD1ToQdrant(
     }
   }
 
+  // Fetch trust scores computed since last sync
+  const trustScores = await db
+    .prepare(
+      `SELECT agent_id, trust_score, computed_at
+       FROM agent_trust_scores
+       WHERE computed_at > ?`
+    )
+    .bind(lastSync)
+    .all<TrustScoreRow>();
+
+  // Update trust scores in Qdrant
+  for (const t of trustScores.results ?? []) {
+    try {
+      // Trust score is already 0-100 normalized in D1
+      await qdrant.setPayloadByAgentId(t.agent_id, { trust_score: t.trust_score });
+      result.trustScoresUpdated++;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      result.errors.push(`TrustScore ${t.agent_id}: ${message}`);
+    }
+  }
+
   // Update global sync state
   const now = new Date().toISOString();
   await db
@@ -190,7 +220,7 @@ export async function syncD1ToQdrant(
            updated_at = datetime('now')
        WHERE id = 'global'`
     )
-    .bind(now, result.classificationsUpdated + result.reputationUpdated)
+    .bind(now, result.classificationsUpdated + result.reputationUpdated + result.trustScoresUpdated)
     .run();
 
   return result;

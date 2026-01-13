@@ -82,6 +82,18 @@ function searchResultToAgentSummary(result: SearchResultItem): AgentSummary {
       reputationScore: result.metadata?.reputation,
       searchScore: result.score,
       erc8004Version: result.metadata?.erc8004Version,
+      supportedTrusts: result.metadata?.supportedTrusts,
+      inputModes: result.metadata?.inputModes,
+      outputModes: result.metadata?.outputModes,
+      mcpVersion: result.metadata?.mcpVersion,
+      a2aVersion: result.metadata?.a2aVersion,
+      declaredOasfSkills: result.metadata?.declaredOasfSkills,
+      declaredOasfDomains: result.metadata?.declaredOasfDomains,
+      createdAt: result.metadata?.createdAt,
+      updatedAt: result.metadata?.updatedAt,
+      trustScore: result.metadata?.trustScore,
+      curatedBy: result.metadata?.curatedBy,
+      isCurated: result.metadata?.isCurated,
     },
     oasf
   );
@@ -386,6 +398,7 @@ agents.get('/', async (c) => {
       hasA2a: result.metadata?.hasA2a ?? false,
       x402Support: result.metadata?.x402Support ?? false,
       supportedTrust: result.metadata?.x402Support ? ['x402'] : [],
+      supportedTrusts: result.metadata?.supportedTrusts,
       owner: result.metadata?.owner,
       operators: result.metadata?.operators ?? [],
       ens: result.metadata?.ens,
@@ -396,6 +409,18 @@ agents.get('/', async (c) => {
       searchScore: result.score,
       matchReasons: result.matchReasons,
       reputationScore: result.metadata?.reputation,
+      inputModes: result.metadata?.inputModes,
+      outputModes: result.metadata?.outputModes,
+      mcpVersion: result.metadata?.mcpVersion,
+      a2aVersion: result.metadata?.a2aVersion,
+      erc8004Version: result.metadata?.erc8004Version,
+      declaredOasfSkills: result.metadata?.declaredOasfSkills,
+      declaredOasfDomains: result.metadata?.declaredOasfDomains,
+      createdAt: result.metadata?.createdAt,
+      updatedAt: result.metadata?.updatedAt,
+      trustScore: result.metadata?.trustScore,
+      curatedBy: result.metadata?.curatedBy,
+      isCurated: result.metadata?.isCurated,
     };
   });
 
@@ -643,6 +668,11 @@ function buildDetailFromQdrantPayload(
     ens: payload.ens || undefined,
     did: payload.did || undefined,
     walletAddress: payload.wallet_address || undefined,
+    // Trust score from PageRank (computed by D1 sync)
+    trustScore: payload.trust_score ?? undefined,
+    // Curation fields
+    isCurated: payload.is_curated ?? false,
+    curatedBy: payload.curated_by ?? [],
     endpoints: {
       mcp: payload.has_mcp && payload.mcp_endpoint
         ? { url: payload.mcp_endpoint, version: payload.mcp_version || '1.0.0' }
@@ -817,6 +847,10 @@ agents.get('/:agentId', async (c) => {
       reputation: reputationData ?? undefined,
       reputationScore: reputationData?.averageScore,
       reputationCount: reputationData?.count,
+      // Trust score and curation from Qdrant
+      trustScore: qdrantAgent?.payload?.trust_score ?? undefined,
+      isCurated: qdrantAgent?.payload?.is_curated ?? false,
+      curatedBy: qdrantAgent?.payload?.curated_by ?? [],
       endpoints: {
         ...agent.endpoints,
         oasf: ipfsMetadata?.oasfEndpoint,

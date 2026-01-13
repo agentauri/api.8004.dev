@@ -272,10 +272,6 @@ export const listAgentsQuerySchema = z.object({
   // Trust score filters (Gap 1)
   trustScoreMin: z.coerce.number().min(0).max(100).optional(),
   trustScoreMax: z.coerce.number().min(0).max(100).optional(),
-  // Version filters (Gap 1)
-  erc8004Version: z.enum(['v0.4', 'v1.0']).optional(),
-  mcpVersion: z.string().max(MAX_LENGTHS.VERSION).optional(),
-  a2aVersion: z.string().max(MAX_LENGTHS.VERSION).optional(),
   // Curation filters (Gap 3)
   curatedBy: z
     .string()
@@ -341,10 +337,6 @@ export const searchRequestSchema = z.object({
       // Trust score filters (Gap 1)
       trustScoreMin: z.number().min(0).max(100).optional(),
       trustScoreMax: z.number().min(0).max(100).optional(),
-      // Version filters (Gap 1)
-      erc8004Version: z.enum(['v0.4', 'v1.0']).optional(),
-      mcpVersion: z.string().max(MAX_LENGTHS.VERSION).optional(),
-      a2aVersion: z.string().max(MAX_LENGTHS.VERSION).optional(),
       // Curation filters (Gap 3)
       curatedBy: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
       isCurated: z.boolean().optional(),

@@ -149,6 +149,26 @@ export interface BaseAgentInput {
   inputModes?: string[];
   outputModes?: string[];
   erc8004Version?: string;
+  /** Trust models from subgraph (e.g., 'eas', 'x402') */
+  supportedTrusts?: string[];
+  /** MCP protocol version */
+  mcpVersion?: string;
+  /** A2A protocol version */
+  a2aVersion?: string;
+  /** OASF skills declared by agent creator in registration file */
+  declaredOasfSkills?: string[];
+  /** OASF domains declared by agent creator in registration file */
+  declaredOasfDomains?: string[];
+  /** Agent creation timestamp (ISO string) */
+  createdAt?: string;
+  /** Agent last update timestamp (ISO string) */
+  updatedAt?: string;
+  /** Trust score (0-100) from PageRank */
+  trustScore?: number;
+  /** Curator wallet addresses (agents with 90+ STAR ratings) */
+  curatedBy?: string[];
+  /** Whether agent has been curated */
+  isCurated?: boolean;
 }
 
 /**
@@ -172,6 +192,7 @@ export function buildAgentSummary(
     hasA2a: input.hasA2a,
     x402Support: input.x402Support,
     supportedTrust: deriveSupportedTrust(input.x402Support),
+    supportedTrusts: normalizeOptionalArray(input.supportedTrusts),
     oasf,
     oasfSource: determineOASFSource(oasf),
     searchScore: input.searchScore,
@@ -183,6 +204,15 @@ export function buildAgentSummary(
     walletAddress: normalizeOptionalString(input.walletAddress),
     inputModes: normalizeOptionalArray(input.inputModes),
     outputModes: normalizeOptionalArray(input.outputModes),
+    mcpVersion: normalizeOptionalString(input.mcpVersion),
+    a2aVersion: normalizeOptionalString(input.a2aVersion),
     erc8004Version: input.erc8004Version,
+    declaredOasfSkills: normalizeOptionalArray(input.declaredOasfSkills),
+    declaredOasfDomains: normalizeOptionalArray(input.declaredOasfDomains),
+    createdAt: normalizeOptionalString(input.createdAt),
+    updatedAt: normalizeOptionalString(input.updatedAt),
+    trustScore: input.trustScore,
+    curatedBy: normalizeOptionalArray(input.curatedBy),
+    isCurated: input.isCurated,
   };
 }

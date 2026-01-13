@@ -97,6 +97,20 @@ export interface AgentSummary {
   supportedTrusts?: string[];
   /** ERC-8004 spec version ('v0.4' for pre-v1.0, 'v1.0' for current) */
   erc8004Version?: string;
+  /** OASF skills declared by agent creator in registration file */
+  declaredOasfSkills?: string[];
+  /** OASF domains declared by agent creator in registration file */
+  declaredOasfDomains?: string[];
+  /** Agent creation timestamp (ISO string) */
+  createdAt?: string;
+  /** Agent last update timestamp (ISO string) */
+  updatedAt?: string;
+  /** Trust score (0-100) from PageRank */
+  trustScore?: number;
+  /** Curator wallet addresses (agents with 90+ STAR ratings) */
+  curatedBy?: string[];
+  /** Whether agent has been curated */
+  isCurated?: boolean;
 }
 
 /**

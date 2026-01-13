@@ -388,32 +388,6 @@ export function buildFilter(params: AgentFilterParams): QdrantFilter | undefined
     });
   }
 
-  // --- Version filters (Gap 1) ---
-
-  // ERC-8004 version filter
-  if (params.erc8004Version) {
-    mustConditions.push({
-      key: 'erc_8004_version',
-      match: { value: params.erc8004Version },
-    });
-  }
-
-  // MCP version filter
-  if (params.mcpVersion) {
-    mustConditions.push({
-      key: 'mcp_version',
-      match: { value: params.mcpVersion },
-    });
-  }
-
-  // A2A version filter
-  if (params.a2aVersion) {
-    mustConditions.push({
-      key: 'a2a_version',
-      match: { value: params.a2aVersion },
-    });
-  }
-
   // --- Curation filters (Gap 3) ---
 
   // Curated by filter (check if curator is in curated_by array)

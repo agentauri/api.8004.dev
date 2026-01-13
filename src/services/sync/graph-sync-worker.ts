@@ -272,7 +272,11 @@ function agentToPayload(
     mcpPrompts: reg?.mcpPrompts?.map((p) => p.name),
     mcpResources: reg?.mcpResources?.map((r) => r.name),
     a2aSkills: reg?.a2aSkills?.map((s) => s.name),
-    createdAt: reg?.createdAt,
+    createdAt: reg?.createdAt
+      ? new Date(Number.parseInt(reg.createdAt, 10) * 1000).toISOString()
+      : agent.createdAt
+        ? new Date(Number.parseInt(agent.createdAt, 10) * 1000).toISOString()
+        : undefined,
     mcpVersion: reg?.mcpVersion ?? undefined,
     a2aVersion: reg?.a2aVersion ?? undefined,
     supportedTrusts: reg?.supportedTrusts ?? undefined,
