@@ -82,6 +82,14 @@ export interface Env {
   RERANKER_MODEL?: string;
   /** Number of top results to rerank (default: 50) */
   RERANKER_TOP_K?: string;
+
+  // x402 Payment Configuration
+  /** Wallet address to receive x402 payments (0x...). If not set, x402 is disabled. */
+  X402_RECEIVER_ADDRESS?: string;
+  /** x402 facilitator URL (default: https://x402.org/facilitator) */
+  X402_FACILITATOR_URL?: string;
+  /** CAIP-2 network identifier (default: eip155:8453 for Base Mainnet) */
+  X402_NETWORK?: string;
 }
 
 /**

@@ -287,24 +287,6 @@ function generateOpenAPISpec(): object {
               schema: { type: 'integer', minimum: 0, maximum: 100 },
             },
             {
-              name: 'erc8004Version',
-              in: 'query',
-              description: 'Filter by ERC-8004 spec version',
-              schema: { type: 'string', enum: ['v0.4', 'v1.0'] },
-            },
-            {
-              name: 'mcpVersion',
-              in: 'query',
-              description: 'Filter by MCP protocol version',
-              schema: { type: 'string' },
-            },
-            {
-              name: 'a2aVersion',
-              in: 'query',
-              description: 'Filter by A2A protocol version',
-              schema: { type: 'string' },
-            },
-            {
               name: 'curatedBy',
               in: 'query',
               description: 'Filter by curator wallet address',
@@ -1045,6 +1027,20 @@ function generateOpenAPISpec(): object {
                 },
               },
             },
+            402: {
+              description: 'Payment Required - x402 protocol. When x402 is enabled, this endpoint requires payment.',
+              headers: {
+                'X-Payment': {
+                  description: 'x402 payment receipt (include this header with payment to proceed)',
+                  schema: { type: 'string' },
+                },
+              },
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/PaymentRequiredResponse' },
+                },
+              },
+            },
           },
         },
       },
@@ -1715,6 +1711,20 @@ function generateOpenAPISpec(): object {
                 },
               },
             },
+            402: {
+              description: 'Payment Required - x402 protocol. When x402 is enabled, this endpoint requires payment.',
+              headers: {
+                'X-Payment': {
+                  description: 'x402 payment receipt (include this header with payment to proceed)',
+                  schema: { type: 'string' },
+                },
+              },
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/PaymentRequiredResponse' },
+                },
+              },
+            },
             409: {
               description: 'Already queued',
               content: {
@@ -1852,6 +1862,20 @@ function generateOpenAPISpec(): object {
                 },
               },
             },
+            402: {
+              description: 'Payment Required - x402 protocol. When x402 is enabled, this endpoint requires payment.',
+              headers: {
+                'X-Payment': {
+                  description: 'x402 payment receipt (include this header with payment to proceed)',
+                  schema: { type: 'string' },
+                },
+              },
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/PaymentRequiredResponse' },
+                },
+              },
+            },
           },
         },
       },
@@ -1877,6 +1901,31 @@ function generateOpenAPISpec(): object {
               enum: ['NOT_FOUND', 'VALIDATION_ERROR', 'INTERNAL_ERROR', 'RATE_LIMIT_EXCEEDED'],
             },
             requestId: { type: 'string' },
+          },
+        },
+        PaymentRequiredResponse: {
+          type: 'object',
+          description: 'x402 payment required response. Contains payment instructions for pay-per-request endpoints.',
+          properties: {
+            error: { type: 'string', example: 'Payment required' },
+            x402Version: { type: 'integer', example: 1 },
+            accepts: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  scheme: { type: 'string', example: 'exact' },
+                  network: { type: 'string', example: 'eip155:8453', description: 'CAIP-2 network identifier' },
+                  maxAmountRequired: { type: 'string', example: '50000', description: 'Amount in smallest unit (USDC: 6 decimals)' },
+                  resource: { type: 'string', description: 'Resource URL' },
+                  description: { type: 'string', example: 'AI-powered team composition' },
+                  mimeType: { type: 'string', example: 'application/json' },
+                  payTo: { type: 'string', example: '0x...', description: 'Receiver wallet address' },
+                  maxTimeoutSeconds: { type: 'integer', example: 60 },
+                  asset: { type: 'string', example: 'eip155:8453/erc20:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', description: 'CAIP-19 asset identifier (USDC on Base)' },
+                },
+              },
+            },
           },
         },
         HealthResponse: {
@@ -1959,9 +2008,6 @@ function generateOpenAPISpec(): object {
               description: 'Supported output modes derived from MCP resources',
             },
             trustScore: { type: 'number', minimum: 0, maximum: 100, description: 'PageRank-based trust score' },
-            erc8004Version: { type: 'string', enum: ['v0.4', 'v1.0'], description: 'ERC-8004 spec version' },
-            mcpVersion: { type: 'string', description: 'MCP protocol version' },
-            a2aVersion: { type: 'string', description: 'A2A protocol version' },
             isReachableA2a: { type: 'boolean', description: 'A2A endpoint reachability status' },
             isReachableMcp: { type: 'boolean', description: 'MCP endpoint reachability status' },
             curatedBy: {
@@ -2197,9 +2243,6 @@ function generateOpenAPISpec(): object {
                 excludeDomains: { type: 'array', items: { type: 'string' }, description: 'OASF domains to exclude' },
                 trustScoreMin: { type: 'number', minimum: 0, maximum: 100, description: 'Minimum trust score (0-100)' },
                 trustScoreMax: { type: 'number', minimum: 0, maximum: 100, description: 'Maximum trust score (0-100)' },
-                erc8004Version: { type: 'string', enum: ['v0.4', 'v1.0'], description: 'ERC-8004 spec version' },
-                mcpVersion: { type: 'string', description: 'MCP protocol version' },
-                a2aVersion: { type: 'string', description: 'A2A protocol version' },
                 curatedBy: { type: 'string', description: 'Curator wallet address' },
                 isCurated: { type: 'boolean', description: 'Filter by curated status' },
                 declaredSkill: { type: 'string', description: 'Declared OASF skill slug (from registration file)' },

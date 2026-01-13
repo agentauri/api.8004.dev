@@ -23,6 +23,7 @@ import {
   requestId,
   requireApiKey,
   securityHeaders,
+  x402PaymentMiddleware,
 } from '@/lib/middleware';
 import { handleError } from '@/lib/utils/errors';
 import { parseAgentId } from '@/lib/utils/validation';
@@ -139,8 +140,14 @@ app.use('/api/v1/events', requireApiKey());
 app.use('/api/v1/events/*', requireApiKey());
 app.use('/api/v1/compose', requireApiKey());
 app.use('/api/v1/compose/*', requireApiKey());
+// x402 payment middleware for compose (applied after auth)
+app.use('/api/v1/compose', x402PaymentMiddleware());
+app.use('/api/v1/compose/*', x402PaymentMiddleware());
 app.use('/api/v1/evaluate', requireApiKey());
 app.use('/api/v1/evaluate/*', requireApiKey());
+// x402 payment middleware for evaluate (applied after auth)
+app.use('/api/v1/evaluate', x402PaymentMiddleware());
+app.use('/api/v1/evaluate/*', x402PaymentMiddleware());
 app.use('/api/v1/feedbacks', requireApiKey());
 app.use('/api/v1/feedbacks/*', requireApiKey());
 app.use('/api/v1/leaderboard', requireApiKey());
@@ -149,6 +156,9 @@ app.use('/api/v1/trending', requireApiKey());
 app.use('/api/v1/trending/*', requireApiKey());
 app.use('/api/v1/evaluations', requireApiKey());
 app.use('/api/v1/evaluations/*', requireApiKey());
+// x402 payment middleware for evaluations (applied after auth)
+app.use('/api/v1/evaluations', x402PaymentMiddleware());
+app.use('/api/v1/evaluations/*', x402PaymentMiddleware());
 app.use('/api/v1/keys', requireApiKey());
 app.use('/api/v1/keys/*', requireApiKey());
 app.use('/api/v1/analytics', requireApiKey());

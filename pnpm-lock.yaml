@@ -21,6 +21,15 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.25.1
         version: 1.25.1(@cfworker/json-schema@4.1.1)(hono@4.11.3)(zod@4.3.5)
+      '@x402/core':
+        specifier: ^2.2.0
+        version: 2.2.0
+      '@x402/evm':
+        specifier: ^2.2.0
+        version: 2.2.0(typescript@5.9.3)
+      '@x402/hono':
+        specifier: ^2.2.0
+        version: 2.2.0(hono@4.11.3)
       agent0-sdk:
         specifier: ^0.31.0
         version: 0.31.0(encoding@0.1.13)(graphql@16.12.0)
@@ -1479,6 +1488,24 @@ packages:
 
   '@vueuse/shared@12.8.2':
     resolution: {integrity: sha512-dznP38YzxZoNloI0qpEfpkms8knDtaoQ6Y/sfS0L7Yki4zh40LFHEhur0odJC6xTHG5dxWVPiUWBXn+wCG2s5w==}
+
+  '@x402/core@2.2.0':
+    resolution: {integrity: sha512-UyPX7UVrqCyFTMeDWAx9cn9LvcaRlUoAknSehuxJ07vXLVhC7Wx5R1h2CV12YkdB+hE6K48Qvfd4qrvbpqqYfw==}
+
+  '@x402/evm@2.2.0':
+    resolution: {integrity: sha512-fJaIS97Ir+ykkxLUdI+/cFiQFyruWukJbZ3PLo8518n6IKP9B7HqsJ1cUMRWd/fHFXNqOEAo6tKFW4wHKOxd2A==}
+
+  '@x402/extensions@2.2.0':
+    resolution: {integrity: sha512-WipmXWmp2T9ES9skFwzgLNoh+1xWZtHXxWTcoykdQZ9POPZBpewGkrcZ/+wf9/ml+pfeYAUHXwPbVkyJsAKTIA==}
+
+  '@x402/hono@2.2.0':
+    resolution: {integrity: sha512-kWBDp3lk/I+qolsz+c993GUrGiuDDA27WFDO9Rmjewxhs59GHOnARFMY5gDc5nG/tvSBf6oy5qJs5opq81ziEQ==}
+    peerDependencies:
+      '@x402/paywall': 2.2.0
+      hono: ^4.0.0
+    peerDependenciesMeta:
+      '@x402/paywall':
+        optional: true
 
   abitype@1.2.3:
     resolution: {integrity: sha512-Ofer5QUnuUdTFsBRwARMoWKOH1ND5ehwYhJ3OJ/BQO+StkwQjHw0XyVh4vDttzHB7QOFhPHa/o413PJ82gU/Tg==}
@@ -4190,6 +4217,38 @@ snapshots:
     transitivePeerDependencies:
       - typescript
 
+  '@x402/core@2.2.0':
+    dependencies:
+      zod: 3.25.76
+
+  '@x402/evm@2.2.0(typescript@5.9.3)':
+    dependencies:
+      '@x402/core': 2.2.0
+      viem: 2.43.5(typescript@5.9.3)(zod@3.25.76)
+      zod: 3.25.76
+    transitivePeerDependencies:
+      - bufferutil
+      - typescript
+      - utf-8-validate
+
+  '@x402/extensions@2.2.0':
+    dependencies:
+      '@x402/core': 2.2.0
+      ajv: 8.17.1
+      zod: 3.25.76
+
+  '@x402/hono@2.2.0(hono@4.11.3)':
+    dependencies:
+      '@x402/core': 2.2.0
+      '@x402/extensions': 2.2.0
+      hono: 4.11.3
+      zod: 3.25.76
+
+  abitype@1.2.3(typescript@5.9.3)(zod@3.25.76):
+    optionalDependencies:
+      typescript: 5.9.3
+      zod: 3.25.76
+
   abitype@1.2.3(typescript@5.9.3)(zod@4.3.5):
     optionalDependencies:
       typescript: 5.9.3
@@ -5178,6 +5237,21 @@ snapshots:
       regex: 6.1.0
       regex-recursion: 6.0.2
 
+  ox@0.11.1(typescript@5.9.3)(zod@3.25.76):
+    dependencies:
+      '@adraffy/ens-normalize': 1.11.1
+      '@noble/ciphers': 1.3.0
+      '@noble/curves': 1.9.1
+      '@noble/hashes': 1.8.0
+      '@scure/bip32': 1.7.0
+      '@scure/bip39': 1.6.0
+      abitype: 1.2.3(typescript@5.9.3)(zod@3.25.76)
+      eventemitter3: 5.0.1
+    optionalDependencies:
+      typescript: 5.9.3
+    transitivePeerDependencies:
+      - zod
+
   ox@0.11.1(typescript@5.9.3)(zod@4.3.5):
     dependencies:
       '@adraffy/ens-normalize': 1.11.1
@@ -5656,6 +5730,23 @@ snapshots:
     dependencies:
       '@types/unist': 3.0.3
       vfile-message: 4.0.3
+
+  viem@2.43.5(typescript@5.9.3)(zod@3.25.76):
+    dependencies:
+      '@noble/curves': 1.9.1
+      '@noble/hashes': 1.8.0
+      '@scure/bip32': 1.7.0
+      '@scure/bip39': 1.6.0
+      abitype: 1.2.3(typescript@5.9.3)(zod@3.25.76)
+      isows: 1.0.7(ws@8.18.3)
+      ox: 0.11.1(typescript@5.9.3)(zod@3.25.76)
+      ws: 8.18.3
+    optionalDependencies:
+      typescript: 5.9.3
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+      - zod
 
   viem@2.43.5(typescript@5.9.3)(zod@4.3.5):
     dependencies:

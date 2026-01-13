@@ -25,6 +25,10 @@ OAUTH_ISSUER = "https://api.8004.dev"
 OAUTH_ACCESS_TOKEN_TTL = "3600"        # 1 hour
 OAUTH_REFRESH_TOKEN_TTL = "2592000"    # 30 days
 OAUTH_AUTH_CODE_TTL = "600"            # 10 minutes
+# x402 Payment Configuration (optional - leave X402_RECEIVER_ADDRESS unset to disable)
+# Set receiver address via: wrangler secret put X402_RECEIVER_ADDRESS
+X402_NETWORK = "eip155:8453"           # Base Mainnet (CAIP-2 identifier)
+X402_FACILITATOR_URL = "https://x402.org/facilitator"
 
 # D1 Database binding
 [[d1_databases]]
@@ -71,8 +75,9 @@ crons = [
 ]
 
 # ------------------------------------------------------------------
-# RPC URLs for supported chains (secrets set via `wrangler secret put`)
+# Secrets (set via `wrangler secret put <SECRET_NAME>`)
 # ------------------------------------------------------------------
+# RPC URLs for supported chains:
 # Ethereum Sepolia (11155111):      SEPOLIA_RPC_URL
 # Base Sepolia (84532):             BASE_SEPOLIA_RPC_URL
 # Polygon Amoy (80002):             POLYGON_AMOY_RPC_URL
@@ -80,6 +85,10 @@ crons = [
 # Hedera Testnet (296):             HEDERA_TESTNET_RPC_URL
 # HyperEVM Testnet (998):           HYPEREVM_TESTNET_RPC_URL
 # SKALE Base Sepolia (1351057110):  SKALE_BASE_SEPOLIA_RPC_URL
+#
+# x402 Payment:
+# X402_RECEIVER_ADDRESS             Wallet address to receive payments (0x...)
+#                                   Leave unset to disable x402 payments
 # ------------------------------------------------------------------
 
 # Staging environment
