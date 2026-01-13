@@ -31,8 +31,8 @@ importers:
         specifier: ^2.2.0
         version: 2.2.0(hono@4.11.3)
       agent0-sdk:
-        specifier: ^0.31.0
-        version: 0.31.0(encoding@0.1.13)(graphql@16.12.0)
+        specifier: ^1.0.3
+        version: 1.0.3(encoding@0.1.13)(graphql@16.12.0)
       hono:
         specifier: ^4.11.3
         version: 4.11.3
@@ -48,16 +48,16 @@ importers:
         version: 2.3.11
       '@cloudflare/vitest-pool-workers':
         specifier: ^0.11.1
-        version: 0.11.1(@cloudflare/workers-types@4.20260103.0)(@vitest/runner@2.1.9)(@vitest/snapshot@2.1.9)(vitest@2.1.9(@types/node@24.10.1))
+        version: 0.11.1(@cloudflare/workers-types@4.20260103.0)(@vitest/runner@2.1.9)(@vitest/snapshot@2.1.9)(vitest@2.1.9(@types/node@25.0.8))
       '@cloudflare/workers-types':
         specifier: ^4.20260103.0
         version: 4.20260103.0
       '@vitest/coverage-istanbul':
         specifier: 2.1.9
-        version: 2.1.9(vitest@2.1.9(@types/node@24.10.1))
+        version: 2.1.9(vitest@2.1.9(@types/node@25.0.8))
       '@vitest/coverage-v8':
         specifier: ^2.1.8
-        version: 2.1.9(vitest@2.1.9(@types/node@24.10.1))
+        version: 2.1.9(vitest@2.1.9(@types/node@25.0.8))
       dotenv:
         specifier: ^17.2.3
         version: 17.2.3
@@ -69,10 +69,10 @@ importers:
         version: 5.9.3
       vitepress:
         specifier: ^1.6.4
-        version: 1.6.4(@algolia/client-search@5.46.2)(@types/node@24.10.1)(postcss@8.5.6)(search-insights@2.17.3)(typescript@5.9.3)
+        version: 1.6.4(@algolia/client-search@5.46.2)(@types/node@25.0.8)(postcss@8.5.6)(search-insights@2.17.3)(typescript@5.9.3)
       vitest:
         specifier: ^2.1.8
-        version: 2.1.9(@types/node@24.10.1)
+        version: 2.1.9(@types/node@25.0.8)
       wrangler:
         specifier: ^4.54.0
         version: 4.54.0(@cloudflare/workers-types@4.20260103.0)
@@ -1339,8 +1339,8 @@ packages:
   '@types/node@22.7.5':
     resolution: {integrity: sha512-jML7s2NAzMWc//QSJ1a3prpk78cOPchGvXJsC3C6R6PSMoooztvRVQEz89gmBTBY1SPMaqo5teB4uNHPdetShQ==}
 
-  '@types/node@24.10.1':
-    resolution: {integrity: sha512-GNWcUTRBgIRJD5zj+Tq0fKOJ5XZajIiBroOF0yvj2bSU1WvNdYS/dn9UxwsujGW4JX06dnHyjV2y9rRaybH0iQ==}
+  '@types/node@25.0.8':
+    resolution: {integrity: sha512-powIePYMmC3ibL0UJ2i2s0WIbq6cg6UyVFQxSCpaPxxzAaziRfimGivjdF943sSGV6RADVbk0Nvlm5P/FB44Zg==}
 
   '@types/unist@3.0.3':
     resolution: {integrity: sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q==}
@@ -1537,9 +1537,9 @@ packages:
   aes-js@4.0.0-beta.5:
     resolution: {integrity: sha512-G965FqalsNyrPqgEGON7nIx1e/OVENSgiEIzyC63haUMuvNnwIgIjMs52hlTCKhkBny7A2ORNlfY9Zu+jmGk1Q==}
 
-  agent0-sdk@0.31.0:
-    resolution: {integrity: sha512-JnjBunnlmBkqGUaeCqifJ8vtWT5G9BKBFaOApR2zR78IUCaHjq3Vy7LcyisVj1yPwOYXCkQ1f2uKP4FlScWoKQ==}
-    engines: {node: '>=18.0.0'}
+  agent0-sdk@1.0.3:
+    resolution: {integrity: sha512-6ru/Rfiq7qP3QgecShUu0oxFhJ2Yk5aarBQNJTV400jovfs/h7grQ8ITlwiLD1XIKPxiJf3J/d2rBGqn5m4uAw==}
+    engines: {node: '>=22.0.0'}
 
   ajv-formats@3.0.1:
     resolution: {integrity: sha512-8iUql50EUR+uUcdRQ3HDqa6EVyo3docL8g5WJ3FNcWmu62IbkGUue/pEyLBW8VGKKucTPgqeks4fIU1DA4yowQ==}
@@ -2300,8 +2300,8 @@ packages:
     resolution: {integrity: sha512-eajQ/ZH7qXZQR2AgtfpmSMizQzmyYVmCql7pdhldPuYQi4atACekbJaQplk6dWyIi10jCaFnd6pqvcEFXjbaJw==}
     engines: {node: '>=16.0.0', npm: '>=7.0.0'}
 
-  multiformats@13.4.1:
-    resolution: {integrity: sha512-VqO6OSvLrFVAYYjgsr8tyv62/rCQhPgsZUXLTqoFLSgdkgiUYKYeArbt1uWLlEpkjxQe+P0+sHlbPEte1Bi06Q==}
+  multiformats@13.4.2:
+    resolution: {integrity: sha512-eh6eHCrRi1+POZ3dA+Dq1C6jhP1GNtr9CRINMb67OKzqW9I5DUuZM/3jLPlzhgpGeiNUlEGEbkCYChXMCc/8DQ==}
 
   nanoid@5.1.6:
     resolution: {integrity: sha512-c7+7RQ+dMB5dPwwCp4ee1/iV/q2P6aK1mTZcfr1BTuVlyW9hJYiMPybJCcnBlQtuSmTIWNeazm/zqNoZSSElBg==}
@@ -2371,8 +2371,8 @@ packages:
   p-fifo@1.0.0:
     resolution: {integrity: sha512-IjoCxXW48tqdtDFz6fqo5q1UfFVjjVZe8TC1QRflvNUJtNfCUhxOUw6MOVZhDPjqhSzc26xKdugsO17gmzd5+A==}
 
-  p-queue@9.0.1:
-    resolution: {integrity: sha512-RhBdVhSwJb7Ocn3e8ULk4NMwBEuOxe+1zcgphUy9c2e5aR/xbEsdVXxHJ3lynw6Qiqu7OINEyHlZkiblEpaq7w==}
+  p-queue@9.1.0:
+    resolution: {integrity: sha512-O/ZPaXuQV29uSLbxWBGGZO1mCQXV2BLIwUr59JUU9SoH76mnYvtms7aafH/isNSNGwuEfP6W/4xD0/TJXxrizw==}
     engines: {node: '>=20'}
 
   p-timeout@7.0.1:
@@ -3265,7 +3265,7 @@ snapshots:
     optionalDependencies:
       workerd: 1.20251217.0
 
-  '@cloudflare/vitest-pool-workers@0.11.1(@cloudflare/workers-types@4.20260103.0)(@vitest/runner@2.1.9)(@vitest/snapshot@2.1.9)(vitest@2.1.9(@types/node@24.10.1))':
+  '@cloudflare/vitest-pool-workers@0.11.1(@cloudflare/workers-types@4.20260103.0)(@vitest/runner@2.1.9)(@vitest/snapshot@2.1.9)(vitest@2.1.9(@types/node@25.0.8))':
     dependencies:
       '@vitest/runner': 2.1.9
       '@vitest/snapshot': 2.1.9
@@ -3275,7 +3275,7 @@ snapshots:
       esbuild: 0.27.0
       miniflare: 4.20251217.0
       semver: 7.7.3
-      vitest: 2.1.9(@types/node@24.10.1)
+      vitest: 2.1.9(@types/node@25.0.8)
       wrangler: 4.56.0(@cloudflare/workers-types@4.20260103.0)
       zod: 3.25.76
     transitivePeerDependencies:
@@ -3669,16 +3669,16 @@ snapshots:
   '@ipld/dag-cbor@9.2.5':
     dependencies:
       cborg: 4.3.2
-      multiformats: 13.4.1
+      multiformats: 13.4.2
 
   '@ipld/dag-json@10.2.5':
     dependencies:
       cborg: 4.3.2
-      multiformats: 13.4.1
+      multiformats: 13.4.2
 
   '@ipld/dag-pb@4.1.5':
     dependencies:
-      multiformats: 13.4.1
+      multiformats: 13.4.2
 
   '@isaacs/cliui@8.0.2':
     dependencies:
@@ -3795,7 +3795,7 @@ snapshots:
       buffer: 6.0.3
       dns-packet: 5.6.1
       hashlru: 2.3.0
-      p-queue: 9.0.1
+      p-queue: 9.1.0
       progress-events: 1.0.1
       uint8arrays: 5.1.0
 
@@ -3820,7 +3820,7 @@ snapshots:
       '@chainsafe/netmask': 2.0.0
       '@multiformats/dns': 1.0.11
       abort-error: 1.0.1
-      multiformats: 13.4.1
+      multiformats: 13.4.2
       uint8-varint: 2.0.4
       uint8arrays: 5.1.0
 
@@ -4028,7 +4028,7 @@ snapshots:
     dependencies:
       undici-types: 6.19.8
 
-  '@types/node@24.10.1':
+  '@types/node@25.0.8':
     dependencies:
       undici-types: 7.16.0
     optional: true
@@ -4039,12 +4039,12 @@ snapshots:
 
   '@ungap/structured-clone@1.3.0': {}
 
-  '@vitejs/plugin-vue@5.2.4(vite@5.4.21(@types/node@24.10.1))(vue@3.5.26(typescript@5.9.3))':
+  '@vitejs/plugin-vue@5.2.4(vite@5.4.21(@types/node@25.0.8))(vue@3.5.26(typescript@5.9.3))':
     dependencies:
-      vite: 5.4.21(@types/node@24.10.1)
+      vite: 5.4.21(@types/node@25.0.8)
       vue: 3.5.26(typescript@5.9.3)
 
-  '@vitest/coverage-istanbul@2.1.9(vitest@2.1.9(@types/node@24.10.1))':
+  '@vitest/coverage-istanbul@2.1.9(vitest@2.1.9(@types/node@25.0.8))':
     dependencies:
       '@istanbuljs/schema': 0.1.3
       debug: 4.4.3
@@ -4056,11 +4056,11 @@ snapshots:
       magicast: 0.3.5
       test-exclude: 7.0.1
       tinyrainbow: 1.2.0
-      vitest: 2.1.9(@types/node@24.10.1)
+      vitest: 2.1.9(@types/node@25.0.8)
     transitivePeerDependencies:
       - supports-color
 
-  '@vitest/coverage-v8@2.1.9(vitest@2.1.9(@types/node@24.10.1))':
+  '@vitest/coverage-v8@2.1.9(vitest@2.1.9(@types/node@25.0.8))':
     dependencies:
       '@ampproject/remapping': 2.3.0
       '@bcoe/v8-coverage': 0.2.3
@@ -4074,7 +4074,7 @@ snapshots:
       std-env: 3.10.0
       test-exclude: 7.0.1
       tinyrainbow: 1.2.0
-      vitest: 2.1.9(@types/node@24.10.1)
+      vitest: 2.1.9(@types/node@25.0.8)
     transitivePeerDependencies:
       - supports-color
 
@@ -4085,13 +4085,13 @@ snapshots:
       chai: 5.3.3
       tinyrainbow: 1.2.0
 
-  '@vitest/mocker@2.1.9(vite@5.4.21(@types/node@24.10.1))':
+  '@vitest/mocker@2.1.9(vite@5.4.21(@types/node@25.0.8))':
     dependencies:
       '@vitest/spy': 2.1.9
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 5.4.21(@types/node@24.10.1)
+      vite: 5.4.21(@types/node@25.0.8)
 
   '@vitest/pretty-format@2.1.9':
     dependencies:
@@ -4267,7 +4267,7 @@ snapshots:
 
   aes-js@4.0.0-beta.5: {}
 
-  agent0-sdk@0.31.0(encoding@0.1.13)(graphql@16.12.0):
+  agent0-sdk@1.0.3(encoding@0.1.13)(graphql@16.12.0):
     dependencies:
       dotenv: 16.6.1
       ethers: 6.16.0
@@ -5197,7 +5197,7 @@ snapshots:
 
   multiformats@12.1.3: {}
 
-  multiformats@13.4.1: {}
+  multiformats@13.4.2: {}
 
   nanoid@5.1.6: {}
 
@@ -5276,7 +5276,7 @@ snapshots:
       fast-fifo: 1.3.2
       p-defer: 3.0.0
 
-  p-queue@9.0.1:
+  p-queue@9.1.0:
     dependencies:
       eventemitter3: 5.0.1
       p-timeout: 7.0.1
@@ -5665,7 +5665,7 @@ snapshots:
 
   uint8arrays@5.1.0:
     dependencies:
-      multiformats: 13.4.1
+      multiformats: 13.4.2
 
   undici-types@5.26.5: {}
 
@@ -5765,13 +5765,13 @@ snapshots:
       - utf-8-validate
       - zod
 
-  vite-node@2.1.9(@types/node@24.10.1):
+  vite-node@2.1.9(@types/node@25.0.8):
     dependencies:
       cac: 6.7.14
       debug: 4.4.3
       es-module-lexer: 1.7.0
       pathe: 1.1.2
-      vite: 5.4.21(@types/node@24.10.1)
+      vite: 5.4.21(@types/node@25.0.8)
     transitivePeerDependencies:
       - '@types/node'
       - less
@@ -5783,16 +5783,16 @@ snapshots:
       - supports-color
       - terser
 
-  vite@5.4.21(@types/node@24.10.1):
+  vite@5.4.21(@types/node@25.0.8):
     dependencies:
       esbuild: 0.21.5
       postcss: 8.5.6
       rollup: 4.53.3
     optionalDependencies:
-      '@types/node': 24.10.1
+      '@types/node': 25.0.8
       fsevents: 2.3.3
 
-  vitepress@1.6.4(@algolia/client-search@5.46.2)(@types/node@24.10.1)(postcss@8.5.6)(search-insights@2.17.3)(typescript@5.9.3):
+  vitepress@1.6.4(@algolia/client-search@5.46.2)(@types/node@25.0.8)(postcss@8.5.6)(search-insights@2.17.3)(typescript@5.9.3):
     dependencies:
       '@docsearch/css': 3.8.2
       '@docsearch/js': 3.8.2(@algolia/client-search@5.46.2)(search-insights@2.17.3)
@@ -5801,7 +5801,7 @@ snapshots:
       '@shikijs/transformers': 2.5.0
       '@shikijs/types': 2.5.0
       '@types/markdown-it': 14.1.2
-      '@vitejs/plugin-vue': 5.2.4(vite@5.4.21(@types/node@24.10.1))(vue@3.5.26(typescript@5.9.3))
+      '@vitejs/plugin-vue': 5.2.4(vite@5.4.21(@types/node@25.0.8))(vue@3.5.26(typescript@5.9.3))
       '@vue/devtools-api': 7.7.9
       '@vue/shared': 3.5.26
       '@vueuse/core': 12.8.2(typescript@5.9.3)
@@ -5810,7 +5810,7 @@ snapshots:
       mark.js: 8.11.1
       minisearch: 7.2.0
       shiki: 2.5.0
-      vite: 5.4.21(@types/node@24.10.1)
+      vite: 5.4.21(@types/node@25.0.8)
       vue: 3.5.26(typescript@5.9.3)
     optionalDependencies:
       postcss: 8.5.6
@@ -5841,10 +5841,10 @@ snapshots:
       - typescript
       - universal-cookie
 
-  vitest@2.1.9(@types/node@24.10.1):
+  vitest@2.1.9(@types/node@25.0.8):
     dependencies:
       '@vitest/expect': 2.1.9
-      '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@24.10.1))
+      '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@25.0.8))
       '@vitest/pretty-format': 2.1.9
       '@vitest/runner': 2.1.9
       '@vitest/snapshot': 2.1.9
@@ -5860,11 +5860,11 @@ snapshots:
       tinyexec: 0.3.2
       tinypool: 1.1.1
       tinyrainbow: 1.2.0
-      vite: 5.4.21(@types/node@24.10.1)
-      vite-node: 2.1.9(@types/node@24.10.1)
+      vite: 5.4.21(@types/node@25.0.8)
+      vite-node: 2.1.9(@types/node@25.0.8)
       why-is-node-running: 2.3.0
     optionalDependencies:
-      '@types/node': 24.10.1
+      '@types/node': 25.0.8
     transitivePeerDependencies:
       - less
       - lightningcss
