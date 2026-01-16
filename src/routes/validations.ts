@@ -11,7 +11,9 @@ import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import { validateAndParseAgentId } from '@/lib/utils/validation';
 import {
   buildSubgraphUrls,
+  fetchAgentStatsFromSubgraph,
   fetchValidationsFromSubgraph,
+  type SubgraphAgentStats,
   type SubgraphValidation,
 } from '@/services/sdk';
 import type { Env, Variables } from '@/types';
@@ -116,6 +118,7 @@ validations.get('/', async (c) => {
 /**
  * GET /api/v1/agents/:agentId/validations/summary
  * Get validation summary for an agent
+ * Includes AgentStats from subgraph when available (validation scores, score distribution)
  */
 validations.get('/summary', async (c) => {
   const agentId = c.req.param('agentId');
@@ -131,14 +134,12 @@ validations.get('/summary', async (c) => {
 
   const { chainId } = parsed;
 
-  // Fetch all validations to get summary
+  // Fetch validations and AgentStats in parallel
   const subgraphUrls = c.env.GRAPH_API_KEY ? buildSubgraphUrls(c.env.GRAPH_API_KEY) : {};
-  const subgraphValidations = await fetchValidationsFromSubgraph(
-    chainId,
-    agentId,
-    subgraphUrls,
-    1000
-  );
+  const [subgraphValidations, agentStats] = await Promise.all([
+    fetchValidationsFromSubgraph(chainId, agentId, subgraphUrls, 1000),
+    fetchAgentStatsFromSubgraph(chainId, agentId, subgraphUrls),
+  ]);
 
   const completedCount = subgraphValidations.filter((v) => v.status === 'COMPLETED').length;
   const pendingCount = subgraphValidations.filter((v) => v.status === 'PENDING').length;
@@ -150,21 +151,37 @@ validations.get('/summary', async (c) => {
   // Get unique tags
   const uniqueTags = new Set(subgraphValidations.map((v) => v.tag).filter(Boolean));
 
+  // Calculate validation score - prefer AgentStats if available, fallback to simple calculation
+  const validationScore = agentStats?.averageValidationScore ?? (
+    subgraphValidations.length > 0
+      ? Math.round((completedCount / subgraphValidations.length) * 100)
+      : 0
+  );
+
   return c.json({
     success: true,
     data: {
       agentId,
-      totalCount: subgraphValidations.length,
-      completed: completedCount,
-      pending: pendingCount,
+      totalCount: agentStats?.totalValidations ?? subgraphValidations.length,
+      completed: agentStats?.completedValidations ?? completedCount,
+      pending: agentStats?.pendingValidations ?? pendingCount,
       failed: failedCount,
-      uniqueValidators: uniqueValidators.size,
+      uniqueValidators: agentStats?.uniqueValidators ?? uniqueValidators.size,
       tags: Array.from(uniqueTags),
-      // Calculate a simple "validation score" (percentage of completed validations)
-      validationScore:
-        subgraphValidations.length > 0
-          ? Math.round((completedCount / subgraphValidations.length) * 100)
-          : 0,
+      validationScore,
+      // Include AgentStats data when available (from subgraph v1.0)
+      ...(agentStats && {
+        stats: {
+          totalFeedback: agentStats.totalFeedback,
+          averageFeedbackScore: agentStats.averageScore,
+          averageValidationScore: agentStats.averageValidationScore,
+          scoreDistribution: agentStats.scoreDistribution,
+          uniqueSubmitters: agentStats.uniqueSubmitters,
+          updatedAt: agentStats.updatedAt
+            ? new Date(Number.parseInt(agentStats.updatedAt, 10) * 1000).toISOString()
+            : undefined,
+        },
+      }),
     },
   });
 });

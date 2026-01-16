@@ -7,8 +7,13 @@ import { Hono } from 'hono';
 import { getAllFeedbacksPaginated, getFeedbackStats, type ScoreCategory } from '@/db/queries';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
-import { feedbacksQuerySchema } from '@/lib/utils/validation';
+import { feedbacksQuerySchema, validateAndParseAgentId } from '@/lib/utils/validation';
 import { CACHE_KEYS, CACHE_TTL, createCacheService } from '@/services/cache';
+import {
+  buildSubgraphUrls,
+  fetchFeedbackResponsesFromSubgraph,
+  type SubgraphFeedbackResponse,
+} from '@/services/sdk';
 import type { Env, Variables } from '@/types';
 
 const feedbacks = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -221,6 +226,81 @@ feedbacks.get('/', async (c) => {
   await cache.set(cacheKey, response, CACHE_TTL.FEEDBACKS_GLOBAL);
 
   return c.json(response);
+});
+
+/**
+ * Feedback response entry in API format
+ */
+interface FeedbackResponseEntry {
+  id: string;
+  responder: string;
+  responseUri?: string;
+  responseHash?: string;
+  createdAt: string;
+}
+
+/**
+ * Transform subgraph feedback response to API format
+ */
+function transformFeedbackResponse(response: SubgraphFeedbackResponse): FeedbackResponseEntry {
+  return {
+    id: response.id,
+    responder: response.responder,
+    responseUri: response.responseUri ?? undefined,
+    responseHash: response.responseHash ?? undefined,
+    createdAt: new Date(Number.parseInt(response.createdAt, 10) * 1000).toISOString(),
+  };
+}
+
+/**
+ * GET /api/v1/feedbacks/:feedbackId/responses
+ * Get responses for a specific feedback entry
+ *
+ * Feedback responses are submitted via the appendResponse() function
+ * in the ReputationRegistry contract.
+ *
+ * Note: feedbackId format is typically "chainId:tokenId:feedbackIndex" or similar
+ * depending on how the subgraph constructs feedback IDs.
+ */
+feedbacks.get('/:feedbackId/responses', async (c) => {
+  const feedbackId = c.req.param('feedbackId');
+
+  if (!feedbackId) {
+    return errors.validationError(c, 'Feedback ID is required');
+  }
+
+  // Extract chainId from feedbackId
+  // Feedback IDs are typically formatted as "chainId:agentId:index" or similar
+  // We need the chainId to know which subgraph to query
+  const parts = feedbackId.split(':');
+  const chainIdStr = parts[0];
+  if (!chainIdStr) {
+    return errors.validationError(c, 'Invalid feedback ID format');
+  }
+
+  const chainId = Number.parseInt(chainIdStr, 10);
+  if (Number.isNaN(chainId)) {
+    return errors.validationError(c, 'Invalid chain ID in feedback ID');
+  }
+
+  // Fetch responses from subgraph
+  const subgraphUrls = c.env.GRAPH_API_KEY ? buildSubgraphUrls(c.env.GRAPH_API_KEY) : {};
+  const subgraphResponses = await fetchFeedbackResponsesFromSubgraph(
+    chainId,
+    feedbackId,
+    subgraphUrls
+  );
+
+  const responses = subgraphResponses.map(transformFeedbackResponse);
+
+  return c.json({
+    success: true,
+    data: {
+      feedbackId,
+      responses,
+      count: responses.length,
+    },
+  });
 });
 
 export { feedbacks };

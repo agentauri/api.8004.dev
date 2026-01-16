@@ -107,6 +107,8 @@ export const CACHE_KEYS = {
   evaluationDetail: (id: string) => `evaluation:${id}`,
   /** Agent evaluations history */
   agentEvaluations: (agentId: string, hash: string) => `agent:evaluations:${agentId}:${hash}`,
+  /** Unique feedback tags */
+  tags: (hash: string) => `tags:${hash}`,
 } as const;
 
 /**

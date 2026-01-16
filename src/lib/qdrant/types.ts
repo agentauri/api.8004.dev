@@ -180,6 +180,14 @@ export interface AgentPayload {
   last_reachability_check_a2a: string;
   /** Wallet address of the reachability attestor */
   reachability_attestor: string;
+
+  // Validation score fields (from ValidationRegistry)
+  /** Average validation score (0-100), computed from completed validations */
+  validation_score: number;
+  /** Total number of validations (all statuses) */
+  total_validations: number;
+  /** Number of completed validations */
+  completed_validations: number;
 }
 
 /**
@@ -533,6 +541,14 @@ export interface AgentFilterParams {
   // Gap 6: Reachability attestation filters
   /** Filter by agents with recent reachability attestation (within 14 days) */
   hasRecentReachability?: boolean;
+
+  // Validation score filters
+  /** Minimum validation score (0-100) */
+  minValidationScore?: number;
+  /** Maximum validation score (0-100) */
+  maxValidationScore?: number;
+  /** Filter by agents with at least one validation */
+  hasValidations?: boolean;
 
   // Exclusion filters (notIn)
   /** Exclude agents with these chain IDs */

@@ -475,6 +475,41 @@ export function buildFilter(params: AgentFilterParams): QdrantFilter | undefined
     }
   }
 
+  // --- Validation score filters ---
+
+  // Validation score range filter
+  if (params.minValidationScore !== undefined || params.maxValidationScore !== undefined) {
+    const range: { gte?: number; lte?: number } = {};
+
+    if (params.minValidationScore !== undefined) {
+      range.gte = params.minValidationScore;
+    }
+
+    if (params.maxValidationScore !== undefined) {
+      range.lte = params.maxValidationScore;
+    }
+
+    mustConditions.push({
+      key: 'validation_score',
+      range,
+    });
+  }
+
+  // Has validations filter (has at least one validation)
+  if (params.hasValidations !== undefined) {
+    if (params.hasValidations) {
+      mustConditions.push({
+        key: 'total_validations',
+        range: { gte: 1 },
+      });
+    } else {
+      mustConditions.push({
+        key: 'total_validations',
+        range: { lte: 0 },
+      });
+    }
+  }
+
   // --- Exclusion filters (notIn / except) ---
 
   // Exclude chain IDs

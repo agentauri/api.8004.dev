@@ -46,6 +46,7 @@ import {
   search,
   searchStream,
   stats,
+  tags,
   taxonomy,
   trending,
 } from '@/routes';
@@ -163,6 +164,8 @@ app.use('/api/v1/keys', requireApiKey());
 app.use('/api/v1/keys/*', requireApiKey());
 app.use('/api/v1/analytics', requireApiKey());
 app.use('/api/v1/analytics/*', requireApiKey());
+app.use('/api/v1/tags', requireApiKey());
+app.use('/api/v1/tags/*', requireApiKey());
 
 // Mount routes
 app.route('/api/v1/health', health);
@@ -183,6 +186,7 @@ app.route('/api/v1/trending', trending);
 app.route('/api/v1/evaluations', evaluations);
 app.route('/api/v1/keys', keys);
 app.route('/api/v1/analytics', analytics);
+app.route('/api/v1/tags', tags);
 
 // Scripts routes (public, no auth required)
 app.route('', scripts);

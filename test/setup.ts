@@ -259,6 +259,8 @@ export function createMockEnv() {
     API_KEY: TEST_API_KEY,
     // Enable mock services for tests
     MOCK_EXTERNAL_SERVICES: 'true',
+    // The Graph API key for subgraph queries
+    GRAPH_API_KEY: 'test-graph-api-key',
   };
 }
 

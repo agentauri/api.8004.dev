@@ -4,6 +4,7 @@
  */
 
 import { Hono } from 'hono';
+import { getDetailedScoreDistribution } from '@/db/queries';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import { createReputationService } from '@/services/reputation';
@@ -27,20 +28,33 @@ reputation.get('/', async (c) => {
 
   const reputationService = createReputationService(c.env.DB);
 
-  const [agentReputation, recentFeedback] = await Promise.all([
+  const [agentReputation, recentFeedback, detailedDistribution] = await Promise.all([
     reputationService.getAgentReputation(agentId),
     reputationService.getAgentFeedback(agentId, 10),
+    getDetailedScoreDistribution(c.env.DB, agentId),
   ]);
 
   const response: ReputationResponse = {
     success: true,
     data: {
       agentId,
-      reputation: agentReputation ?? {
-        count: 0,
-        averageScore: 0,
-        distribution: { low: 0, medium: 0, high: 0 },
-      },
+      reputation: agentReputation
+        ? {
+            ...agentReputation,
+            detailedDistribution,
+          }
+        : {
+            count: 0,
+            averageScore: 0,
+            distribution: { low: 0, medium: 0, high: 0 },
+            detailedDistribution: {
+              veryLow: 0,
+              low: 0,
+              medium: 0,
+              high: 0,
+              veryHigh: 0,
+            },
+          },
       recentFeedback,
     },
   };

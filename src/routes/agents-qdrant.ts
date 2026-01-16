@@ -43,7 +43,9 @@ import {
 } from '@/lib/utils/agent-transform';
 import { classify } from './classify';
 import { healthAgent } from './health-agent';
+import { metadata } from './metadata';
 import { reputation } from './reputation';
+import { validations } from './validations';
 import { verification } from './verification';
 
 /**
@@ -1234,5 +1236,11 @@ agents.route('/:agentId/health', healthAgent);
 
 // Mount verification routes
 agents.route('/:agentId/verification', verification);
+
+// Mount metadata routes (on-chain key-value storage)
+agents.route('/:agentId/metadata', metadata);
+
+// Mount validations routes
+agents.route('/:agentId/validations', validations);
 
 export { agents };

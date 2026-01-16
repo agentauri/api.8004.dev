@@ -4,7 +4,7 @@
  */
 
 /**
- * Score distribution for reputation statistics
+ * Score distribution for reputation statistics (3-bucket)
  */
 export interface ScoreDistribution {
   /** Count of low scores (0-33) */
@@ -16,6 +16,23 @@ export interface ScoreDistribution {
 }
 
 /**
+ * Detailed score distribution (5-bucket)
+ * Provides finer granularity for visualization
+ */
+export interface DetailedScoreDistribution {
+  /** Count of scores 0-20 */
+  veryLow: number;
+  /** Count of scores 21-40 */
+  low: number;
+  /** Count of scores 41-60 */
+  medium: number;
+  /** Count of scores 61-80 */
+  high: number;
+  /** Count of scores 81-100 */
+  veryHigh: number;
+}
+
+/**
  * Aggregated reputation data for an agent
  */
 export interface AgentReputation {
@@ -23,8 +40,10 @@ export interface AgentReputation {
   count: number;
   /** Average score (0-100) */
   averageScore: number;
-  /** Score distribution breakdown */
+  /** Score distribution breakdown (3-bucket) */
   distribution: ScoreDistribution;
+  /** Detailed score distribution (5-bucket, optional) */
+  detailedDistribution?: DetailedScoreDistribution;
 }
 
 /**

@@ -116,6 +116,15 @@ export interface ChainConfig {
 }
 
 /**
+ * Chain IDs with ERC-8004 v1.0 contracts actively deployed and indexed
+ */
+export const ACTIVE_CHAIN_IDS: Set<number> = new Set([
+  11155111, // Ethereum Sepolia
+  84532,    // Base Sepolia
+  80002,    // Polygon Amoy
+]);
+
+/**
  * Supported chains configuration
  */
 export const SUPPORTED_CHAINS: ChainConfig[] = [
@@ -513,6 +522,63 @@ export interface SubgraphValidation {
 }
 
 /**
+ * AgentStats from subgraph - includes validation statistics and score distribution
+ */
+export interface SubgraphAgentStats {
+  id: string;
+  totalFeedback: number;
+  totalValidations: number;
+  completedValidations: number;
+  pendingValidations: number;
+  /** Average feedback score (0-100) */
+  averageScore: number;
+  /** Average validation score (0-100) */
+  averageValidationScore: number;
+  /** Score distribution: [0-20, 21-40, 41-60, 61-80, 81-100] */
+  scoreDistribution: number[];
+  /** Unique validators count */
+  uniqueValidators: number;
+  /** Unique feedback submitters count */
+  uniqueSubmitters: number;
+  updatedAt: string;
+}
+
+/**
+ * Agent metadata entry from subgraph (on-chain key-value storage)
+ */
+export interface SubgraphAgentMetadata {
+  id: string;
+  key: string;
+  value: string;
+  updatedAt: string;
+}
+
+/**
+ * Protocol stats from subgraph (per-chain statistics)
+ */
+export interface SubgraphProtocol {
+  id: string;
+  chainId: string;
+  totalAgents: number;
+  totalFeedback: number;
+  totalValidations: number;
+  /** All unique tags used in feedback */
+  tags: string[];
+  updatedAt: string;
+}
+
+/**
+ * FeedbackResponse from subgraph - agent responses to feedback
+ */
+export interface SubgraphFeedbackResponse {
+  id: string;
+  responder: string;
+  responseUri?: string;
+  responseHash?: string;
+  createdAt: string;
+}
+
+/**
  * Fetch feedbacks for an agent directly from subgraph
  * Uses circuit breaker for resilience.
  * @param chainId - Chain ID
@@ -598,6 +664,163 @@ export async function fetchValidationsFromSubgraph(
 
   const data = await fetchSubgraphWithCircuitBreaker<ValidationResponse>(url, query);
   return data?.data?.validations || [];
+}
+
+/**
+ * Fetch AgentStats for an agent directly from subgraph
+ * Includes validation statistics and score distribution
+ * @param chainId - Chain ID
+ * @param agentId - Agent ID in format "chainId:tokenId"
+ * @returns AgentStats from subgraph or null if not found
+ */
+export async function fetchAgentStatsFromSubgraph(
+  chainId: number,
+  agentId: string,
+  subgraphUrls: Record<number, string>
+): Promise<SubgraphAgentStats | null> {
+  const url = subgraphUrls[chainId];
+  if (!url) return null;
+
+  // Sanitize inputs to prevent GraphQL injection
+  const sanitizedAgentId = sanitizeAgentIdForGraphQL(agentId);
+
+  // AgentStats ID is the same as agent ID
+  const query = `{
+    agentStats(id: "${sanitizedAgentId}") {
+      id
+      totalFeedback
+      totalValidations
+      completedValidations
+      pendingValidations
+      averageScore
+      averageValidationScore
+      scoreDistribution
+      uniqueValidators
+      uniqueSubmitters
+      updatedAt
+    }
+  }`;
+
+  type AgentStatsResponse = {
+    data?: {
+      agentStats?: SubgraphAgentStats | null;
+    };
+  };
+
+  const data = await fetchSubgraphWithCircuitBreaker<AgentStatsResponse>(url, query);
+  return data?.data?.agentStats || null;
+}
+
+/**
+ * Fetch on-chain metadata for an agent directly from subgraph
+ * Metadata is key-value pairs stored on-chain via setMetadata()
+ * @param chainId - Chain ID
+ * @param agentId - Agent ID in format "chainId:tokenId"
+ * @returns Array of metadata entries
+ */
+export async function fetchAgentMetadataFromSubgraph(
+  chainId: number,
+  agentId: string,
+  subgraphUrls: Record<number, string>
+): Promise<SubgraphAgentMetadata[]> {
+  const url = subgraphUrls[chainId];
+  if (!url) return [];
+
+  // Sanitize inputs to prevent GraphQL injection
+  const sanitizedAgentId = sanitizeAgentIdForGraphQL(agentId);
+
+  const query = `{
+    agentMetadatas(where: {agent: "${sanitizedAgentId}"}, orderBy: updatedAt, orderDirection: desc) {
+      id
+      key
+      value
+      updatedAt
+    }
+  }`;
+
+  type MetadataResponse = {
+    data?: {
+      agentMetadatas?: SubgraphAgentMetadata[];
+    };
+  };
+
+  const data = await fetchSubgraphWithCircuitBreaker<MetadataResponse>(url, query);
+  return data?.data?.agentMetadatas || [];
+}
+
+/**
+ * Fetch Protocol statistics for a chain
+ * Includes totals for agents, feedback, validations
+ * @param chainId - Chain ID
+ * @returns Protocol stats or null if not found
+ */
+export async function fetchProtocolStatsFromSubgraph(
+  chainId: number,
+  subgraphUrls: Record<number, string>
+): Promise<SubgraphProtocol | null> {
+  const url = subgraphUrls[chainId];
+  if (!url) return null;
+
+  // Protocol ID is the chainId as string
+  const query = `{
+    protocol(id: "${chainId}") {
+      id
+      chainId
+      totalAgents
+      totalFeedback
+      totalValidations
+      tags
+      updatedAt
+    }
+  }`;
+
+  type ProtocolResponse = {
+    data?: {
+      protocol?: SubgraphProtocol | null;
+    };
+  };
+
+  const data = await fetchSubgraphWithCircuitBreaker<ProtocolResponse>(url, query);
+  return data?.data?.protocol || null;
+}
+
+/**
+ * Fetch FeedbackResponses for a specific feedback entry
+ * @param chainId - Chain ID
+ * @param feedbackId - Feedback ID
+ * @returns Array of feedback responses
+ */
+export async function fetchFeedbackResponsesFromSubgraph(
+  chainId: number,
+  feedbackId: string,
+  subgraphUrls: Record<number, string>
+): Promise<SubgraphFeedbackResponse[]> {
+  const url = subgraphUrls[chainId];
+  if (!url) return [];
+
+  // Sanitize feedbackId to prevent injection
+  if (!/^[a-zA-Z0-9:_-]+$/.test(feedbackId)) {
+    return [];
+  }
+
+  const query = `{
+    feedbackResponses(where: {feedback: "${feedbackId}"}, orderBy: createdAt, orderDirection: desc) {
+      id
+      responder
+      responseUri
+      responseHash
+      createdAt
+    }
+  }`;
+
+  type FeedbackResponsesResponse = {
+    data?: {
+      feedbackResponses?: SubgraphFeedbackResponse[];
+    };
+  };
+
+  const data = await fetchSubgraphWithCircuitBreaker<FeedbackResponsesResponse>(url, query);
+  return data?.data?.feedbackResponses || [];
 }
 
 /**
@@ -1566,6 +1789,7 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
           withRegistrationFileCount: withRegFileCount,
           activeCount,
           status: status as 'ok' | 'error',
+          deploymentStatus: ACTIVE_CHAIN_IDS.has(chain.chainId) ? 'active' : 'pending',
         };
       }
 

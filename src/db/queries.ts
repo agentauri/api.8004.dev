@@ -566,6 +566,54 @@ export async function getFeedbackCount(db: D1Database, agentId: string): Promise
   return result?.count ?? 0;
 }
 
+/**
+ * Detailed score distribution (5-bucket)
+ */
+export interface DetailedDistribution {
+  veryLow: number;
+  low: number;
+  medium: number;
+  high: number;
+  veryHigh: number;
+}
+
+/**
+ * Get detailed 5-bucket score distribution for an agent
+ * Buckets: 0-20 (veryLow), 21-40 (low), 41-60 (medium), 61-80 (high), 81-100 (veryHigh)
+ */
+export async function getDetailedScoreDistribution(
+  db: D1Database,
+  agentId: string
+): Promise<DetailedDistribution> {
+  const result = await db
+    .prepare(
+      `SELECT
+         SUM(CASE WHEN score <= 20 THEN 1 ELSE 0 END) as very_low,
+         SUM(CASE WHEN score > 20 AND score <= 40 THEN 1 ELSE 0 END) as low,
+         SUM(CASE WHEN score > 40 AND score <= 60 THEN 1 ELSE 0 END) as medium,
+         SUM(CASE WHEN score > 60 AND score <= 80 THEN 1 ELSE 0 END) as high,
+         SUM(CASE WHEN score > 80 THEN 1 ELSE 0 END) as very_high
+       FROM agent_feedback
+       WHERE agent_id = ?`
+    )
+    .bind(agentId)
+    .first<{
+      very_low: number | null;
+      low: number | null;
+      medium: number | null;
+      high: number | null;
+      very_high: number | null;
+    }>();
+
+  return {
+    veryLow: result?.very_low ?? 0,
+    low: result?.low ?? 0,
+    medium: result?.medium ?? 0,
+    high: result?.high ?? 0,
+    veryHigh: result?.very_high ?? 0,
+  };
+}
+
 // ============================================================================
 // EAS Sync State Queries
 // ============================================================================

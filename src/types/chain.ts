@@ -4,6 +4,11 @@
  */
 
 /**
+ * ERC-8004 v1.0 deployment status for a chain
+ */
+export type ChainDeploymentStatus = 'active' | 'pending';
+
+/**
  * Statistics for a single chain
  */
 export interface ChainStats {
@@ -23,6 +28,8 @@ export interface ChainStats {
   activeCount: number;
   /** Status of the stats fetch - 'ok', 'error' if RPC/subgraph failed, or 'cached' for fallback data */
   status?: 'ok' | 'error' | 'cached';
+  /** ERC-8004 v1.0 deployment status - 'active' (contracts deployed) or 'pending' (awaiting deployment) */
+  deploymentStatus?: ChainDeploymentStatus;
 }
 
 /**
@@ -67,8 +74,16 @@ export interface PlatformStats {
   withRegistrationFile: number;
   /** Number of active agents across all chains */
   activeAgents: number;
+  /** Total number of feedback entries across all chains */
+  totalFeedback: number;
+  /** Total number of classifications across all chains */
+  totalClassifications: number;
   /** Per-chain breakdown */
   chainBreakdown: ChainStats[];
+  /** Total number of validations across all chains (from subgraph Protocol entity) */
+  totalValidations?: number;
+  /** All unique feedback tags across all chains (from subgraph Protocol entity) */
+  uniqueTags?: string[];
 }
 
 /**

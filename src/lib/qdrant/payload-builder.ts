@@ -119,6 +119,14 @@ export interface PayloadEnrichment {
   lastReachabilityCheckA2a?: string;
   /** Wallet address of the reachability attestor */
   reachabilityAttestor?: string;
+
+  // Validation score fields
+  /** Average validation score (0-100) */
+  validationScore?: number;
+  /** Total number of validations */
+  totalValidations?: number;
+  /** Number of completed validations */
+  completedValidations?: number;
 }
 
 /**
@@ -212,6 +220,11 @@ export function buildAgentPayload(
     last_reachability_check_mcp: enrichment?.lastReachabilityCheckMcp ?? '',
     last_reachability_check_a2a: enrichment?.lastReachabilityCheckA2a ?? '',
     reachability_attestor: enrichment?.reachabilityAttestor ?? '',
+
+    // Validation score fields
+    validation_score: enrichment?.validationScore ?? 0,
+    total_validations: enrichment?.totalValidations ?? 0,
+    completed_validations: enrichment?.completedValidations ?? 0,
   };
 }
 
