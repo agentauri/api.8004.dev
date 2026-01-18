@@ -66,7 +66,10 @@ export async function syncD1ToQdrant(
     .bind('global')
     .first<{ last_d1_sync: string | null }>();
 
-  const lastSync = syncState?.last_d1_sync ?? '1970-01-01T00:00:00Z';
+  const lastSyncRaw = syncState?.last_d1_sync ?? '1970-01-01T00:00:00Z';
+  // Normalize timestamp to D1 format (space-separated, no T/Z) for comparison
+  // D1 stores as "2026-01-18 09:37:37" but sync state uses ISO format "2026-01-18T09:37:37.000Z"
+  const lastSync = lastSyncRaw.replace('T', ' ').replace(/\.\d{3}Z$/, '').replace('Z', '');
 
   // Fetch classifications updated since last sync (including confidence metadata)
   const classifications = await db
@@ -165,8 +168,13 @@ export async function syncD1ToQdrant(
   // Update reputation in Qdrant
   for (const r of reputation.results ?? []) {
     try {
-      // Convert 1-5 scale to 0-100
-      const reputationScore = Math.round(r.average_score * 20);
+      // Handle both old 1-5 scale and new 0-100 scale
+      // Old scale: values 1-5, multiply by 20 to get 0-100
+      // New scale: values 0-100, use directly
+      const isOldScale = r.average_score <= 5;
+      const reputationScore = isOldScale
+        ? Math.round(r.average_score * 20)
+        : Math.round(r.average_score);
 
       await qdrant.setPayloadByAgentId(r.agent_id, { reputation: reputationScore });
       result.reputationUpdated++;

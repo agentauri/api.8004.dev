@@ -1394,12 +1394,11 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
 
           // Use offset as cursor if provided (SDK accepts offset as cursor string)
           const effectiveCursor = cursor ?? (offset !== undefined ? String(offset) : undefined);
-          const result = await sdk.searchAgents(
-            searchParams,
-            ['createdAt:desc'],
-            limit,
-            effectiveCursor
-          );
+          const result = await sdk.searchAgents(searchParams, {
+            sort: ['createdAt:desc'],
+            pageSize: limit,
+            cursor: effectiveCursor,
+          });
 
           const items = result.items.map(transformAgent);
           const total = result.meta?.totalResults ?? items.length;
@@ -1476,12 +1475,11 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
           const pageSize = 100;
 
           while (itemsFetched < maxItemsPerChain) {
-            const result = await sdk.searchAgents(
-              searchParams,
-              ['createdAt:desc'],
+            const result = await sdk.searchAgents(searchParams, {
+              sort: ['createdAt:desc'],
               pageSize,
-              chainCursor
-            );
+              cursor: chainCursor,
+            });
 
             const items = result.items.map(transformAgent);
             allChainItems.push(...items);
@@ -1896,9 +1894,9 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
               if (filter === 'x402') filterParams.x402support = true;
 
               searchPromises.push(
-                chainSdk.searchAgents(filterParams, ['createdAt:desc'], fetchLimit).then((result) =>
-                  result.items.map(transformAgent)
-                )
+                chainSdk
+                  .searchAgents(filterParams, { sort: ['createdAt:desc'], pageSize: fetchLimit })
+                  .then((result) => result.items.map(transformAgent))
               );
             }
           }
@@ -1945,12 +1943,11 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
               let pagesChecked = 0;
 
               while (pagesChecked < maxPagesPerChain) {
-                const result = await chainSdk.searchAgents(
-                  chainParams,
-                  ['createdAt:desc'],
+                const result = await chainSdk.searchAgents(chainParams, {
+                  sort: ['createdAt:desc'],
                   pageSize,
-                  cursor
-                );
+                  cursor,
+                });
 
                 for (const agent of result.items) {
                   const nameMatch = agent.name?.toLowerCase().includes(queryLower);
@@ -1987,11 +1984,10 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
             const chainSearchPromises = chainsToQuery.map(async (chainConfig) => {
               const chainSdk = getSDK(chainConfig.chainId);
               const chainParams = { ...baseSearchParams, chains: [chainConfig.chainId] };
-              const result = await chainSdk.searchAgents(
-                chainParams,
-                ['createdAt:desc'],
-                perChainFetchLimit
-              );
+              const result = await chainSdk.searchAgents(chainParams, {
+                sort: ['createdAt:desc'],
+                pageSize: perChainFetchLimit,
+              });
               return result.items;
             });
 
@@ -2075,19 +2071,12 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
         const fetchLimit = maxRep !== undefined ? Math.min(limit * 3, 100) : limit;
 
         const result = await sdk.searchAgentsByReputation(
-          undefined, // agents - no specific agent filter
-          undefined, // tags
-          undefined, // reviewers
-          undefined, // capabilities
-          undefined, // skills
-          undefined, // tasks
-          undefined, // names
-          minRep, // minAverageScore - the key parameter
-          undefined, // includeRevoked
-          fetchLimit, // pageSize
-          cursor, // cursor for pagination
-          undefined, // sort
-          chainsToQuery.map((c) => c.chainId) // chains
+          { minAverageScore: minRep },
+          {
+            pageSize: fetchLimit,
+            cursor,
+            chains: chainsToQuery.map((c) => c.chainId),
+          }
         );
 
         // Transform SDK results to our format

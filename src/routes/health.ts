@@ -370,4 +370,152 @@ health.get('/cache', (c) => {
   });
 });
 
+/**
+ * POST /api/v1/health/requeue-classifications
+ * Re-queue stuck classification jobs (pending with attempts=0 older than 1 hour)
+ */
+health.post('/requeue-classifications', async (c) => {
+  const env = c.env;
+  const db = env.DB;
+
+  try {
+    // Find stuck jobs: pending status, 0 attempts, older than 1 hour
+    const stuckJobs = await db
+      .prepare(
+        `SELECT id, agent_id FROM classification_queue
+         WHERE status = 'pending'
+         AND attempts = 0
+         AND created_at < datetime('now', '-1 hour')
+         LIMIT 100`
+      )
+      .all<{ id: string; agent_id: string }>();
+
+    if (!stuckJobs.results || stuckJobs.results.length === 0) {
+      return c.json({
+        success: true,
+        data: {
+          requeued: 0,
+          message: 'No stuck jobs found',
+        },
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    // Delete stuck jobs from D1 (they'll be re-created when sent to queue)
+    const deletePromises = stuckJobs.results.map((job) =>
+      db.prepare('DELETE FROM classification_queue WHERE id = ?').bind(job.id).run()
+    );
+    await Promise.all(deletePromises);
+
+    // Re-send to Cloudflare Queue
+    const sendPromises = stuckJobs.results.map((job) =>
+      env.CLASSIFICATION_QUEUE.send({ agentId: job.agent_id, force: false })
+    );
+    await Promise.all(sendPromises);
+
+    // Re-insert into D1 with fresh status
+    const insertPromises = stuckJobs.results.map((job) =>
+      db
+        .prepare(
+          `INSERT INTO classification_queue (id, agent_id, status, attempts)
+           VALUES (?, ?, 'pending', 0)`
+        )
+        .bind(crypto.randomUUID().replace(/-/g, ''), job.agent_id)
+        .run()
+    );
+    await Promise.all(insertPromises);
+
+    return c.json({
+      success: true,
+      data: {
+        requeued: stuckJobs.results.length,
+        agentIds: stuckJobs.results.map((j) => j.agent_id),
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    c.get('logger').logError('Failed to requeue classifications', error);
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});
+
+/**
+ * POST /api/v1/health/retry-classifications
+ * Retry failed classification jobs (admin only)
+ */
+health.post('/retry-classifications', async (c) => {
+  const env = c.env;
+  const db = env.DB;
+
+  try {
+    // Find failed jobs
+    const failedJobs = await db
+      .prepare(
+        `SELECT id, agent_id FROM classification_queue
+         WHERE status = 'failed'
+         LIMIT 100`
+      )
+      .all<{ id: string; agent_id: string }>();
+
+    if (!failedJobs.results || failedJobs.results.length === 0) {
+      return c.json({
+        success: true,
+        data: {
+          retried: 0,
+          message: 'No failed jobs found',
+        },
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    // Delete failed jobs from D1
+    const deletePromises = failedJobs.results.map((job) =>
+      db.prepare('DELETE FROM classification_queue WHERE id = ?').bind(job.id).run()
+    );
+    await Promise.all(deletePromises);
+
+    // Re-send to Cloudflare Queue with force=true to bypass any caching
+    const sendPromises = failedJobs.results.map((job) =>
+      env.CLASSIFICATION_QUEUE.send({ agentId: job.agent_id, force: true })
+    );
+    await Promise.all(sendPromises);
+
+    // Re-insert into D1 with fresh status
+    const insertPromises = failedJobs.results.map((job) =>
+      db
+        .prepare(
+          `INSERT INTO classification_queue (id, agent_id, status, attempts)
+           VALUES (?, ?, 'pending', 0)`
+        )
+        .bind(crypto.randomUUID().replace(/-/g, ''), job.agent_id)
+        .run()
+    );
+    await Promise.all(insertPromises);
+
+    return c.json({
+      success: true,
+      data: {
+        retried: failedJobs.results.length,
+        agentIds: failedJobs.results.map((j) => j.agent_id),
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    c.get('logger').logError('Failed to retry classifications', error);
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});
+
 export { health };
