@@ -218,18 +218,67 @@ export async function syncD1ToQdrant(
     }
   }
 
-  // Update global sync state
-  const now = new Date().toISOString();
-  await db
-    .prepare(
-      `UPDATE qdrant_sync_state
-       SET last_d1_sync = ?,
-           agents_synced = agents_synced + ?,
-           updated_at = datetime('now')
-       WHERE id = 'global'`
-    )
-    .bind(now, result.classificationsUpdated + result.reputationUpdated + result.trustScoresUpdated)
-    .run();
+  // Update global sync state only if items were processed
+  // This prevents advancing the timestamp when no items are synced,
+  // which would skip items created between the last sync and now
+  const totalSynced =
+    result.classificationsUpdated + result.reputationUpdated + result.trustScoresUpdated;
+
+  if (totalSynced > 0) {
+    // Find the max updated_at from processed items to use as the new sync timestamp
+    // This ensures we don't skip items created during processing
+    const maxTimestamps: string[] = [];
+
+    const classificationResults = classifications.results ?? [];
+    const firstClassification = classificationResults[0];
+    if (firstClassification) {
+      const maxClassification = classificationResults.reduce((max, c) =>
+        c.updated_at > max ? c.updated_at : max
+      , firstClassification.updated_at);
+      maxTimestamps.push(maxClassification);
+    }
+
+    const reputationResults = reputation.results ?? [];
+    const firstReputation = reputationResults[0];
+    if (firstReputation) {
+      const maxReputation = reputationResults.reduce((max, r) =>
+        r.updated_at > max ? r.updated_at : max
+      , firstReputation.updated_at);
+      maxTimestamps.push(maxReputation);
+    }
+
+    const trustResults = trustScores.results ?? [];
+    const firstTrust = trustResults[0];
+    if (firstTrust) {
+      const maxTrust = trustResults.reduce((max, t) =>
+        t.computed_at > max ? t.computed_at : max
+      , firstTrust.computed_at);
+      maxTimestamps.push(maxTrust);
+    }
+
+    // Use the max of all processed timestamps, converted to ISO format
+    const maxProcessedTimestamp = maxTimestamps.length > 0
+      ? maxTimestamps.reduce((max, t) => t > max ? t : max)
+      : null;
+
+    if (maxProcessedTimestamp) {
+      // Convert D1 format "2026-01-18 17:09:29" to ISO format "2026-01-18T17:09:29.000Z"
+      const isoTimestamp = maxProcessedTimestamp.includes('T')
+        ? maxProcessedTimestamp
+        : `${maxProcessedTimestamp.replace(' ', 'T')}.000Z`;
+
+      await db
+        .prepare(
+          `UPDATE qdrant_sync_state
+           SET last_d1_sync = ?,
+               agents_synced = agents_synced + ?,
+               updated_at = datetime('now')
+           WHERE id = 'global'`
+        )
+        .bind(isoTimestamp, totalSynced)
+        .run();
+    }
+  }
 
   return result;
 }
