@@ -2,7 +2,7 @@
 
 Implement MCP connectivity in your frontend application.
 
-For the complete frontend integration guide with full React component examples, MCP tools/resources/prompts reference, and detailed UI specifications, see [FRONTEND_MCP_INTEGRATION.md](/docs/FRONTEND_MCP_INTEGRATION.md).
+For the complete frontend integration guide with full React component examples, MCP tools/resources/prompts reference, and detailed UI specifications, see [FRONTEND_MCP_INTEGRATION](/FRONTEND_MCP_INTEGRATION).
 
 ## Overview
 
@@ -87,7 +87,7 @@ For complete frontend integration including:
 - UI component wireframes
 - Placement suggestions
 
-See [FRONTEND_MCP_INTEGRATION.md](/docs/FRONTEND_MCP_INTEGRATION.md).
+See [FRONTEND_MCP_INTEGRATION](/FRONTEND_MCP_INTEGRATION).
 
 ## Related
 

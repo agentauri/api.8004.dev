@@ -1,6 +1,6 @@
 # Deployment Guide
 
-This page provides a quick overview of deployment. For the complete deployment guide with all migrations, troubleshooting steps, and detailed configuration, see the main [DEPLOY.md](/DEPLOY.md) in the repository root.
+This page provides a quick overview of deployment. For the complete deployment guide with all migrations, troubleshooting steps, and detailed configuration, see the main [DEPLOY.md](https://github.com/agentauri/api.8004.dev/blob/main/DEPLOY.md) in the repository root.
 
 ## Quick Deploy
 
@@ -89,7 +89,7 @@ For complete deployment instructions including:
 - Cost estimation
 - Resource limits
 
-See [DEPLOY.md](/DEPLOY.md) in the repository root.
+See [DEPLOY.md](https://github.com/agentauri/api.8004.dev/blob/main/DEPLOY.md) in the repository root.
 
 ## Related
 

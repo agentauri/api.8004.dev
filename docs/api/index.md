@@ -87,7 +87,6 @@ See [Authentication](/guide/authentication) for details.
 
 | Endpoint | Description |
 |----------|-------------|
-| [Webhooks](/api/webhooks) | Subscribe to real-time events |
 | [API Keys](/api/keys) | Manage API keys and quotas |
 | [Analytics](/api/analytics) | Platform metrics and usage statistics |
 
