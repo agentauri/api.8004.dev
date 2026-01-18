@@ -134,10 +134,11 @@ const chainsSchema = z
 
 /**
  * Valid sort fields for agent listing
+ * Default is createdAt (newest first) for consistent ordering
  */
 export const sortFieldSchema = z
   .enum(['relevance', 'name', 'createdAt', 'reputation'])
-  .default('relevance');
+  .default('createdAt');
 
 /**
  * Sort order schema
