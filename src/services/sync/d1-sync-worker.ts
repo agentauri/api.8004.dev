@@ -42,7 +42,7 @@ interface SkillOrDomain {
  * This prevents low-quality classifications (e.g., agents with name "d" description "d")
  * from polluting search results.
  */
-const MIN_CONFIDENCE_THRESHOLD = 0.5;
+const MIN_CONFIDENCE_THRESHOLD = 0.7;
 
 export interface D1SyncResult {
   classificationsUpdated: number;
