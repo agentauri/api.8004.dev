@@ -251,11 +251,12 @@ function agentToPayload(
   const walletAddress = agent.agentWallet ?? '';
 
   // Build input from Graph agent
+  // Use placeholder name when name is null/empty (consistent with getEmbedFields)
   const input: PayloadBuilderInput = {
     agentId: `${agent.chainId}:${agent.agentId}`,
     chainId: Number(agent.chainId),
     tokenId: agent.agentId,
-    name: reg?.name ?? (hasReg ? '' : `Agent #${agent.agentId}`),
+    name: reg?.name || `Agent #${agent.agentId}`,
     description: reg?.description ?? '',
     image: reg?.image ?? undefined,
     active: reg?.active ?? false,
@@ -328,7 +329,12 @@ function getEmbedFields(agent: GraphAgent, ioModes?: ExtractedIOModes): EmbedFie
 }
 
 /**
- * Get content fields from payload
+ * Get content fields from payload for hash comparison.
+ * IMPORTANT: Must use same fields as quickContentFields to ensure hashes match.
+ * D1 fields (skills, domains, reputation) are excluded because:
+ * 1. They are managed by D1 sync worker, not Graph sync
+ * 2. Including them causes hash mismatch since quickContentFields uses empty values
+ * 3. This was causing infinite sync loops where agents were never "caught up"
  */
 function getContentFields(payload: AgentPayload): ContentFields {
   return {
@@ -338,9 +344,11 @@ function getContentFields(payload: AgentPayload): ContentFields {
     active: payload.active,
     hasMcp: payload.has_mcp,
     hasA2a: payload.has_a2a,
-    skills: payload.skills,
-    domains: payload.domains,
-    reputation: payload.reputation,
+    // Use empty arrays for D1 fields to match quickContentFields
+    // D1 data changes are tracked separately by D1 sync worker
+    skills: [],
+    domains: [],
+    reputation: 0,
     owner: payload.owner,
     hasRegistrationFile: payload.has_registration_file,
   };
@@ -479,9 +487,10 @@ export async function syncFromGraph(
     } else {
       // Existing agent - check if content changed (e.g., owner field added, registrationFile added)
       // Compute content hash from Graph fields to compare (use async SHA-256 to match stored hashes)
+      // Use same fallback logic as agentToPayload to ensure hash consistency
       const quickContentFields: ContentFields = {
         agentId,
-        name: agent.registrationFile?.name ?? '',
+        name: agent.registrationFile?.name || `Agent #${agent.agentId}`,
         description: agent.registrationFile?.description ?? '',
         active: agent.registrationFile?.active ?? false,
         hasMcp: Boolean(agent.registrationFile?.mcpEndpoint),
