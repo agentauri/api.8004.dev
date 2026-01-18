@@ -36,6 +36,14 @@ interface SkillOrDomain {
   reasoning?: string;
 }
 
+/**
+ * Minimum confidence threshold for skills/domains to be indexed in Qdrant.
+ * Skills/domains with confidence below this threshold are stored but not searchable.
+ * This prevents low-quality classifications (e.g., agents with name "d" description "d")
+ * from polluting search results.
+ */
+const MIN_CONFIDENCE_THRESHOLD = 0.5;
+
 export interface D1SyncResult {
   classificationsUpdated: number;
   reputationUpdated: number;
@@ -126,16 +134,25 @@ export async function syncD1ToQdrant(
         }
       }
 
-      // Slugs only for filtering (indexed)
-      const skills = skillsData.map((s) => s.slug);
-      const domains = domainsData.map((d) => d.slug);
+      // Filter by confidence threshold for indexing (searchable)
+      // Only skills/domains with confidence >= threshold are indexed
+      const highConfidenceSkills = skillsData.filter(
+        (s) => s.confidence >= MIN_CONFIDENCE_THRESHOLD
+      );
+      const highConfidenceDomains = domainsData.filter(
+        (d) => d.confidence >= MIN_CONFIDENCE_THRESHOLD
+      );
 
-      // Full data with confidence for Phase 2 (not indexed, for API response)
+      // Slugs only for filtering (indexed) - only high-confidence items
+      const skills = highConfidenceSkills.map((s) => s.slug);
+      const domains = highConfidenceDomains.map((d) => d.slug);
+
+      // Full data with confidence for API response (includes all, even low-confidence)
       await qdrant.setPayloadByAgentId(c.agent_id, {
         skills,
         domains,
-        skills_with_confidence: skillsData,
-        domains_with_confidence: domainsData,
+        skills_with_confidence: skillsData, // All for transparency
+        domains_with_confidence: domainsData, // All for transparency
         classification_confidence: c.confidence,
         classification_at: c.classified_at,
         classification_model: c.model_version,
