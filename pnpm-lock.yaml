@@ -20,7 +20,7 @@ importers:
         version: 0.24.1
       '@modelcontextprotocol/sdk':
         specifier: ^1.25.1
-        version: 1.25.1(@cfworker/json-schema@4.1.1)(hono@4.11.3)(zod@4.3.5)
+        version: 1.25.1(@cfworker/json-schema@4.1.1)(hono@4.11.4)(zod@4.3.5)
       '@x402/core':
         specifier: ^2.2.0
         version: 2.2.0
@@ -29,13 +29,13 @@ importers:
         version: 2.2.0(typescript@5.9.3)
       '@x402/hono':
         specifier: ^2.2.0
-        version: 2.2.0(hono@4.11.3)
+        version: 2.2.0(hono@4.11.4)
       agent0-sdk:
         specifier: ^1.1.1
         version: 1.1.1(encoding@0.1.13)(graphql@16.12.0)(typescript@5.9.3)(zod@4.3.5)
       hono:
-        specifier: ^4.11.3
-        version: 4.11.3
+        specifier: ^4.11.4
+        version: 4.11.4
       viem:
         specifier: ^2.43.5
         version: 2.43.5(typescript@5.9.3)(zod@4.3.5)
@@ -1972,8 +1972,8 @@ packages:
   hast-util-whitespace@3.0.0:
     resolution: {integrity: sha512-88JUN06ipLwsnv+dVn+OIYOvAuvBMy/Qoi6O7mQHxdPXpjy+Cd6xRkWwux7DKO+4sYILtLBRIKgsdpS2gQc7qw==}
 
-  hono@4.11.3:
-    resolution: {integrity: sha512-PmQi306+M/ct/m5s66Hrg+adPnkD5jiO6IjA7WhWw0gSBSo1EcRegwuI1deZ+wd5pzCGynCcn2DprnE4/yEV4w==}
+  hono@4.11.4:
+    resolution: {integrity: sha512-U7tt8JsyrxSRKspfhtLET79pU8K+tInj5QZXs1jSugO1Vq5dFj3kmZsRldo29mTBfcjDRVRXrEZ6LS63Cog9ZA==}
     engines: {node: '>=16.9.0'}
 
   hookable@5.5.3:
@@ -3537,9 +3537,9 @@ snapshots:
     dependencies:
       graphql: 16.12.0
 
-  '@hono/node-server@1.19.7(hono@4.11.3)':
+  '@hono/node-server@1.19.7(hono@4.11.4)':
     dependencies:
-      hono: 4.11.3
+      hono: 4.11.4
 
   '@iconify-json/simple-icons@1.2.64':
     dependencies:
@@ -3722,9 +3722,9 @@ snapshots:
       multiformats: 11.0.2
       uint8arrays: 4.0.10
 
-  '@modelcontextprotocol/sdk@1.25.1(@cfworker/json-schema@4.1.1)(hono@4.11.3)(zod@4.3.5)':
+  '@modelcontextprotocol/sdk@1.25.1(@cfworker/json-schema@4.1.1)(hono@4.11.4)(zod@4.3.5)':
     dependencies:
-      '@hono/node-server': 1.19.7(hono@4.11.3)
+      '@hono/node-server': 1.19.7(hono@4.11.4)
       ajv: 8.17.1
       ajv-formats: 3.0.1(ajv@8.17.1)
       content-type: 1.0.5
@@ -4182,11 +4182,11 @@ snapshots:
       ajv: 8.17.1
       zod: 3.25.76
 
-  '@x402/hono@2.2.0(hono@4.11.3)':
+  '@x402/hono@2.2.0(hono@4.11.4)':
     dependencies:
       '@x402/core': 2.2.0
       '@x402/extensions': 2.2.0
-      hono: 4.11.3
+      hono: 4.11.4
       zod: 3.25.76
 
   abitype@1.2.3(typescript@5.9.3)(zod@3.25.76):
@@ -4752,7 +4752,7 @@ snapshots:
     dependencies:
       '@types/hast': 3.0.4
 
-  hono@4.11.3: {}
+  hono@4.11.4: {}
 
   hookable@5.5.3: {}
 
