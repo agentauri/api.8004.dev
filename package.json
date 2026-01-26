@@ -46,7 +46,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
     "@google/generative-ai": "^0.24.1",
-    "@modelcontextprotocol/sdk": "^1.25.1",
+    "@modelcontextprotocol/sdk": "^1.25.3",
     "@x402/core": "^2.2.0",
     "@x402/evm": "^2.2.0",
     "@x402/hono": "^2.2.0",
