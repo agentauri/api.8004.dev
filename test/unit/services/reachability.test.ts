@@ -28,7 +28,7 @@ describe('ReachabilityService', () => {
   });
 
   describe('getAgentReachability', () => {
-    it('returns false for both when no feedback exists', async () => {
+    it('returns false for all when no feedback exists', async () => {
       mockAll.mockResolvedValue({ results: [] });
 
       const service = createReachabilityService(mockDb);
@@ -36,6 +36,7 @@ describe('ReachabilityService', () => {
 
       expect(result.a2a).toBe(false);
       expect(result.mcp).toBe(false);
+      expect(result.web).toBe(false);
     });
 
     it('returns true for a2a when recent feedback with reachability_a2a tag has high score', async () => {
@@ -56,6 +57,7 @@ describe('ReachabilityService', () => {
 
       expect(result.a2a).toBe(true);
       expect(result.mcp).toBe(false);
+      expect(result.web).toBe(false);
     });
 
     it('returns true for mcp when recent feedback with reachability_mcp tag has high score', async () => {
@@ -76,6 +78,28 @@ describe('ReachabilityService', () => {
 
       expect(result.a2a).toBe(false);
       expect(result.mcp).toBe(true);
+      expect(result.web).toBe(false);
+    });
+
+    it('returns true for web when recent feedback with reachability_web tag has high score', async () => {
+      const now = new Date();
+      mockAll.mockResolvedValue({
+        results: [
+          {
+            agent_id: '11155111:1',
+            score: 85,
+            tags: JSON.stringify(['reachability_web']),
+            submitted_at: now.toISOString(),
+          },
+        ],
+      });
+
+      const service = createReachabilityService(mockDb);
+      const result = await service.getAgentReachability('11155111:1');
+
+      expect(result.a2a).toBe(false);
+      expect(result.mcp).toBe(false);
+      expect(result.web).toBe(true);
     });
 
     it('returns false when feedback score is below threshold', async () => {
@@ -96,9 +120,10 @@ describe('ReachabilityService', () => {
 
       expect(result.a2a).toBe(false);
       expect(result.mcp).toBe(false);
+      expect(result.web).toBe(false);
     });
 
-    it('returns true for both when both tags have high scores', async () => {
+    it('returns true for both a2a and mcp when both tags have high scores', async () => {
       const now = new Date();
       mockAll.mockResolvedValue({
         results: [
@@ -122,6 +147,40 @@ describe('ReachabilityService', () => {
 
       expect(result.a2a).toBe(true);
       expect(result.mcp).toBe(true);
+      expect(result.web).toBe(false);
+    });
+
+    it('returns true for all three when a2a, mcp, and web tags all have high scores', async () => {
+      const now = new Date();
+      mockAll.mockResolvedValue({
+        results: [
+          {
+            agent_id: '11155111:1',
+            score: 85,
+            tags: JSON.stringify(['reachability_a2a']),
+            submitted_at: now.toISOString(),
+          },
+          {
+            agent_id: '11155111:1',
+            score: 90,
+            tags: JSON.stringify(['reachability_mcp']),
+            submitted_at: now.toISOString(),
+          },
+          {
+            agent_id: '11155111:1',
+            score: 80,
+            tags: JSON.stringify(['reachability_web']),
+            submitted_at: now.toISOString(),
+          },
+        ],
+      });
+
+      const service = createReachabilityService(mockDb);
+      const result = await service.getAgentReachability('11155111:1');
+
+      expect(result.a2a).toBe(true);
+      expect(result.mcp).toBe(true);
+      expect(result.web).toBe(true);
     });
   });
 
@@ -140,8 +199,8 @@ describe('ReachabilityService', () => {
       const result = await service.getAgentReachabilitiesBatch(['11155111:1', '11155111:2']);
 
       expect(result.size).toBe(2);
-      expect(result.get('11155111:1')).toEqual({ a2a: false, mcp: false });
-      expect(result.get('11155111:2')).toEqual({ a2a: false, mcp: false });
+      expect(result.get('11155111:1')).toEqual({ a2a: false, mcp: false, web: false });
+      expect(result.get('11155111:2')).toEqual({ a2a: false, mcp: false, web: false });
     });
 
     it('returns correct reachability for multiple agents', async () => {
@@ -167,8 +226,46 @@ describe('ReachabilityService', () => {
       const result = await service.getAgentReachabilitiesBatch(['11155111:1', '11155111:2']);
 
       expect(result.size).toBe(2);
-      expect(result.get('11155111:1')).toEqual({ a2a: true, mcp: false });
-      expect(result.get('11155111:2')).toEqual({ a2a: false, mcp: true });
+      expect(result.get('11155111:1')).toEqual({ a2a: true, mcp: false, web: false });
+      expect(result.get('11155111:2')).toEqual({ a2a: false, mcp: true, web: false });
+    });
+
+    it('returns correct web reachability for multiple agents', async () => {
+      const now = new Date();
+      mockAll.mockResolvedValue({
+        results: [
+          {
+            agent_id: '11155111:1',
+            score: 80,
+            tags: JSON.stringify(['reachability_web']),
+            submitted_at: now.toISOString(),
+          },
+          {
+            agent_id: '11155111:2',
+            score: 75,
+            tags: JSON.stringify(['reachability_a2a', 'reachability_web']),
+            submitted_at: now.toISOString(),
+          },
+          {
+            agent_id: '11155111:3',
+            score: 65, // Below threshold
+            tags: JSON.stringify(['reachability_web']),
+            submitted_at: now.toISOString(),
+          },
+        ],
+      });
+
+      const service = createReachabilityService(mockDb);
+      const result = await service.getAgentReachabilitiesBatch([
+        '11155111:1',
+        '11155111:2',
+        '11155111:3',
+      ]);
+
+      expect(result.size).toBe(3);
+      expect(result.get('11155111:1')).toEqual({ a2a: false, mcp: false, web: true });
+      expect(result.get('11155111:2')).toEqual({ a2a: true, mcp: false, web: true });
+      expect(result.get('11155111:3')).toEqual({ a2a: false, mcp: false, web: false });
     });
   });
 });

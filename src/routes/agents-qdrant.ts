@@ -159,7 +159,16 @@ agents.get('/', async (c) => {
   const rawQueries = c.req.queries();
 
   // Merge array values for bracket notation (chainIds[], skills[], domains[], etc.)
-  const arrayParams = ['chainIds[]', 'skills[]', 'domains[]', 'mcpTools[]', 'a2aSkills[]'];
+  const arrayParams = [
+    'chainIds[]',
+    'skills[]',
+    'domains[]',
+    'mcpTools[]',
+    'a2aSkills[]',
+    'declaredSkills[]',
+    'declaredDomains[]',
+    'hasTags[]',
+  ];
   for (const param of arrayParams) {
     if (rawQueries[param] && rawQueries[param].length > 1) {
       (rawQuery as Record<string, unknown>)[param] = rawQueries[param];
@@ -199,10 +208,18 @@ agents.get('/', async (c) => {
     // Decode cursor to extract offset
     try {
       const decoded = Buffer.from(query.cursor, 'base64url').toString('utf-8');
-      const cursorData = JSON.parse(decoded) as { _global_offset?: number };
-      const cursorOffset = cursorData._global_offset ?? 0;
-      // Validate offset bounds to prevent negative values from malicious cursors
-      offset = cursorOffset >= 0 ? cursorOffset : 0;
+      const cursorData = JSON.parse(decoded) as Record<string, unknown>;
+      // Type guard: validate _global_offset is a finite number
+      const rawOffset = cursorData._global_offset;
+      if (
+        typeof rawOffset === 'number' &&
+        Number.isFinite(rawOffset) &&
+        rawOffset >= 0
+      ) {
+        offset = Math.floor(rawOffset);
+      } else {
+        offset = 0;
+      }
     } catch {
       // Invalid cursor, start from beginning
       offset = undefined;
@@ -236,12 +253,14 @@ agents.get('/', async (c) => {
     // Wallet filters
     owner: query.owner,
     walletAddress: query.walletAddress,
+    walletVerified: query.walletVerified,
     // Trust model filters
     trustModels: query.trustModels,
     hasTrusts: query.hasTrusts,
     // Reachability filters
     reachableA2a: query.reachableA2a,
     reachableMcp: query.reachableMcp,
+    reachableWeb: query.reachableWeb,
     // Registration file filter
     hasRegistrationFile: query.hasRegistrationFile,
     // Exact match filters (new)
@@ -251,6 +270,11 @@ agents.get('/', async (c) => {
     excludeChainIds: query.excludeChainIds,
     excludeSkills: query.excludeSkills,
     excludeDomains: query.excludeDomains,
+    // Declared OASF array filters
+    declaredSkills: query['declaredSkills[]'] ?? query.declaredSkills,
+    declaredDomains: query['declaredDomains[]'] ?? query.declaredDomains,
+    // Tags filter
+    hasTags: query['hasTags[]'] ?? query.hasTags,
   });
 
   // Perform search with Qdrant
@@ -282,9 +306,10 @@ agents.get('/', async (c) => {
       // For sorted pagination, we need to fetch ALL matching items to ensure correct global order
       // Since SDK doesn't support server-side sorting by name, we must fetch, sort, then slice
       // When sorting is requested (non-relevance), fetch a large window to ensure correct ordering
+      // Upper bound of 5000 prevents memory issues with very large offsets
       const needsClientSort = query.sort && query.sort !== 'relevance';
       const fetchLimit = needsClientSort
-        ? Math.max(500, effectiveOffset + query.limit + 1) // Fetch at least 500 items for sorted queries
+        ? Math.min(5000, Math.max(500, effectiveOffset + query.limit + 1))
         : effectiveOffset + query.limit + 1;
 
       // Note: We don't pass cursor to SDK since we handle pagination via offset

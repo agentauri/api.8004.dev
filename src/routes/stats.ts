@@ -5,14 +5,24 @@
 
 import { Hono } from 'hono';
 import { getFeedbackStats, getTotalClassificationCount } from '@/db/queries';
+import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
 import { CACHE_KEYS, CACHE_TTL, createCacheService } from '@/services/cache';
 import {
+  ACTIVE_CHAIN_IDS,
   buildSubgraphUrls,
   createSDKService,
   fetchProtocolStatsFromSubgraph,
+  getChainConfig,
+  SUPPORTED_CHAINS,
 } from '@/services/sdk';
-import type { Env, PlatformStatsResponse, Variables } from '@/types';
+import type {
+  ChainProtocolStatsResponse,
+  Env,
+  GlobalStatsResponse,
+  PlatformStatsResponse,
+  Variables,
+} from '@/types';
 
 const stats = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -49,7 +59,13 @@ stats.get('/', async (c) => {
   // Fetch Protocol stats from subgraph for enhanced data
   const subgraphUrls = c.env.GRAPH_API_KEY ? buildSubgraphUrls(c.env.GRAPH_API_KEY) : {};
   const protocolStatsPromises = chainStats.map((chain) =>
-    fetchProtocolStatsFromSubgraph(chain.chainId, subgraphUrls).catch(() => null)
+    fetchProtocolStatsFromSubgraph(chain.chainId, subgraphUrls).catch((error) => {
+      console.warn(
+        `Stats: Failed to fetch protocol stats for chain ${chain.chainId}:`,
+        error instanceof Error ? error.message : String(error)
+      );
+      return null;
+    })
   );
   const protocolStats = await Promise.all(protocolStatsPromises);
 
@@ -92,6 +108,145 @@ stats.get('/', async (c) => {
   if (!hasErrors) {
     await cache.set(cacheKey, response, CACHE_TTL.PLATFORM_STATS);
   }
+  return c.json(response);
+});
+
+/**
+ * GET /api/v1/stats/global
+ * Get global cross-chain aggregate statistics
+ */
+stats.get('/global', async (c) => {
+  const cache = createCacheService(c.env.CACHE, CACHE_TTL.PLATFORM_STATS);
+  const cacheKey = CACHE_KEYS.platformStats() + ':global';
+
+  // Check cache
+  const cached = await cache.get<GlobalStatsResponse>(cacheKey);
+  if (cached) {
+    return c.json(cached);
+  }
+
+  // Fetch chain stats and D1 feedback stats
+  const sdk = createSDKService(c.env);
+  const [chainStats, feedbackStats] = await Promise.all([
+    sdk.getChainStats(),
+    getFeedbackStats(c.env.DB),
+  ]);
+
+  // Fetch Protocol stats from subgraph for each chain
+  const subgraphUrls = c.env.GRAPH_API_KEY ? buildSubgraphUrls(c.env.GRAPH_API_KEY) : {};
+  const protocolStatsPromises = chainStats.map((chain) =>
+    fetchProtocolStatsFromSubgraph(chain.chainId, subgraphUrls).catch((error) => {
+      console.warn(
+        `Stats global: Failed to fetch protocol stats for chain ${chain.chainId}:`,
+        error instanceof Error ? error.message : String(error)
+      );
+      return null;
+    })
+  );
+  const protocolStats = await Promise.all(protocolStatsPromises);
+
+  // Aggregate totals
+  let totalAgents = 0;
+  let totalValidations = 0;
+  const protocolsByChain: GlobalStatsResponse['data']['protocolsByChain'] = [];
+
+  for (let i = 0; i < chainStats.length; i++) {
+    const chain = chainStats[i];
+    const protocol = protocolStats[i];
+    if (!chain) continue;
+
+    totalAgents += chain.totalCount;
+    const chainValidations = protocol?.totalValidations ?? 0;
+    totalValidations += chainValidations;
+
+    protocolsByChain.push({
+      chainId: chain.chainId,
+      chainName: chain.name,
+      agents: chain.totalCount,
+      feedback: protocol?.totalFeedback ?? 0,
+      validations: chainValidations,
+    });
+  }
+
+  const response: GlobalStatsResponse = {
+    success: true,
+    data: {
+      totalAgents,
+      totalFeedback: feedbackStats.total,
+      totalValidations,
+      protocolsByChain,
+      lastUpdated: new Date().toISOString(),
+    },
+  };
+
+  // Cache the response
+  await cache.set(cacheKey, response, CACHE_TTL.PLATFORM_STATS);
+  return c.json(response);
+});
+
+/**
+ * GET /api/v1/stats/chains/:chainId
+ * Get protocol statistics for a specific chain
+ */
+stats.get('/chains/:chainId', async (c) => {
+  const chainIdStr = c.req.param('chainId');
+  const chainId = Number.parseInt(chainIdStr, 10);
+
+  if (Number.isNaN(chainId)) {
+    return errors.validationError(c, 'Invalid chain ID');
+  }
+
+  const chainConfig = getChainConfig(chainId);
+  if (!chainConfig) {
+    return errors.notFound(c, `Chain ${chainId} not supported`);
+  }
+
+  const cache = createCacheService(c.env.CACHE, CACHE_TTL.PLATFORM_STATS);
+  const cacheKey = CACHE_KEYS.platformStats() + `:chain:${chainId}`;
+
+  // Check cache
+  const cached = await cache.get<ChainProtocolStatsResponse>(cacheKey);
+  if (cached) {
+    return c.json(cached);
+  }
+
+  // Fetch stats for this specific chain
+  const sdk = createSDKService(c.env);
+  const chainStats = await sdk.getChainStats();
+  const chainStat = chainStats.find((s) => s.chainId === chainId);
+
+  // Fetch Protocol stats from subgraph
+  const subgraphUrls = c.env.GRAPH_API_KEY ? buildSubgraphUrls(c.env.GRAPH_API_KEY) : {};
+  const protocolStats = await fetchProtocolStatsFromSubgraph(chainId, subgraphUrls).catch(
+    (error) => {
+      console.warn(
+        `Stats chains: Failed to fetch protocol stats for chain ${chainId}:`,
+        error instanceof Error ? error.message : String(error)
+      );
+      return null;
+    }
+  );
+
+  const response: ChainProtocolStatsResponse = {
+    success: true,
+    data: {
+      chainId,
+      chainName: chainConfig.name,
+      totalAgents: chainStat?.totalCount ?? 0,
+      withRegistrationFile: chainStat?.withRegistrationFileCount ?? 0,
+      activeAgents: chainStat?.activeCount ?? 0,
+      totalFeedback: protocolStats?.totalFeedback ?? 0,
+      totalValidations: protocolStats?.totalValidations ?? 0,
+      tags: protocolStats?.tags ?? [],
+      deploymentStatus: ACTIVE_CHAIN_IDS.has(chainId) ? 'active' : 'pending',
+      lastUpdated: protocolStats?.updatedAt
+        ? new Date(Number.parseInt(protocolStats.updatedAt, 10) * 1000).toISOString()
+        : new Date().toISOString(),
+    },
+  };
+
+  // Cache the response
+  await cache.set(cacheKey, response, CACHE_TTL.PLATFORM_STATS);
   return c.json(response);
 });
 

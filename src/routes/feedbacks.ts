@@ -80,8 +80,13 @@ function transformFeedback(row: FeedbackRow): TransformedFeedback {
   let tags: string[] = [];
   try {
     tags = JSON.parse(row.tags) as string[];
-  } catch {
-    // Ignore parse errors, use empty array
+  } catch (error) {
+    // Log parse errors for debugging data quality issues
+    console.warn(
+      `transformFeedback: Invalid tags JSON for feedback ${row.id}:`,
+      row.tags?.substring(0, 100),
+      error instanceof Error ? error.message : String(error)
+    );
   }
 
   // Extract tokenId from agent_id for default name
@@ -112,9 +117,15 @@ feedbacks.get('/', async (c) => {
   const rawQuery = c.req.query();
   const rawQueries = c.req.queries();
 
-  // Handle array params (chainIds[]=X&chainIds[]=Y)
+  // Handle array params (chainIds[]=X&chainIds[]=Y, reviewers[]=X, agentIds[]=X)
   if (rawQueries['chainIds[]'] && rawQueries['chainIds[]'].length > 1) {
     (rawQuery as Record<string, unknown>)['chainIds[]'] = rawQueries['chainIds[]'];
+  }
+  if (rawQueries['reviewers[]'] && rawQueries['reviewers[]'].length > 1) {
+    (rawQuery as Record<string, unknown>)['reviewers[]'] = rawQueries['reviewers[]'];
+  }
+  if (rawQueries['agentIds[]'] && rawQueries['agentIds[]'].length > 1) {
+    (rawQuery as Record<string, unknown>)['agentIds[]'] = rawQueries['agentIds[]'];
   }
 
   // Validate query params
@@ -136,6 +147,10 @@ feedbacks.get('/', async (c) => {
 
   // Resolve chain IDs
   const chainIds = query['chainIds[]'] ?? query.chainIds;
+  // Resolve reviewers
+  const reviewers = query['reviewers[]'] ?? query.reviewers;
+  // Resolve agentIds
+  const agentIds = query['agentIds[]'] ?? query.agentIds;
 
   // Calculate offset from cursor or offset param
   let offset = query.offset ?? 0;
@@ -155,6 +170,9 @@ feedbacks.get('/', async (c) => {
     getAllFeedbacksPaginated(c.env.DB, {
       chainIds,
       scoreCategory: query.scoreCategory as ScoreCategory | undefined,
+      reviewers,
+      agentIds,
+      feedbackIndex: query.feedbackIndex,
       limit: query.limit,
       offset,
     }),
@@ -165,6 +183,7 @@ feedbacks.get('/', async (c) => {
   const transformedFeedbacks = feedbacksResult.feedbacks.map(transformFeedback);
 
   // Enrich with agent names from Qdrant
+  let enrichmentFailed = false;
   if (c.env.QDRANT_URL && c.env.QDRANT_API_KEY && transformedFeedbacks.length > 0) {
     try {
       const { createQdrantClient } = await import('@/services/qdrant');
@@ -191,7 +210,8 @@ feedbacks.get('/', async (c) => {
         }
       }
     } catch (error) {
-      // Qdrant enrichment failed, continue with default names
+      // Qdrant enrichment failed, continue with default names but flag it
+      enrichmentFailed = true;
       console.warn('Feedbacks: Qdrant enrichment failed:', error);
     }
   }
@@ -213,6 +233,7 @@ feedbacks.get('/', async (c) => {
       limit: query.limit,
       hasMore,
       nextCursor,
+      enrichmentStatus: enrichmentFailed ? ('partial' as const) : ('complete' as const),
     },
     stats: {
       total: feedbacksResult.total,
@@ -220,6 +241,9 @@ feedbacks.get('/', async (c) => {
       neutral: stats.neutral,
       negative: stats.negative,
     },
+    warnings: enrichmentFailed
+      ? ['Agent names may be incomplete due to Qdrant unavailability']
+      : undefined,
   };
 
   // Cache the response
@@ -269,8 +293,17 @@ feedbacks.get('/:feedbackId/responses', async (c) => {
     return errors.validationError(c, 'Feedback ID is required');
   }
 
+  // Validate feedbackId format: should be "chainId:agentId:..." with at least 2 parts
+  // and chainId must be a valid number
+  if (!/^\d+:.+/.test(feedbackId)) {
+    return errors.validationError(
+      c,
+      'Invalid feedback ID format. Expected: chainId:agentId:clientAddress:feedbackIndex'
+    );
+  }
+
   // Extract chainId from feedbackId
-  // Feedback IDs are typically formatted as "chainId:agentId:index" or similar
+  // Feedback IDs are typically formatted as "chainId:agentId:clientAddress:feedbackIndex"
   // We need the chainId to know which subgraph to query
   const parts = feedbackId.split(':');
   const chainIdStr = parts[0];

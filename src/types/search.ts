@@ -37,6 +37,8 @@ export interface SearchFilters {
   owner?: string;
   /** Filter by agent wallet address */
   walletAddress?: string;
+  /** Filter by wallet verified status (ERC-8004 v1.0) */
+  walletVerified?: boolean;
   /** Filter by specific trust models */
   trustModels?: string[];
   /** Filter by agents with trust models */
@@ -45,6 +47,8 @@ export interface SearchFilters {
   reachableA2a?: boolean;
   /** Filter by MCP reachability */
   reachableMcp?: boolean;
+  /** Filter by Web reachability */
+  reachableWeb?: boolean;
   /** Filter by registration file presence */
   hasRegistrationFile?: boolean;
   /** Filter by exact ENS name */
@@ -79,6 +83,12 @@ export interface SearchFilters {
   declaredSkill?: string;
   /** Filter by declared OASF domain slug */
   declaredDomain?: string;
+  /** Filter by multiple declared OASF skill slugs (match any) */
+  declaredSkills?: string[];
+  /** Filter by multiple declared OASF domain slugs (match any) */
+  declaredDomains?: string[];
+  /** Filter by agents with specific feedback tags (match any) */
+  hasTags?: string[];
   // Gap 5: New endpoint filters
   /** Filter by agents with email endpoint */
   hasEmail?: boolean;
@@ -87,6 +97,17 @@ export interface SearchFilters {
   // Gap 6: Reachability attestation filters
   /** Filter by agents with recent reachability attestation (within 14 days) */
   hasRecentReachability?: boolean;
+  // Validation score filters
+  /** Minimum validation score (0-100) */
+  minValidationScore?: number;
+  /** Maximum validation score (0-100) */
+  maxValidationScore?: number;
+  /** Filter by agents with at least one validation */
+  hasValidations?: boolean;
+  /** Filter by agents with pending validations */
+  hasPendingValidations?: boolean;
+  /** Filter by agents with expired validations */
+  hasExpiredValidations?: boolean;
 }
 
 /**
@@ -143,8 +164,6 @@ export interface SearchResultMetadata {
   operators?: string[];
   /** Owner wallet address */
   owner?: string;
-  /** x402 support flag (alternate name) */
-  x402support?: boolean;
   /** Supported trust methods */
   supportedTrusts?: string[];
   /** Agent wallet (alternate name) */

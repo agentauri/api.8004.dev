@@ -41,6 +41,7 @@ const SUPPORTED_CHAIN_IDS: number[] = [11155111];
 /**
  * Raw Feedback entity from The Graph
  * ERC-8004 v1.0 (Jan 26) fields: endpoint, feedbackIndex, feedbackURI, feedbackHash
+ * ERC-8004 v1.0 (Mainnet Readiness): value replaces score (BigDecimal computed from int128 + uint8)
  */
 interface GraphFeedback {
   id: string;
@@ -50,7 +51,12 @@ interface GraphFeedback {
     agentId: string;
   };
   clientAddress: string;
-  score: string;
+  /**
+   * Feedback value as BigDecimal string.
+   * The subgraph computes this from raw value (int128) and valueDecimals (uint8).
+   * Typically in 0-100 range for backward compatibility.
+   */
+  value: string;
   tag1: string | null;
   tag2: string | null;
   /** Service endpoint reference (ERC-8004 v1.0) */
@@ -88,6 +94,7 @@ interface GraphFeedbackSyncState {
 
 /**
  * GraphQL query for v1.0 feedback (includes endpoint, feedbackIndex, feedbackURI, feedbackHash)
+ * ERC-8004 Mainnet Readiness: Uses `value` (BigDecimal) instead of deprecated `score` field
  */
 const FEEDBACK_QUERY_V1_0 = `
   query GetFeedback($first: Int!, $skip: Int!, $createdAtGt: BigInt!) {
@@ -108,7 +115,7 @@ const FEEDBACK_QUERY_V1_0 = `
         agentId
       }
       clientAddress
-      score
+      value
       tag1
       tag2
       endpoint
@@ -207,13 +214,26 @@ function parseAgentId(agent: GraphFeedback['agent']): { agentId: string; chainId
 }
 
 /**
- * Convert Graph feedback score to 0-100 range
- * The Graph stores score as string, typically 0-100
+ * Convert Graph feedback value to 0-100 range
+ * ERC-8004 Mainnet Readiness: The subgraph now provides `value` as BigDecimal
+ * (computed from int128 value and uint8 valueDecimals on the contract).
+ * The value is typically in 0-100 range for backward compatibility.
+ *
+ * @param value - BigDecimal string from subgraph (e.g., "85", "85.5", "100.0")
+ * @returns Normalized integer score in 0-100 range
  */
-function normalizeScore(score: string): number {
-  const numScore = Number.parseInt(score, 10);
-  // Clamp to 0-100 range
-  return Math.max(0, Math.min(100, numScore));
+function normalizeValue(value: string): number {
+  // Parse as float to handle BigDecimal format
+  const numValue = Number.parseFloat(value);
+
+  // Handle NaN (invalid input)
+  if (Number.isNaN(numValue)) {
+    console.warn(`normalizeValue: Invalid value "${value}", defaulting to 0`);
+    return 0;
+  }
+
+  // Round to nearest integer and clamp to 0-100 range
+  return Math.max(0, Math.min(100, Math.round(numValue)));
 }
 
 /**
@@ -253,16 +273,9 @@ function normalizeTag(tag: string | null): string | null {
  * Normalizes both bytes32 hex strings (v0.4) and regular strings (v1.0)
  */
 function buildTags(tag1: string | null, tag2: string | null): string[] {
-  const tags: string[] = [];
-  const normalized1 = normalizeTag(tag1);
-  const normalized2 = normalizeTag(tag2);
-  if (normalized1) {
-    tags.push(normalized1);
-  }
-  if (normalized2) {
-    tags.push(normalized2);
-  }
-  return tags;
+  return [normalizeTag(tag1), normalizeTag(tag2)].filter(
+    (tag): tag is string => tag !== null
+  );
 }
 
 /**
@@ -271,6 +284,35 @@ function buildTags(tag1: string | null, tag2: string | null): string[] {
 function timestampToIso(timestamp: string): string {
   const ts = Number.parseInt(timestamp, 10);
   return new Date(ts * 1000).toISOString();
+}
+
+/**
+ * Validate Ethereum address format (0x + 40 hex chars)
+ */
+function isValidEthereumAddress(address: string): boolean {
+  return /^0x[a-fA-F0-9]{40}$/.test(address);
+}
+
+/**
+ * Validate and sanitize a string field from external data
+ * @param value - The string value to validate
+ * @param maxLength - Maximum allowed length
+ * @param fieldName - Field name for logging
+ * @returns Sanitized string or undefined if invalid
+ */
+function sanitizeExternalString(
+  value: string | null | undefined,
+  maxLength: number,
+  fieldName: string
+): string | undefined {
+  if (!value) return undefined;
+  if (value.length > maxLength) {
+    console.warn(
+      `Graph feedback sync: ${fieldName} exceeds max length (${value.length} > ${maxLength}), truncating`
+    );
+    return value.slice(0, maxLength);
+  }
+  return value;
 }
 
 /**
@@ -358,7 +400,7 @@ async function processCurationFeedback(
 ): Promise<boolean> {
   if (!qdrant) return false;
 
-  const score = normalizeScore(feedback.score);
+  const score = normalizeValue(feedback.value);
 
   // Only process STAR feedback (high score endorsements)
   if (score < STAR_SCORE_THRESHOLD) {
@@ -477,21 +519,34 @@ async function processFeedback(
     return 'unsupported';
   }
 
-  // Build feedback entry
+  // Validate clientAddress is a valid Ethereum address
+  if (!isValidEthereumAddress(feedback.clientAddress)) {
+    console.warn(
+      `Graph feedback sync: invalid clientAddress "${feedback.clientAddress}" for feedback ${feedback.id}, skipping`
+    );
+    return 'unsupported';
+  }
+
+  // Sanitize external string fields with max length limits
+  const MAX_URI_LENGTH = 2048;
+  const MAX_ENDPOINT_LENGTH = 512;
+  const MAX_HASH_LENGTH = 66; // 0x + 64 hex chars
+
+  // Build feedback entry with validated/sanitized data
   const newFeedback: NewFeedback = {
     agent_id: agentId,
     chain_id: chainId,
-    score: normalizeScore(feedback.score),
+    score: normalizeValue(feedback.value),
     tags: JSON.stringify(buildTags(feedback.tag1, feedback.tag2)),
     context: undefined, // Graph feedback doesn't have context field
-    feedback_uri: feedback.feedbackURI ?? undefined,
-    feedback_hash: feedback.feedbackHash ?? undefined,
-    submitter: feedback.clientAddress,
+    feedback_uri: sanitizeExternalString(feedback.feedbackURI, MAX_URI_LENGTH, 'feedbackURI'),
+    feedback_hash: sanitizeExternalString(feedback.feedbackHash, MAX_HASH_LENGTH, 'feedbackHash'),
+    submitter: feedback.clientAddress.toLowerCase(), // Normalize to lowercase
     eas_uid: toGraphFeedbackUid(feedback.id), // Use eas_uid for dedup with "graph:" prefix
     tx_id: undefined, // Transaction hash not available from Graph
     // ERC-8004 v1.0 fields
     feedback_index: feedback.feedbackIndex ? Number.parseInt(feedback.feedbackIndex, 10) : undefined,
-    endpoint: feedback.endpoint ?? undefined,
+    endpoint: sanitizeExternalString(feedback.endpoint, MAX_ENDPOINT_LENGTH, 'endpoint'),
     submitted_at: timestampToIso(feedback.createdAt),
   };
 
