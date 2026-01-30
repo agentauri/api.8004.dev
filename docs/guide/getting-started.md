@@ -131,15 +131,18 @@ See [Rate Limiting](/guide/rate-limiting) for details.
 
 ## Supported Chains
 
-| Chain | Chain ID | Network |
-|-------|----------|---------|
-| Ethereum Sepolia | 11155111 | Testnet |
-| Base Sepolia | 84532 | Testnet |
-| Polygon Amoy | 80002 | Testnet |
-| Linea Sepolia | 59141 | Testnet |
-| Hedera Testnet | 296 | Testnet |
-| HyperEVM Testnet | 998 | Testnet |
-| SKALE | 1351057110 | Testnet |
+| Chain | Chain ID | Network | Status |
+|-------|----------|---------|--------|
+| Ethereum | 1 | Mainnet | ✅ Active |
+| Ethereum Sepolia | 11155111 | Testnet | ✅ Active |
+| Base Sepolia | 84532 | Testnet | ✅ Active |
+| Polygon Amoy | 80002 | Testnet | ✅ Active |
+| Linea Sepolia | 59141 | Testnet | ⏳ Pending |
+| Hedera Testnet | 296 | Testnet | ⏳ Pending |
+| HyperEVM Testnet | 998 | Testnet | ⏳ Pending |
+| SKALE | 1351057110 | Testnet | ⏳ Pending |
+
+> **Note**: Only active chains support API filtering. Pending chains are awaiting v1.0 contract deployment.
 
 ## Next Steps
 

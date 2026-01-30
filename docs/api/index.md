@@ -34,7 +34,7 @@ See [Authentication](/guide/authentication) for details.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/v1/agents` | List agents with 27+ filters |
+| GET | `/api/v1/agents` | List agents with 50+ filters |
 | GET | `/api/v1/agents/batch` | Batch fetch multiple agents |
 | GET | `/api/v1/agents/:agentId` | Get single agent details |
 | GET | `/api/v1/agents/:agentId/similar` | Find similar agents |
@@ -158,15 +158,18 @@ See [Error Handling](/guide/error-handling) for error codes.
 
 ## Supported Chains
 
-| Chain | Chain ID | Network |
-|-------|----------|---------|
-| Ethereum Sepolia | 11155111 | Testnet |
-| Base Sepolia | 84532 | Testnet |
-| Polygon Amoy | 80002 | Testnet |
-| Linea Sepolia | 59141 | Testnet |
-| Hedera Testnet | 296 | Testnet |
-| HyperEVM Testnet | 998 | Testnet |
-| SKALE | 1351057110 | Testnet |
+| Chain | Chain ID | Network | Status |
+|-------|----------|---------|--------|
+| Ethereum | 1 | Mainnet | ✅ Active (v1.0) |
+| Ethereum Sepolia | 11155111 | Testnet | ✅ Active (v1.0) |
+| Base Sepolia | 84532 | Testnet | ✅ Active (v1.0) |
+| Polygon Amoy | 80002 | Testnet | ✅ Active (v1.0) |
+| Linea Sepolia | 59141 | Testnet | ⏳ Pending v1.0 |
+| Hedera Testnet | 296 | Testnet | ⏳ Pending v1.0 |
+| HyperEVM Testnet | 998 | Testnet | ⏳ Pending v1.0 |
+| SKALE | 1351057110 | Testnet | ⏳ Pending v1.0 |
+
+> **Note**: Only active chains are supported for filtering. Pending chains require v1.0 contract deployment.
 
 ## Rate Limits
 

@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-01-30
+
+### Added
+
+- **Ethereum Mainnet Support**: Full mainnet data sync and API filtering
+  - Added chain ID `1` to `SUPPORTED_CHAIN_IDS` validation schema
+  - Enabled mainnet in graph-sync-worker, graph-feedback-worker, and reconciliation-worker
+  - Updated mainnet subgraph ID to latest deployment (`FV6RR6y13rsnCxBAicKuQEwDp8ioEGiNaWaZUmvr1F8k`)
+
+- **Watchtower v1 Reachability Format**: Dual-format support for reachability attestations
+  - Legacy format: `tag1="reachability_mcp"`, `tag1="reachability_a2a"`, `tag1="reachability_web"`
+  - Watchtower v1 format: `tag1="reachable"`, `tag2="mcp|a2a|web"`
+  - Web endpoint reachability tracking (new)
+
+### Changed
+
+- **agent0-sdk**: Upgraded from v1.1.1 to v1.4.2
+  - Adapted to `averageValue` rename (was `averageScore`)
+  - Adapted to `minAverageValue` rename (was `minAverageScore`)
+  - Fixed `x402Support` casing in search result metadata
+
+### Fixed
+
+- Reconciliation worker now syncs all active chains (was Sepolia-only)
+- API requests with `chainId=1` no longer rejected by Zod validation
+- Subgraph ID for mainnet aligned with agent0-ts v1.4.2 and agent0-py v1.4.2
+
 ## [2.1.0] - 2026-01-12
 
 ### Added
@@ -64,7 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Qdrant Vector Search**: Complete migration from Pinecone/search-service to Qdrant Cloud
-  - Native vector search with 27+ filters
+  - Native vector search with 50+ filters
   - Venice AI embeddings (text-embedding-bge-m3, 1024 dimensions)
   - Custom filter builder for complex Qdrant queries
   - Payload indexing for efficient filtering
@@ -231,7 +258,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CORS configuration
 - Rate limiting protection
 
-[Unreleased]: https://github.com/agent0lab/8004-backend/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/agent0lab/8004-backend/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/agent0lab/8004-backend/compare/v2.1.0...v2.2.0
+[2.1.0]: https://github.com/agent0lab/8004-backend/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/agent0lab/8004-backend/compare/v1.1.0...v2.0.0
 [1.1.0]: https://github.com/agent0lab/8004-backend/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/agent0lab/8004-backend/releases/tag/v1.0.0

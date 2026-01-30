@@ -25,7 +25,7 @@ describe('GET /api/v1/openapi/openapi.json', () => {
     const data = await res.json();
     expect(data.openapi).toBe('3.1.0');
     expect(data.info.title).toBe('8004 Backend API');
-    expect(data.info.version).toBe('1.0.0');
+    expect(data.info.version).toBe('2.2.0');
   });
 
   it('includes all required paths', async () => {

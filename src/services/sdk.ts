@@ -105,6 +105,7 @@ export interface ChainConfig {
   explorerUrl: string;
   rpcEnvKey: keyof Pick<
     Env,
+    | 'ETHEREUM_RPC_URL'
     | 'SEPOLIA_RPC_URL'
     | 'BASE_SEPOLIA_RPC_URL'
     | 'POLYGON_AMOY_RPC_URL'
@@ -119,6 +120,7 @@ export interface ChainConfig {
  * Chain IDs with ERC-8004 v1.0 contracts actively deployed and indexed
  */
 export const ACTIVE_CHAIN_IDS: Set<number> = new Set([
+  1,        // Ethereum Mainnet
   11155111, // Ethereum Sepolia
   84532,    // Base Sepolia
   80002,    // Polygon Amoy
@@ -128,6 +130,13 @@ export const ACTIVE_CHAIN_IDS: Set<number> = new Set([
  * Supported chains configuration
  */
 export const SUPPORTED_CHAINS: ChainConfig[] = [
+  {
+    chainId: 1,
+    name: 'Ethereum',
+    shortName: 'mainnet',
+    explorerUrl: 'https://etherscan.io',
+    rpcEnvKey: 'ETHEREUM_RPC_URL',
+  },
   {
     chainId: 11155111,
     name: 'Ethereum Sepolia',
@@ -983,8 +992,8 @@ export async function fetchReputationFromSDK(
 ): Promise<{ count: number; averageScore: number } | null> {
   try {
     const result = await sdk.getReputationSummary(agentId);
-    if (result && typeof result.count === 'number' && typeof result.averageScore === 'number') {
-      return { count: result.count, averageScore: result.averageScore };
+    if (result && typeof result.count === 'number' && typeof result.averageValue === 'number') {
+      return { count: result.count, averageScore: result.averageValue };
     }
     return null;
   } catch {
@@ -1287,6 +1296,7 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
     const config = getChainConfig(chainId);
     if (!config) throw new Error(`Unsupported chain: ${chainId}`);
     const rpcUrl = env[config.rpcEnvKey];
+    if (!rpcUrl) throw new Error(`RPC URL not configured for chain ${chainId} (${config.rpcEnvKey})`);
     // Pass subgraphOverrides for multi-chain query support
     const sdk = new SDK({ chainId, rpcUrl, subgraphOverrides: subgraphUrls });
     sdkInstances.set(chainId, sdk);
@@ -2066,12 +2076,12 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
         }
         const sdk = getSDK(primaryChain.chainId);
 
-        // Use SDK's native reputation search with minAverageScore
+        // Use SDK's native reputation search with minAverageValue
         // Over-fetch if maxRep is set (we'll need to post-filter)
         const fetchLimit = maxRep !== undefined ? Math.min(limit * 3, 100) : limit;
 
         const result = await sdk.searchAgentsByReputation(
-          { minAverageScore: minRep },
+          { minAverageValue: minRep },
           {
             pageSize: fetchLimit,
             cursor,

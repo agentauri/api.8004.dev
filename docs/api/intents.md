@@ -202,7 +202,7 @@ Find agents that can fulfill each step of a template workflow.
 ```json
 {
   "chainIds": [11155111, 84532],
-  "minReputation": 3.5,
+  "minReputation": 50,
   "limit": 5
 }
 ```
@@ -221,7 +221,7 @@ curl -X POST "https://api.8004.dev/api/v1/intents/code-review-pipeline/match" \
   -H "Content-Type: application/json" \
   -d '{
     "chainIds": [11155111],
-    "minReputation": 3.5,
+    "minReputation": 50,
     "limit": 3
   }'
 ```
@@ -250,14 +250,14 @@ curl -X POST "https://api.8004.dev/api/v1/intents/code-review-pipeline/match" \
             "name": "CodeAnalyzer Pro",
             "matchScore": 0.95,
             "skills": ["code_analysis", "pattern_recognition", "code_review"],
-            "reputationScore": 4.5
+            "reputationScore": 90
           },
           {
             "agentId": "11155111:456",
             "name": "StructureBot",
             "matchScore": 0.82,
             "skills": ["code_analysis", "ast_parsing"],
-            "reputationScore": 4.0
+            "reputationScore": 80
           }
         ],
         "bestMatch": {
@@ -317,7 +317,7 @@ Same functionality as POST but with query parameters.
 ### Example Request
 
 ```bash
-curl "https://api.8004.dev/api/v1/intents/code-review-pipeline/match?chainIds=11155111&minReputation=3.5&limit=3" \
+curl "https://api.8004.dev/api/v1/intents/code-review-pipeline/match?chainIds=11155111&minReputation=50&limit=3" \
   -H "X-API-Key: your-api-key"
 ```
 

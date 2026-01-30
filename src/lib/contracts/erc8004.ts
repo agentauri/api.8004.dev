@@ -20,10 +20,15 @@ export interface ERC8004ChainContracts {
 /**
  * ERC-8004 contract addresses by chain ID
  *
- * Note: Only ETH Sepolia is currently deployed (January 2026).
+ * Note: ETH Mainnet and ETH Sepolia are currently deployed (January 2026).
  * Other testnets pending deployment - contact @lentan for updates.
  */
 export const ERC8004_CONTRACTS: Record<number, ERC8004ChainContracts> = {
+  // Ethereum Mainnet - DEPLOYED (Genesis Month)
+  1: {
+    identityRegistry: '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432',
+    reputationRegistry: '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63',
+  },
   // Ethereum Sepolia (Testnet) - DEPLOYED
   11155111: {
     identityRegistry: '0x8004A818BFB912233c491871b3d84c89A494BD9e',

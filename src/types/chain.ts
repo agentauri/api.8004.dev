@@ -36,6 +36,7 @@ export interface ChainStats {
  * RPC URL environment variable keys
  */
 export type RpcEnvKey =
+  | 'ETHEREUM_RPC_URL'
   | 'SEPOLIA_RPC_URL'
   | 'BASE_SEPOLIA_RPC_URL'
   | 'POLYGON_AMOY_RPC_URL'

@@ -16,7 +16,7 @@ function generateOpenAPISpec(): object {
     openapi: '3.1.0',
     info: {
       title: '8004 Backend API',
-      version: '1.0.0',
+      version: '2.2.0',
       description:
         'Unified REST API for the ERC-8004 agent explorer. Provides agent discovery, semantic search, OASF classification, reputation data, team composition, intent templates, and more.',
       license: {
@@ -53,6 +53,7 @@ function generateOpenAPISpec(): object {
       { name: 'Taxonomy', description: 'OASF taxonomy data' },
       { name: 'Stats', description: 'Platform-wide statistics' },
       { name: 'Health', description: 'Service health checks' },
+      { name: 'API Keys', description: 'API key management' },
     ],
     paths: {
       '/api/v1/health': {
@@ -104,7 +105,7 @@ function generateOpenAPISpec(): object {
               name: 'chains',
               in: 'query',
               description: 'Filter by chain IDs (comma-separated)',
-              schema: { type: 'string', example: '11155111,84532' },
+              schema: { type: 'string', example: '1,11155111,84532' },
             },
             {
               name: 'active',
@@ -370,6 +371,66 @@ function generateOpenAPISpec(): object {
               description: 'Filter by update date (ISO 8601)',
               schema: { type: 'string', format: 'date-time' },
             },
+            {
+              name: 'walletVerified',
+              in: 'query',
+              description: 'Filter by wallet verification status (ERC-8004 v1.0)',
+              schema: { type: 'boolean' },
+            },
+            {
+              name: 'declaredSkills',
+              in: 'query',
+              description: 'Filter by multiple declared OASF skill slugs (comma-separated)',
+              schema: { type: 'string' },
+            },
+            {
+              name: 'declaredDomains',
+              in: 'query',
+              description: 'Filter by multiple declared OASF domain slugs (comma-separated)',
+              schema: { type: 'string' },
+            },
+            {
+              name: 'hasTags',
+              in: 'query',
+              description: 'Filter by agents with specific feedback tags (comma-separated)',
+              schema: { type: 'string' },
+            },
+            {
+              name: 'reachableWeb',
+              in: 'query',
+              description: 'Filter by Web endpoint reachability',
+              schema: { type: 'boolean' },
+            },
+            {
+              name: 'minValidationScore',
+              in: 'query',
+              description: 'Minimum validation score (0-100)',
+              schema: { type: 'integer', minimum: 0, maximum: 100 },
+            },
+            {
+              name: 'maxValidationScore',
+              in: 'query',
+              description: 'Maximum validation score (0-100)',
+              schema: { type: 'integer', minimum: 0, maximum: 100 },
+            },
+            {
+              name: 'hasValidations',
+              in: 'query',
+              description: 'Filter by agents with at least one validation',
+              schema: { type: 'boolean' },
+            },
+            {
+              name: 'hasPendingValidations',
+              in: 'query',
+              description: 'Filter by agents with pending validations',
+              schema: { type: 'boolean' },
+            },
+            {
+              name: 'hasExpiredValidations',
+              in: 'query',
+              description: 'Filter by agents with expired validations',
+              schema: { type: 'boolean' },
+            },
           ],
           responses: {
             200: {
@@ -566,6 +627,46 @@ function generateOpenAPISpec(): object {
           },
         },
       },
+      '/api/v1/agents/{agentId}/reputation/history': {
+        get: {
+          tags: ['Reputation'],
+          summary: 'Get reputation history',
+          description: 'Get historical reputation data for an agent over a specified period.',
+          parameters: [
+            {
+              name: 'agentId',
+              in: 'path',
+              required: true,
+              description: 'Agent ID in format chainId:tokenId',
+              schema: { type: 'string', pattern: '^\\d+:\\d+$' },
+            },
+            {
+              name: 'period',
+              in: 'query',
+              description: 'Time period for history',
+              schema: { type: 'string', enum: ['7d', '30d', '90d', '1y'], default: '30d' },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Reputation history',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/ReputationHistoryResponse' },
+                },
+              },
+            },
+            404: {
+              description: 'Agent not found',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/ErrorResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
       '/api/v1/search': {
         post: {
           tags: ['Search'],
@@ -599,6 +700,271 @@ function generateOpenAPISpec(): object {
           },
         },
       },
+      '/api/v1/search/stream': {
+        post: {
+          tags: ['Search'],
+          summary: 'Streaming semantic search',
+          description:
+            'Search for agents using natural language queries with results streamed via Server-Sent Events (SSE). Each result is sent as it becomes available.',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/SearchRequest' },
+              },
+            },
+          },
+          responses: {
+            200: {
+              description: 'SSE stream of search results',
+              content: {
+                'text/event-stream': {
+                  schema: {
+                    type: 'string',
+                    description:
+                      'Server-Sent Events stream. Events: `result` (individual agent), `meta` (search metadata), `done` (stream complete), `error` (error occurred).',
+                  },
+                },
+              },
+            },
+            400: {
+              description: 'Validation error',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/ErrorResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/keys': {
+        post: {
+          tags: ['API Keys'],
+          summary: 'Create API key',
+          description: 'Create a new API key with specified permissions and rate limits.',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['name'],
+                  properties: {
+                    name: { type: 'string', description: 'Descriptive name for the API key' },
+                    permissions: {
+                      type: 'array',
+                      items: { type: 'string' },
+                      description: 'Permission scopes (default: ["read"])',
+                    },
+                    rateLimit: {
+                      type: 'integer',
+                      description: 'Custom rate limit (requests per minute)',
+                    },
+                    expiresAt: {
+                      type: 'string',
+                      format: 'date-time',
+                      description: 'Expiration date (ISO 8601)',
+                    },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            201: {
+              description: 'API key created',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      success: { type: 'boolean' },
+                      data: {
+                        type: 'object',
+                        properties: {
+                          id: { type: 'string' },
+                          key: {
+                            type: 'string',
+                            description: 'The API key value (only shown once)',
+                          },
+                          name: { type: 'string' },
+                          permissions: { type: 'array', items: { type: 'string' } },
+                          createdAt: { type: 'string', format: 'date-time' },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        get: {
+          tags: ['API Keys'],
+          summary: 'List API keys',
+          description: 'List all API keys for the authenticated account.',
+          responses: {
+            200: {
+              description: 'List of API keys',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      success: { type: 'boolean' },
+                      data: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            id: { type: 'string' },
+                            name: { type: 'string' },
+                            permissions: { type: 'array', items: { type: 'string' } },
+                            lastUsedAt: { type: 'string', format: 'date-time', nullable: true },
+                            createdAt: { type: 'string', format: 'date-time' },
+                            expiresAt: { type: 'string', format: 'date-time', nullable: true },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/keys/{id}': {
+        get: {
+          tags: ['API Keys'],
+          summary: 'Get API key details',
+          description: 'Get details for a specific API key.',
+          parameters: [
+            {
+              name: 'id',
+              in: 'path',
+              required: true,
+              description: 'API key ID',
+              schema: { type: 'string' },
+            },
+          ],
+          responses: {
+            200: { description: 'API key details' },
+            404: { description: 'API key not found' },
+          },
+        },
+        patch: {
+          tags: ['API Keys'],
+          summary: 'Update API key',
+          description: 'Update an existing API key (name, permissions, rate limit, expiration).',
+          parameters: [
+            {
+              name: 'id',
+              in: 'path',
+              required: true,
+              description: 'API key ID',
+              schema: { type: 'string' },
+            },
+          ],
+          requestBody: {
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    name: { type: 'string' },
+                    permissions: { type: 'array', items: { type: 'string' } },
+                    rateLimit: { type: 'integer' },
+                    expiresAt: { type: 'string', format: 'date-time', nullable: true },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            200: { description: 'API key updated' },
+            404: { description: 'API key not found' },
+          },
+        },
+        delete: {
+          tags: ['API Keys'],
+          summary: 'Delete API key',
+          description: 'Permanently delete an API key.',
+          parameters: [
+            {
+              name: 'id',
+              in: 'path',
+              required: true,
+              description: 'API key ID',
+              schema: { type: 'string' },
+            },
+          ],
+          responses: {
+            200: { description: 'API key deleted' },
+            404: { description: 'API key not found' },
+          },
+        },
+      },
+      '/api/v1/keys/{id}/rotate': {
+        post: {
+          tags: ['API Keys'],
+          summary: 'Rotate API key',
+          description: 'Generate a new key value for an existing API key. The old key is invalidated.',
+          parameters: [
+            {
+              name: 'id',
+              in: 'path',
+              required: true,
+              description: 'API key ID',
+              schema: { type: 'string' },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'New key generated',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      success: { type: 'boolean' },
+                      data: {
+                        type: 'object',
+                        properties: {
+                          id: { type: 'string' },
+                          key: { type: 'string', description: 'New API key value (only shown once)' },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            404: { description: 'API key not found' },
+          },
+        },
+      },
+      '/api/v1/keys/{id}/usage': {
+        get: {
+          tags: ['API Keys'],
+          summary: 'Get API key usage',
+          description: 'Get usage statistics for a specific API key.',
+          parameters: [
+            {
+              name: 'id',
+              in: 'path',
+              required: true,
+              description: 'API key ID',
+              schema: { type: 'string' },
+            },
+          ],
+          responses: {
+            200: { description: 'Usage statistics' },
+            404: { description: 'API key not found' },
+          },
+        },
+      },
       '/api/v1/chains': {
         get: {
           tags: ['Chains'],
@@ -627,6 +993,103 @@ function generateOpenAPISpec(): object {
               content: {
                 'application/json': {
                   schema: { $ref: '#/components/schemas/PlatformStatsResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/stats/global': {
+        get: {
+          tags: ['Stats'],
+          summary: 'Get global cross-chain statistics',
+          description: 'Get aggregated statistics across all supported chains.',
+          responses: {
+            200: {
+              description: 'Global statistics',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/GlobalStatsResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/stats/chains/{chainId}': {
+        get: {
+          tags: ['Stats'],
+          summary: 'Get chain-specific statistics',
+          description: 'Get protocol statistics for a specific chain.',
+          parameters: [
+            {
+              name: 'chainId',
+              in: 'path',
+              required: true,
+              description: 'Chain ID',
+              schema: { type: 'integer', enum: SUPPORTED_CHAIN_IDS },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Chain statistics',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/ChainProtocolStatsResponse' },
+                },
+              },
+            },
+            404: {
+              description: 'Chain not found',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/ErrorResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/tags': {
+        get: {
+          tags: ['Feedbacks'],
+          summary: 'Get all unique feedback tags',
+          description: 'Get all unique feedback tags across agents with counts.',
+          parameters: [
+            {
+              name: 'chainIds',
+              in: 'query',
+              description: 'Filter by chain IDs (comma-separated)',
+              schema: { type: 'string' },
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              description: 'Number of results',
+              schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'List of tags with counts',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      success: { type: 'boolean' },
+                      data: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            tag: { type: 'string' },
+                            count: { type: 'integer' },
+                          },
+                        },
+                      },
+                    },
+                  },
                 },
               },
             },
@@ -808,6 +1271,173 @@ function generateOpenAPISpec(): object {
               content: {
                 'application/json': {
                   schema: { $ref: '#/components/schemas/AgentHealthResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/agents/{agentId}/metadata': {
+        get: {
+          tags: ['Agents'],
+          summary: 'Get agent on-chain metadata',
+          description: 'Get all on-chain key-value metadata for an agent.',
+          parameters: [
+            {
+              name: 'agentId',
+              in: 'path',
+              required: true,
+              description: 'Agent ID in format chainId:tokenId',
+              schema: { type: 'string', pattern: '^\\d+:\\d+$' },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Agent metadata key-value pairs',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      success: { type: 'boolean' },
+                      data: {
+                        type: 'object',
+                        additionalProperties: { type: 'string' },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/agents/{agentId}/metadata/{key}': {
+        get: {
+          tags: ['Agents'],
+          summary: 'Get specific agent metadata entry',
+          description: 'Get a specific on-chain metadata entry by key.',
+          parameters: [
+            {
+              name: 'agentId',
+              in: 'path',
+              required: true,
+              description: 'Agent ID in format chainId:tokenId',
+              schema: { type: 'string', pattern: '^\\d+:\\d+$' },
+            },
+            {
+              name: 'key',
+              in: 'path',
+              required: true,
+              description: 'Metadata key',
+              schema: { type: 'string' },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Metadata entry value',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      success: { type: 'boolean' },
+                      data: {
+                        type: 'object',
+                        properties: {
+                          key: { type: 'string' },
+                          value: { type: 'string' },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            404: {
+              description: 'Metadata key not found',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/ErrorResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/agents/{agentId}/validations': {
+        get: {
+          tags: ['Agents'],
+          summary: 'Get agent validations',
+          description: 'Get paginated list of validations for an agent.',
+          parameters: [
+            {
+              name: 'agentId',
+              in: 'path',
+              required: true,
+              description: 'Agent ID in format chainId:tokenId',
+              schema: { type: 'string', pattern: '^\\d+:\\d+$' },
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              description: 'Number of results per page',
+              schema: { type: 'integer', minimum: 1, maximum: 50, default: 10 },
+            },
+            {
+              name: 'cursor',
+              in: 'query',
+              description: 'Pagination cursor',
+              schema: { type: 'string' },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Agent validations list',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/AgentValidationsResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/agents/{agentId}/validations/summary': {
+        get: {
+          tags: ['Agents'],
+          summary: 'Get agent validation summary',
+          description: 'Get validation summary with AgentStats for an agent.',
+          parameters: [
+            {
+              name: 'agentId',
+              in: 'path',
+              required: true,
+              description: 'Agent ID in format chainId:tokenId',
+              schema: { type: 'string', pattern: '^\\d+:\\d+$' },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Agent validation summary',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      success: { type: 'boolean' },
+                      data: {
+                        type: 'object',
+                        properties: {
+                          totalValidations: { type: 'integer' },
+                          completedValidations: { type: 'integer' },
+                          pendingValidations: { type: 'integer' },
+                          expiredValidations: { type: 'integer' },
+                          averageScore: { type: 'number' },
+                        },
+                      },
+                    },
+                  },
                 },
               },
             },
@@ -1391,7 +2021,7 @@ function generateOpenAPISpec(): object {
         get: {
           tags: ['Feedbacks'],
           summary: 'Get all feedbacks',
-          description: 'Get paginated list of all feedbacks across all agents.',
+          description: 'Get paginated list of all feedbacks across all agents with advanced filtering.',
           parameters: [
             {
               name: 'chainIds',
@@ -1406,6 +2036,24 @@ function generateOpenAPISpec(): object {
               schema: { type: 'string', enum: ['positive', 'neutral', 'negative'] },
             },
             {
+              name: 'reviewers',
+              in: 'query',
+              description: 'Filter by reviewer wallet addresses (comma-separated)',
+              schema: { type: 'string' },
+            },
+            {
+              name: 'agentIds',
+              in: 'query',
+              description: 'Filter by multiple agent IDs in format chainId:tokenId (comma-separated)',
+              schema: { type: 'string', example: '11155111:1,11155111:2' },
+            },
+            {
+              name: 'feedbackIndex',
+              in: 'query',
+              description: 'Filter by specific feedback index',
+              schema: { type: 'integer', minimum: 0 },
+            },
+            {
               name: 'limit',
               in: 'query',
               description: 'Number of results',
@@ -1417,6 +2065,12 @@ function generateOpenAPISpec(): object {
               description: 'Pagination cursor',
               schema: { type: 'string' },
             },
+            {
+              name: 'offset',
+              in: 'query',
+              description: 'Number of results to skip (offset-based pagination)',
+              schema: { type: 'integer', minimum: 0 },
+            },
           ],
           responses: {
             200: {
@@ -1424,6 +2078,41 @@ function generateOpenAPISpec(): object {
               content: {
                 'application/json': {
                   schema: { $ref: '#/components/schemas/GlobalFeedbacksResponse' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/api/v1/feedbacks/{feedbackId}/responses': {
+        get: {
+          tags: ['Feedbacks'],
+          summary: 'Get feedback responses',
+          description:
+            'Get responses for a specific feedback entry. Feedback responses are submitted via the appendResponse() function in the ReputationRegistry contract.',
+          parameters: [
+            {
+              name: 'feedbackId',
+              in: 'path',
+              required: true,
+              description: 'Feedback ID (format: chainId:agentId:index)',
+              schema: { type: 'string', example: '11155111:1234:42' },
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Feedback responses',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/FeedbackResponsesResponse' },
+                },
+              },
+            },
+            400: {
+              description: 'Invalid feedback ID format',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/ErrorResponse' },
                 },
               },
             },
@@ -2250,6 +2939,16 @@ function generateOpenAPISpec(): object {
                 hasEmail: { type: 'boolean', description: 'Has email endpoint' },
                 hasOasfEndpoint: { type: 'boolean', description: 'Has OASF API endpoint' },
                 hasRecentReachability: { type: 'boolean', description: 'Has reachability attestation within 14 days' },
+                walletVerified: { type: 'boolean', description: 'Wallet verification status (ERC-8004 v1.0)' },
+                declaredSkills: { type: 'array', items: { type: 'string' }, description: 'Multiple declared OASF skill slugs' },
+                declaredDomains: { type: 'array', items: { type: 'string' }, description: 'Multiple declared OASF domain slugs' },
+                hasTags: { type: 'array', items: { type: 'string' }, description: 'Filter by agents with specific feedback tags' },
+                reachableWeb: { type: 'boolean', description: 'Web endpoint is reachable' },
+                minValidationScore: { type: 'number', minimum: 0, maximum: 100, description: 'Minimum validation score (0-100)' },
+                maxValidationScore: { type: 'number', minimum: 0, maximum: 100, description: 'Maximum validation score (0-100)' },
+                hasValidations: { type: 'boolean', description: 'Has at least one validation' },
+                hasPendingValidations: { type: 'boolean', description: 'Has pending validations' },
+                hasExpiredValidations: { type: 'boolean', description: 'Has expired validations' },
               },
             },
             minScore: { type: 'number', minimum: 0, maximum: 1, default: 0.3 },
@@ -3019,6 +3718,130 @@ function generateOpenAPISpec(): object {
           properties: {
             success: { type: 'boolean', enum: [true] },
             data: { type: 'object' },
+          },
+        },
+        FeedbackResponsesResponse: {
+          type: 'object',
+          required: ['success', 'data'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: {
+              type: 'object',
+              required: ['feedbackId', 'responses', 'count'],
+              properties: {
+                feedbackId: { type: 'string', description: 'Feedback ID' },
+                responses: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      id: { type: 'string' },
+                      responder: { type: 'string', description: 'Wallet address of responder' },
+                      responseUri: { type: 'string', description: 'IPFS or HTTPS URI to response content' },
+                      responseHash: { type: 'string', description: 'KECCAK-256 hash of response content' },
+                      createdAt: { type: 'string', format: 'date-time' },
+                    },
+                  },
+                },
+                count: { type: 'integer', description: 'Number of responses' },
+              },
+            },
+          },
+        },
+        ReputationHistoryResponse: {
+          type: 'object',
+          required: ['success', 'data'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: {
+              type: 'object',
+              required: ['agentId', 'period', 'history'],
+              properties: {
+                agentId: { type: 'string' },
+                period: { type: 'string', enum: ['7d', '30d', '90d', '1y'] },
+                history: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      date: { type: 'string', format: 'date' },
+                      score: { type: 'number', description: 'Reputation score (0-100)' },
+                      feedbackCount: { type: 'integer' },
+                    },
+                  },
+                },
+                currentScore: { type: 'number' },
+                totalFeedback: { type: 'integer' },
+              },
+            },
+          },
+        },
+        AgentValidationsResponse: {
+          type: 'object',
+          required: ['success', 'data', 'meta'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  validatorAddress: { type: 'string' },
+                  score: { type: 'integer', minimum: 0, maximum: 100 },
+                  status: { type: 'string', enum: ['pending', 'completed', 'expired'] },
+                  createdAt: { type: 'string', format: 'date-time' },
+                  expiresAt: { type: 'string', format: 'date-time' },
+                },
+              },
+            },
+            meta: {
+              type: 'object',
+              properties: {
+                total: { type: 'integer' },
+                hasMore: { type: 'boolean' },
+                nextCursor: { type: 'string' },
+              },
+            },
+          },
+        },
+        GlobalStatsResponse: {
+          type: 'object',
+          required: ['success', 'data'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: {
+              type: 'object',
+              properties: {
+                totalAgents: { type: 'integer' },
+                totalFeedback: { type: 'integer' },
+                totalChains: { type: 'integer' },
+                averageReputation: { type: 'number' },
+                mcpEnabledCount: { type: 'integer' },
+                a2aEnabledCount: { type: 'integer' },
+              },
+            },
+          },
+        },
+        ChainProtocolStatsResponse: {
+          type: 'object',
+          required: ['success', 'data'],
+          properties: {
+            success: { type: 'boolean', enum: [true] },
+            data: {
+              type: 'object',
+              properties: {
+                chainId: { type: 'integer' },
+                chainName: { type: 'string' },
+                totalAgents: { type: 'integer' },
+                activeAgents: { type: 'integer' },
+                totalFeedback: { type: 'integer' },
+                averageReputation: { type: 'number' },
+                mcpEnabledCount: { type: 'integer' },
+                a2aEnabledCount: { type: 'integer' },
+                erc8004Version: { type: 'string' },
+              },
+            },
           },
         },
       },

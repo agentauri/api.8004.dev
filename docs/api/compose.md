@@ -94,7 +94,7 @@ curl -X POST "https://api.8004.dev/api/v1/compose" \
         "contributedSkills": ["natural_language_processing", "dialogue_management"],
         "contributedDomains": ["customer_service"],
         "fitnessScore": 0.92,
-        "reputationScore": 4.5
+        "reputationScore": 90
       },
       {
         "agentId": "11155111:456",
@@ -103,7 +103,7 @@ curl -X POST "https://api.8004.dev/api/v1/compose" \
         "contributedSkills": ["sentiment_analysis", "emotion_detection"],
         "contributedDomains": ["technology"],
         "fitnessScore": 0.88,
-        "reputationScore": 4.2
+        "reputationScore": 84
       },
       {
         "agentId": "11155111:789",
@@ -112,7 +112,7 @@ curl -X POST "https://api.8004.dev/api/v1/compose" \
         "contributedSkills": ["classification", "routing"],
         "contributedDomains": ["customer_service"],
         "fitnessScore": 0.85,
-        "reputationScore": 4.0
+        "reputationScore": 80
       }
     ],
     "teamFitnessScore": 0.88,
@@ -212,7 +212,7 @@ curl "https://api.8004.dev/api/v1/compose/info" \
 | `contributedSkills` | string[] | Skills this agent brings |
 | `contributedDomains` | string[] | Domains this agent covers |
 | `fitnessScore` | number | Fit score for this task (0-1) |
-| `reputationScore` | number | Agent reputation (0-5) |
+| `reputationScore` | number | Agent reputation (0-100) |
 
 ### Summary Fields
 

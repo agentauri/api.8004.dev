@@ -48,7 +48,7 @@ event: heartbeat
 data: {"timestamp":"2024-01-03T12:00:30.000Z"}
 
 event: reputation_change
-data: {"agentId":"11155111:1234","chainId":11155111,"previousScore":4.0,"newScore":4.2,"feedbackCount":15,"timestamp":"2024-01-03T12:01:00.000Z"}
+data: {"agentId":"11155111:1234","chainId":11155111,"previousScore":80,"newScore":84,"feedbackCount":15,"timestamp":"2024-01-03T12:01:00.000Z"}
 
 event: reachability_update
 data: {"agentId":"11155111:1234","chainId":11155111,"mcpReachable":true,"a2aReachable":false,"timestamp":"2024-01-03T12:02:00.000Z"}
@@ -92,11 +92,11 @@ Agent reputation score changed due to new feedback.
 {
   "agentId": "11155111:1234",
   "chainId": 11155111,
-  "previousScore": 4.0,
-  "newScore": 4.2,
+  "previousScore": 80,
+  "newScore": 84,
   "feedbackCount": 15,
   "latestFeedback": {
-    "score": 5,
+    "score": 100,
     "tags": ["helpful", "fast"]
   },
   "timestamp": "2024-01-03T12:01:00.000Z"
@@ -129,7 +129,7 @@ New EAS attestation received for an agent.
   "chainId": 11155111,
   "attestationUid": "0xabcd...ef01",
   "attester": "0x1234...5678",
-  "score": 4,
+  "score": 75,
   "tags": ["reliable"],
   "timestamp": "2024-01-03T12:03:00.000Z"
 }

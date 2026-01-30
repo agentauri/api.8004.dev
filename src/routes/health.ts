@@ -80,7 +80,7 @@ health.get('/', async (c) => {
   const response: HealthResponse = {
     status: allOk ? 'ok' : anyError ? 'degraded' : 'down',
     timestamp: new Date().toISOString(),
-    version: '1.0.0',
+    version: '2.2.0',
     services: {
       sdk: sdkStatus,
       searchService: searchStatus,

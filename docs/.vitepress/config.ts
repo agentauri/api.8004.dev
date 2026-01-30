@@ -107,7 +107,6 @@ export default defineConfig({
           text: 'Platform Management',
           items: [
             { text: 'API Keys', link: '/api/keys' },
-            { text: 'Webhooks', link: '/api/webhooks' },
             { text: 'Analytics', link: '/api/analytics' },
           ],
         },

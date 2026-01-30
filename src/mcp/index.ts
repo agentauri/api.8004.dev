@@ -102,7 +102,7 @@ const LATEST_PROTOCOL_VERSION = '2025-06-18'; // Advertised in HEAD response
  */
 const SERVER_INFO = {
   name: '8004-agents',
-  version: '1.0.0',
+  version: '2.2.0',
 };
 
 const CAPABILITIES = {

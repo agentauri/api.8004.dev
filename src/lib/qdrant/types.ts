@@ -134,6 +134,8 @@ export interface AgentPayload {
   is_reachable_a2a: boolean;
   /** Whether MCP endpoint was recently verified as reachable */
   is_reachable_mcp: boolean;
+  /** Whether Web endpoint was recently verified as reachable */
+  is_reachable_web: boolean;
   /** MCP protocol version (empty string if not set) */
   mcp_version: string;
   /** A2A protocol version (empty string if not set) */
@@ -178,6 +180,8 @@ export interface AgentPayload {
   last_reachability_check_mcp: string;
   /** Last A2A reachability check timestamp (ISO string) */
   last_reachability_check_a2a: string;
+  /** Last Web reachability check timestamp (ISO string) */
+  last_reachability_check_web: string;
   /** Wallet address of the reachability attestor */
   reachability_attestor: string;
 
@@ -188,6 +192,18 @@ export interface AgentPayload {
   total_validations: number;
   /** Number of completed validations */
   completed_validations: number;
+  /** Number of pending validations */
+  pending_validations: number;
+  /** Number of expired validations */
+  expired_validations: number;
+
+  // Wallet verification field
+  /** Whether agent has a verified wallet address (on-chain via ERC-8004 v1.0) */
+  wallet_verified: boolean;
+
+  // Tags aggregation field
+  /** All unique feedback tags for this agent (for faceted search) */
+  all_tags: string[];
 }
 
 /**
@@ -491,6 +507,8 @@ export interface AgentFilterParams {
   reachableA2a?: boolean;
   /** Filter by MCP reachability */
   reachableMcp?: boolean;
+  /** Filter by Web reachability */
+  reachableWeb?: boolean;
 
   // Trust model filter
   /** Filter by agents with trust models */
@@ -531,6 +549,10 @@ export interface AgentFilterParams {
   declaredSkill?: string;
   /** Filter by declared OASF domain slug */
   declaredDomain?: string;
+  /** Filter by multiple declared OASF skill slugs (match any) */
+  declaredSkills?: string[];
+  /** Filter by multiple declared OASF domain slugs (match any) */
+  declaredDomains?: string[];
 
   // Gap 5: New endpoint filters
   /** Filter by agents with email endpoint */
@@ -549,6 +571,10 @@ export interface AgentFilterParams {
   maxValidationScore?: number;
   /** Filter by agents with at least one validation */
   hasValidations?: boolean;
+  /** Filter by agents with pending validations */
+  hasPendingValidations?: boolean;
+  /** Filter by agents with expired validations */
+  hasExpiredValidations?: boolean;
 
   // Exclusion filters (notIn)
   /** Exclude agents with these chain IDs */
@@ -557,6 +583,14 @@ export interface AgentFilterParams {
   excludeSkills?: string[];
   /** Exclude agents with these domains */
   excludeDomains?: string[];
+
+  // Wallet verification filter
+  /** Filter by wallet verified status (ERC-8004 v1.0) */
+  walletVerified?: boolean;
+
+  // Tags filter
+  /** Filter by agents with specific feedback tags (match any) */
+  hasTags?: string[];
 
   // Pagination
   limit?: number;

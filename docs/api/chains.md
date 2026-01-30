@@ -124,6 +124,7 @@ curl "https://api.8004.dev/api/v1/chains" \
 
 | Chain | Chain ID | Network | Explorer |
 |-------|----------|---------|----------|
+| Ethereum | 1 | Mainnet | [Etherscan](https://etherscan.io) |
 | Ethereum Sepolia | 11155111 | Testnet | [Sepolia Etherscan](https://sepolia.etherscan.io) |
 | Base Sepolia | 84532 | Testnet | [Base Sepolia](https://sepolia.basescan.org) |
 | Polygon Amoy | 80002 | Testnet | [Amoy Polygonscan](https://amoy.polygonscan.com) |

@@ -46,7 +46,7 @@ describe('Root endpoint', () => {
 
     const body = await response.json();
     expect(body.name).toBe('8004-backend');
-    expect(body.version).toBe('1.0.0');
+    expect(body.version).toBe('2.2.0');
     expect(body.docs).toBeDefined();
   });
 

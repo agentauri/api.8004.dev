@@ -27,6 +27,7 @@ This document tracks the current state of the ERC-8004 ecosystem. Keep this upda
 
 | Chain | Chain ID | IdentityRegistry | ReputationRegistry | Status |
 |-------|----------|------------------|-------------------|--------|
+| **ETH Mainnet** | 1 | `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` | `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63` | **DEPLOYED** (Genesis Month) |
 | **ETH Sepolia** | 11155111 | `0x8004A818BFB912233c491871b3d84c89A494BD9e` | `0x8004B663056A597Dffe9eCcC1965A193B7388713` | **DEPLOYED** |
 | Base Sepolia | 84532 | - | - | Pending |
 | Polygon Amoy | 80002 | - | - | Pending |
@@ -35,15 +36,20 @@ This document tracks the current state of the ERC-8004 ecosystem. Keep this upda
 | HyperEVM Testnet | 998 | - | - | Pending |
 | SKALE Base Sepolia | 1351057110 | - | - | Pending |
 
+**Ethereum Mainnet Details:**
+- Start Block: `24339924`
+- Subgraph ID: `FV6RR6y13rsnCxBAicKuQEwDp8ioEGiNaWaZUmvr1F8k`
+
 **Infrastructure Addresses (Deterministic across all chains):**
 - CREATE2 Factory: `0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7`
 - ValidationRegistry: `0x8004Cb1BF31DAf7788923b405b754f57acEB4272`
 
 ### Subgraphs
 
-| Chain | Chain ID | Version | Status | Notes |
-|-------|----------|---------|--------|-------|
-| **ETH Sepolia** | 11155111 | v1.0 | **ACTIVE** | Only active subgraph |
+| Chain | Chain ID | Subgraph ID | Status | Notes |
+|-------|----------|-------------|--------|-------|
+| **ETH Mainnet** | 1 | `FV6RR6y13rsnCxBAicKuQEwDp8ioEGiNaWaZUmvr1F8k` | **ACTIVE** | Genesis Month deployment |
+| **ETH Sepolia** | 11155111 | `6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT` | **ACTIVE** | Testnet |
 | Base Sepolia | 84532 | - | **REMOVED** | Awaiting v1.0 contract deployment |
 | Polygon Amoy | 80002 | - | **REMOVED** | Awaiting v1.0 contract deployment |
 | Linea Sepolia | 59141 | - | **REMOVED** | Awaiting v1.0 contract deployment |
@@ -51,7 +57,7 @@ This document tracks the current state of the ERC-8004 ecosystem. Keep this upda
 | HyperEVM Testnet | 998 | - | **REMOVED** | Awaiting v1.0 contract deployment |
 | SKALE Base Sepolia | 1351057110 | - | **REMOVED** | Awaiting v1.0 contract deployment |
 
-**Note**: v0.4 subgraphs have been deprecated and removed. Only ETH Sepolia v1.0 is currently active.
+**Note**: v0.4 subgraphs have been deprecated and removed. ETH Mainnet and ETH Sepolia v1.0 are currently active.
 Other chains will be re-enabled when v1.0 contracts are deployed.
 
 **Contact**: @lentan to add more chains
@@ -89,10 +95,11 @@ giveFeedback(
 ```solidity
 giveFeedback(
   uint256 agentId,
-  uint8 score,
-  string tag1,         // NEW: string
-  string tag2,         // NEW: string
-  string endpoint,     // NEW: endpoint reference
+  int128 value,        // MAINNET: Replaces uint8 score (signed 128-bit for precision)
+  uint8 valueDecimals, // MAINNET: Decimal places for value interpretation
+  string tag1,         // string (was bytes32)
+  string tag2,         // string (was bytes32)
+  string endpoint,     // endpoint reference
   string feedbackURI,  // RENAMED: feedbackURI
   bytes32 feedbackHash // RENAMED: feedbackHash
 )
@@ -103,6 +110,7 @@ giveFeedback(
 | Change Type | Field | Details |
 |-------------|-------|---------|
 | **REMOVED** | `feedbackAuth` | No longer required for feedback submission |
+| **REPLACED** | `score` → `value` + `valueDecimals` | `uint8 score (0-100)` → `int128 value + uint8 valueDecimals` for precision |
 | **ADDED** | `endpoint` | Optional endpoint reference in feedback |
 | **ADDED** | `feedbackIndex` | Per-client feedback index (event-only) |
 | **TYPE CHANGE** | `tag1`, `tag2` | `bytes32` → `string` |
@@ -146,11 +154,11 @@ type Feedback @entity {
   id: ID!                           # Format: "chainId:agentId:clientAddress:index"
   agent: Agent!
   clientAddress: Bytes!
-  score: Int!                       # 0-100
-  tag1: String                      # NEW: string (was bytes32)
-  tag2: String                      # NEW: string (was bytes32)
-  endpoint: String                  # NEW: endpoint reference (v1.0)
-  feedbackIndex: Int!               # NEW: per-client index (v1.0)
+  value: BigDecimal!                # MAINNET: Replaces score (computed from int128 value + uint8 valueDecimals)
+  tag1: String                      # string (was bytes32 in v0.4)
+  tag2: String                      # string (was bytes32 in v0.4)
+  endpoint: String                  # endpoint reference (v1.0)
+  feedbackIndex: Int!               # per-client index (v1.0)
   feedbackUri: String
   feedbackHash: Bytes!
   isRevoked: Boolean!
@@ -158,6 +166,10 @@ type Feedback @entity {
   responses: [FeedbackResponse]!
 }
 ```
+
+> **Note (Mainnet Readiness)**: The `score` field has been replaced by `value` (BigDecimal).
+> The subgraph computes `value` from the raw contract values (int128 value + uint8 valueDecimals).
+> For backward compatibility, values typically remain in the 0-100 range.
 
 #### AgentRegistrationFile (Off-chain from IPFS)
 ```graphql
@@ -190,13 +202,15 @@ type AgentRegistrationFile @entity {
 - [x] Validation: Handle string tags instead of bytes32 (graph-feedback-worker.ts)
 - [x] SDK service: Update interfaces for v1.0 schema (sdk.ts)
 - [x] Type definitions: Remove legacy `agentWalletChainId` (types/agent.ts)
+- [x] **Mainnet Readiness**: Query `value` (BigDecimal) instead of `score` from subgraph (graph-feedback-worker.ts)
 
-### SDK Issues (agent0-sdk v0.31.0)
+### SDK Status (agent0-sdk v1.4.2)
 
-**Known Bug**: SDK queries `agentWallet` on `AgentRegistrationFile` instead of `Agent`
-- **Impact**: `searchAgents()` returns 0 agents
-- **Workaround**: Use direct Graph queries (which we do in `graph-sync-worker.ts`)
-- **Status**: Waiting for SDK fix - our backend is not affected (uses direct queries)
+The `agentWallet` query bug from v0.31.0 has been resolved. The backend now uses agent0-sdk v1.4.2 which includes:
+- Mainnet registry defaults and subgraph configuration
+- Multi-chain support with correct `agentWallet` queries
+- Renamed `averageScore` → `averageValue`, `minAverageScore` → `minAverageValue`
+- `x402Support` casing fix in search result metadata
 
 ---
 
@@ -206,6 +220,7 @@ type AgentRegistrationFile @entity {
 
 | Chain | Status | Notes |
 |-------|--------|-------|
+| ETH Mainnet (1) | **ACTIVE** | Using v1.0 query (Genesis Month) |
 | ETH Sepolia (11155111) | **ACTIVE** | Using updated v1.0 query |
 | Other chains | Disabled | Waiting for contract/subgraph deployment |
 
@@ -230,5 +245,6 @@ type AgentRegistrationFile @entity {
 
 | Date | Change |
 |------|--------|
+| Jan 30 2026 | Mainnet sync enabled, subgraph ID updated, agent0-sdk v1.4.2 |
 | Jan 2026 | v1.0 spec update (breaking changes) |
 | Oct 2025 | v0.4 initial testnet deployment |

@@ -22,9 +22,44 @@ const MAX_LENGTHS = {
 } as const;
 
 /**
+ * Factory for creating array filter schemas (CSV and bracket notation)
+ * Reduces repetition for skills, domains, mcpTools, a2aSkills, etc.
+ * @param maxItemLength - Maximum length of each item in the array
+ */
+function createArrayFilterSchemas(maxItemLength: number) {
+  return {
+    /** CSV format: "item1,item2,item3" */
+    csv: z
+      .string()
+      .max(maxItemLength * MAX_LENGTHS.ARRAY_ITEMS)
+      .transform((val) =>
+        val
+          .split(',')
+          .map((s) => s.trim().slice(0, maxItemLength))
+          .filter((s) => s.length > 0)
+          .slice(0, MAX_LENGTHS.ARRAY_ITEMS)
+      )
+      .optional(),
+    /** Bracket notation: param[]=item1&param[]=item2 */
+    bracket: z
+      .union([
+        z.string().max(maxItemLength),
+        z.array(z.string().max(maxItemLength)).max(MAX_LENGTHS.ARRAY_ITEMS),
+      ])
+      .transform((val) => (Array.isArray(val) ? val : [val]).slice(0, MAX_LENGTHS.ARRAY_ITEMS))
+      .optional(),
+  };
+}
+
+// Pre-built array filter schemas for common field types
+const skillArrayFilters = createArrayFilterSchemas(MAX_LENGTHS.SKILL);
+const addressArrayFilters = createArrayFilterSchemas(MAX_LENGTHS.ADDRESS);
+const trustModelArrayFilters = createArrayFilterSchemas(MAX_LENGTHS.TRUST_MODEL);
+
+/**
  * Supported chain IDs
  */
-export const SUPPORTED_CHAIN_IDS = [11155111, 84532, 80002] as const;
+export const SUPPORTED_CHAIN_IDS = [1, 11155111, 84532, 80002] as const;
 
 /**
  * Chain ID validation schema
@@ -192,46 +227,15 @@ export const listAgentsQuerySchema = z.object({
   a2a: stringBooleanSchema.optional(),
   x402: stringBooleanSchema.optional(),
   hasRegistrationFile: stringBooleanSchema.optional(),
-  // Skills filter - supports both CSV (skills=a,b) and array notation (skills[]=a&skills[]=b)
-  skills: z
-    .string()
-    .max(MAX_LENGTHS.SKILL * MAX_LENGTHS.ARRAY_ITEMS)
-    .transform((val) => val.split(',').map((s) => s.trim().slice(0, MAX_LENGTHS.SKILL)).slice(0, MAX_LENGTHS.ARRAY_ITEMS))
-    .optional(),
-  'skills[]': z
-    .union([z.string().max(MAX_LENGTHS.SKILL), z.array(z.string().max(MAX_LENGTHS.SKILL)).max(MAX_LENGTHS.ARRAY_ITEMS)])
-    .transform((val) => (Array.isArray(val) ? val : [val]).slice(0, MAX_LENGTHS.ARRAY_ITEMS))
-    .optional(),
-  // Domains filter - supports both CSV and array notation
-  domains: z
-    .string()
-    .max(MAX_LENGTHS.SKILL * MAX_LENGTHS.ARRAY_ITEMS)
-    .transform((val) => val.split(',').map((s) => s.trim().slice(0, MAX_LENGTHS.SKILL)).slice(0, MAX_LENGTHS.ARRAY_ITEMS))
-    .optional(),
-  'domains[]': z
-    .union([z.string().max(MAX_LENGTHS.SKILL), z.array(z.string().max(MAX_LENGTHS.SKILL)).max(MAX_LENGTHS.ARRAY_ITEMS)])
-    .transform((val) => (Array.isArray(val) ? val : [val]).slice(0, MAX_LENGTHS.ARRAY_ITEMS))
-    .optional(),
-  // MCP tools filter - supports both CSV and array notation
-  mcpTools: z
-    .string()
-    .max(MAX_LENGTHS.SKILL * MAX_LENGTHS.ARRAY_ITEMS)
-    .transform((val) => val.split(',').map((s) => s.trim().slice(0, MAX_LENGTHS.SKILL)).slice(0, MAX_LENGTHS.ARRAY_ITEMS))
-    .optional(),
-  'mcpTools[]': z
-    .union([z.string().max(MAX_LENGTHS.SKILL), z.array(z.string().max(MAX_LENGTHS.SKILL)).max(MAX_LENGTHS.ARRAY_ITEMS)])
-    .transform((val) => (Array.isArray(val) ? val : [val]).slice(0, MAX_LENGTHS.ARRAY_ITEMS))
-    .optional(),
-  // A2A skills filter - supports both CSV and array notation
-  a2aSkills: z
-    .string()
-    .max(MAX_LENGTHS.SKILL * MAX_LENGTHS.ARRAY_ITEMS)
-    .transform((val) => val.split(',').map((s) => s.trim().slice(0, MAX_LENGTHS.SKILL)).slice(0, MAX_LENGTHS.ARRAY_ITEMS))
-    .optional(),
-  'a2aSkills[]': z
-    .union([z.string().max(MAX_LENGTHS.SKILL), z.array(z.string().max(MAX_LENGTHS.SKILL)).max(MAX_LENGTHS.ARRAY_ITEMS)])
-    .transform((val) => (Array.isArray(val) ? val : [val]).slice(0, MAX_LENGTHS.ARRAY_ITEMS))
-    .optional(),
+  // Array filters - support both CSV (param=a,b) and bracket notation (param[]=a&param[]=b)
+  skills: skillArrayFilters.csv,
+  'skills[]': skillArrayFilters.bracket,
+  domains: skillArrayFilters.csv,
+  'domains[]': skillArrayFilters.bracket,
+  mcpTools: skillArrayFilters.csv,
+  'mcpTools[]': skillArrayFilters.bracket,
+  a2aSkills: skillArrayFilters.csv,
+  'a2aSkills[]': skillArrayFilters.bracket,
   filterMode: z.enum(['AND', 'OR']).optional(),
   minScore: z.coerce.number().min(0).max(1).optional(),
   minRep: z.coerce.number().min(0).max(100).optional(),
@@ -239,12 +243,10 @@ export const listAgentsQuerySchema = z.object({
   // Wallet filters
   owner: z.string().max(MAX_LENGTHS.ADDRESS).optional(),
   walletAddress: z.string().max(MAX_LENGTHS.ADDRESS).optional(),
+  /** Filter by wallet verified status (ERC-8004 v1.0) */
+  walletVerified: stringBooleanSchema.optional(),
   // Trust model filters
-  trustModels: z
-    .string()
-    .max(MAX_LENGTHS.TRUST_MODEL * MAX_LENGTHS.ARRAY_ITEMS)
-    .transform((val) => val.split(',').map((s) => s.trim().slice(0, MAX_LENGTHS.TRUST_MODEL)).slice(0, MAX_LENGTHS.ARRAY_ITEMS))
-    .optional(),
+  trustModels: trustModelArrayFilters.csv,
   hasTrusts: stringBooleanSchema.optional(),
   // Exact match filters (new)
   ens: z.string().max(MAX_LENGTHS.ENS).optional(),
@@ -270,6 +272,8 @@ export const listAgentsQuerySchema = z.object({
   // Reachability filters
   reachableA2a: stringBooleanSchema.optional(),
   reachableMcp: stringBooleanSchema.optional(),
+  /** Filter by Web reachability */
+  reachableWeb: stringBooleanSchema.optional(),
   // Trust score filters (Gap 1)
   trustScoreMin: z.coerce.number().min(0).max(100).optional(),
   trustScoreMax: z.coerce.number().min(0).max(100).optional(),
@@ -282,11 +286,30 @@ export const listAgentsQuerySchema = z.object({
   // Gap 4: Declared OASF filters
   declaredSkill: z.string().max(MAX_LENGTHS.SKILL).optional(),
   declaredDomain: z.string().max(MAX_LENGTHS.SKILL).optional(),
+  // Declared OASF array filters
+  declaredSkills: skillArrayFilters.csv,
+  'declaredSkills[]': skillArrayFilters.bracket,
+  declaredDomains: skillArrayFilters.csv,
+  'declaredDomains[]': skillArrayFilters.bracket,
+  // Tags filter
+  hasTags: skillArrayFilters.csv,
+  'hasTags[]': skillArrayFilters.bracket,
   // Gap 5: New endpoint filters
   hasEmail: stringBooleanSchema.optional(),
   hasOasfEndpoint: stringBooleanSchema.optional(),
   // Gap 6: Reachability attestation filters
   hasRecentReachability: stringBooleanSchema.optional(),
+  // Validation score filters
+  /** Minimum validation score (0-100) */
+  minValidationScore: z.coerce.number().min(0).max(100).optional(),
+  /** Maximum validation score (0-100) */
+  maxValidationScore: z.coerce.number().min(0).max(100).optional(),
+  /** Filter by agents with at least one validation */
+  hasValidations: stringBooleanSchema.optional(),
+  /** Filter by agents with pending validations */
+  hasPendingValidations: stringBooleanSchema.optional(),
+  /** Filter by agents with expired validations */
+  hasExpiredValidations: stringBooleanSchema.optional(),
   // Date range filters
   createdAfter: z.string().datetime({ offset: true }).optional(),
   createdBefore: z.string().datetime({ offset: true }).optional(),
@@ -329,12 +352,16 @@ export const searchRequestSchema = z.object({
       // Wallet filters
       owner: z.string().max(MAX_LENGTHS.ADDRESS).optional(),
       walletAddress: z.string().max(MAX_LENGTHS.ADDRESS).optional(),
+      /** Filter by wallet verified status (ERC-8004 v1.0) */
+      walletVerified: z.boolean().optional(),
       // Trust model filters
       trustModels: z.array(z.string().max(MAX_LENGTHS.TRUST_MODEL)).max(MAX_LENGTHS.ARRAY_ITEMS).optional(),
       hasTrusts: z.boolean().optional(),
       // Reachability filters
       reachableA2a: z.boolean().optional(),
       reachableMcp: z.boolean().optional(),
+      /** Filter by Web reachability */
+      reachableWeb: z.boolean().optional(),
       // Trust score filters (Gap 1)
       trustScoreMin: z.number().min(0).max(100).optional(),
       trustScoreMax: z.number().min(0).max(100).optional(),
@@ -344,11 +371,28 @@ export const searchRequestSchema = z.object({
       // Gap 4: Declared OASF filters
       declaredSkill: z.string().max(MAX_LENGTHS.SKILL).optional(),
       declaredDomain: z.string().max(MAX_LENGTHS.SKILL).optional(),
+      /** Filter by multiple declared OASF skill slugs (match any) */
+      declaredSkills: z.array(z.string().max(MAX_LENGTHS.SKILL)).max(MAX_LENGTHS.ARRAY_ITEMS).optional(),
+      /** Filter by multiple declared OASF domain slugs (match any) */
+      declaredDomains: z.array(z.string().max(MAX_LENGTHS.SKILL)).max(MAX_LENGTHS.ARRAY_ITEMS).optional(),
+      /** Filter by agents with specific feedback tags (match any) */
+      hasTags: z.array(z.string().max(MAX_LENGTHS.SKILL)).max(MAX_LENGTHS.ARRAY_ITEMS).optional(),
       // Gap 5: New endpoint filters
       hasEmail: z.boolean().optional(),
       hasOasfEndpoint: z.boolean().optional(),
       // Gap 6: Reachability attestation filters
       hasRecentReachability: z.boolean().optional(),
+      // Validation score filters
+      /** Minimum validation score (0-100) */
+      minValidationScore: z.number().min(0).max(100).optional(),
+      /** Maximum validation score (0-100) */
+      maxValidationScore: z.number().min(0).max(100).optional(),
+      /** Filter by agents with at least one validation */
+      hasValidations: z.boolean().optional(),
+      /** Filter by agents with pending validations */
+      hasPendingValidations: z.boolean().optional(),
+      /** Filter by agents with expired validations */
+      hasExpiredValidations: z.boolean().optional(),
       // Registration file filter
       hasRegistrationFile: z.boolean().optional(),
       // Exact match filters (new)
@@ -466,6 +510,30 @@ export const feedbacksQuerySchema = z.object({
   'chainIds[]': chainsSchema.optional(),
   chainIds: chainsSchema.optional(),
   scoreCategory: z.enum(['positive', 'neutral', 'negative']).optional(),
+  // Reviewer wallet addresses filter
+  reviewers: addressArrayFilters.csv,
+  'reviewers[]': addressArrayFilters.bracket,
+  /** Filter by multiple agent IDs (comma-separated or array, format: chainId:tokenId) */
+  agentIds: z
+    .string()
+    .transform((val) =>
+      val
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => /^\d+:\d+$/.test(s))
+        .slice(0, MAX_LENGTHS.ARRAY_ITEMS)
+    )
+    .optional(),
+  'agentIds[]': z
+    .union([z.string(), z.array(z.string()).max(MAX_LENGTHS.ARRAY_ITEMS)])
+    .transform((val) =>
+      (Array.isArray(val) ? val : [val])
+        .filter((s) => /^\d+:\d+$/.test(s))
+        .slice(0, MAX_LENGTHS.ARRAY_ITEMS)
+    )
+    .optional(),
+  /** Filter by specific feedback index */
+  feedbackIndex: z.coerce.number().int().min(0).optional(),
   limit: limitSchema,
   cursor: z.string().optional(),
   offset: z.coerce.number().int().min(0).optional(),

@@ -32,7 +32,7 @@ curl "https://api.8004.dev/api/v1/health"
 {
   "status": "ok",
   "timestamp": "2024-01-03T12:00:00.000Z",
-  "version": "1.0.0",
+  "version": "2.2.0",
   "services": {
     "sdk": "ok",
     "searchService": "ok",
@@ -50,7 +50,7 @@ HTTP Status: `200 OK`
 {
   "status": "degraded",
   "timestamp": "2024-01-03T12:00:00.000Z",
-  "version": "1.0.0",
+  "version": "2.2.0",
   "services": {
     "sdk": "ok",
     "searchService": "error",

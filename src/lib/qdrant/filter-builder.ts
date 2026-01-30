@@ -6,6 +6,106 @@
 
 import type { AgentFilterParams, FieldCondition, QdrantFilter } from './types';
 
+// ============================================================================
+// Helper functions for building filter conditions
+// ============================================================================
+
+/**
+ * Add a numeric range filter (min/max pattern)
+ */
+function addRangeFilter(
+  conditions: FieldCondition[],
+  key: string,
+  min?: number,
+  max?: number
+): void {
+  if (min === undefined && max === undefined) return;
+
+  const range: { gte?: number; lte?: number } = {};
+  if (min !== undefined) range.gte = min;
+  if (max !== undefined) range.lte = max;
+
+  conditions.push({ key, range });
+}
+
+/**
+ * Add a datetime range filter
+ */
+function addDatetimeRangeFilter(
+  conditions: FieldCondition[],
+  key: string,
+  after?: string,
+  before?: string
+): void {
+  if (!after && !before) return;
+
+  const range: { gte?: string; lte?: string } = {};
+  if (after) range.gte = after;
+  if (before) range.lte = before;
+
+  conditions.push({ key, range });
+}
+
+/**
+ * Add a "has field" filter (non-empty string check)
+ * When hasField=true: adds must_not condition for empty string
+ * When hasField=false: adds must condition for empty string
+ */
+function addHasFieldFilter(
+  mustConditions: FieldCondition[],
+  mustNotConditions: FieldCondition[],
+  key: string,
+  hasField?: boolean
+): void {
+  if (hasField === undefined) return;
+
+  if (hasField) {
+    mustNotConditions.push({ key, match: { value: '' } });
+  } else {
+    mustConditions.push({ key, match: { value: '' } });
+  }
+}
+
+/**
+ * Add a "has count" filter using values_count (for arrays)
+ * When hasItems=true: requires at least 1 item
+ * When hasItems=false: requires 0 items
+ */
+function addHasValuesCountFilter(
+  conditions: FieldCondition[],
+  key: string,
+  hasItems?: boolean
+): void {
+  if (hasItems === undefined) return;
+
+  conditions.push({
+    key,
+    values_count: hasItems ? { gte: 1 } : { lte: 0 },
+  });
+}
+
+/**
+ * Add a "has count" filter using range (for numeric fields like total_validations)
+ * When hasItems=true: requires at least 1
+ * When hasItems=false: requires 0
+ */
+function addHasRangeCountFilter(
+  conditions: FieldCondition[],
+  key: string,
+  hasItems?: boolean
+): void {
+  if (hasItems === undefined) return;
+
+  conditions.push({
+    key,
+    range: hasItems ? { gte: 1 } : { lte: 0 },
+  });
+}
+
+// ============================================================================
+// Main filter builder
+// ============================================================================
+
 /**
  * Build a Qdrant filter from API filter parameters
  *
@@ -115,111 +215,20 @@ export function buildFilter(params: AgentFilterParams): QdrantFilter | undefined
   }
 
   // Reputation range filters
-  if (params.minRep !== undefined || params.maxRep !== undefined) {
-    const range: { gte?: number; lte?: number } = {};
-
-    if (params.minRep !== undefined) {
-      range.gte = params.minRep;
-    }
-
-    if (params.maxRep !== undefined) {
-      range.lte = params.maxRep;
-    }
-
-    mustConditions.push({
-      key: 'reputation',
-      range,
-    });
-  }
+  addRangeFilter(mustConditions, 'reputation', params.minRep, params.maxRep);
 
   // --- New filters ---
 
   // Created after/before (datetime range)
-  if (params.createdAfter || params.createdBefore) {
-    const range: { gte?: string; lte?: string } = {};
-
-    if (params.createdAfter) {
-      range.gte = params.createdAfter;
-    }
-
-    if (params.createdBefore) {
-      range.lte = params.createdBefore;
-    }
-
-    mustConditions.push({
-      key: 'created_at',
-      range,
-    });
-  }
+  addDatetimeRangeFilter(mustConditions, 'created_at', params.createdAfter, params.createdBefore);
 
   // Updated after/before (datetime range)
-  if (params.updatedAfter || params.updatedBefore) {
-    const range: { gte?: string; lte?: string } = {};
+  addDatetimeRangeFilter(mustConditions, 'updated_at', params.updatedAfter, params.updatedBefore);
 
-    if (params.updatedAfter) {
-      range.gte = params.updatedAfter;
-    }
-
-    if (params.updatedBefore) {
-      range.lte = params.updatedBefore;
-    }
-
-    mustConditions.push({
-      key: 'updated_at',
-      range,
-    });
-  }
-
-  // Has image filter
-  if (params.hasImage !== undefined) {
-    if (params.hasImage) {
-      // Must have a non-empty image
-      mustNotConditions.push({
-        key: 'image',
-        match: { value: '' },
-      });
-    } else {
-      // Must have empty image
-      mustConditions.push({
-        key: 'image',
-        match: { value: '' },
-      });
-    }
-  }
-
-  // Has ENS filter
-  if (params.hasENS !== undefined) {
-    if (params.hasENS) {
-      // Must have a non-empty ENS
-      mustNotConditions.push({
-        key: 'ens',
-        match: { value: '' },
-      });
-    } else {
-      // Must have empty ENS
-      mustConditions.push({
-        key: 'ens',
-        match: { value: '' },
-      });
-    }
-  }
-
-  // Has DID filter
-  if (params.hasDID !== undefined) {
-    if (params.hasDID) {
-      // Must have a non-empty DID
-      mustNotConditions.push({
-        key: 'did',
-        match: { value: '' },
-      });
-    } else {
-      // Must have empty DID
-      mustConditions.push({
-        key: 'did',
-        match: { value: '' },
-      });
-    }
-  }
+  // Has field filters (non-empty string checks)
+  addHasFieldFilter(mustConditions, mustNotConditions, 'image', params.hasImage);
+  addHasFieldFilter(mustConditions, mustNotConditions, 'ens', params.hasENS);
+  addHasFieldFilter(mustConditions, mustNotConditions, 'did', params.hasDID);
 
   // Operator filter
   if (params.operator) {
@@ -245,35 +254,9 @@ export function buildFilter(params: AgentFilterParams): QdrantFilter | undefined
     });
   }
 
-  // Has prompts filter
-  if (params.hasPrompts !== undefined) {
-    if (params.hasPrompts) {
-      mustConditions.push({
-        key: 'mcp_prompts',
-        values_count: { gte: 1 },
-      });
-    } else {
-      mustConditions.push({
-        key: 'mcp_prompts',
-        values_count: { lte: 0 },
-      });
-    }
-  }
-
-  // Has resources filter
-  if (params.hasResources !== undefined) {
-    if (params.hasResources) {
-      mustConditions.push({
-        key: 'mcp_resources',
-        values_count: { gte: 1 },
-      });
-    } else {
-      mustConditions.push({
-        key: 'mcp_resources',
-        values_count: { lte: 0 },
-      });
-    }
-  }
+  // Has prompts/resources filters (array count checks)
+  addHasValuesCountFilter(mustConditions, 'mcp_prompts', params.hasPrompts);
+  addHasValuesCountFilter(mustConditions, 'mcp_resources', params.hasResources);
 
   // Input mode filter
   if (params.inputMode) {
@@ -309,6 +292,14 @@ export function buildFilter(params: AgentFilterParams): QdrantFilter | undefined
     });
   }
 
+  // Web reachability filter
+  if (params.reachableWeb !== undefined) {
+    mustConditions.push({
+      key: 'is_reachable_web',
+      match: { value: params.reachableWeb },
+    });
+  }
+
   // --- Owner & Wallet filters ---
 
   // Owner filter (exact match on owner address)
@@ -336,19 +327,7 @@ export function buildFilter(params: AgentFilterParams): QdrantFilter | undefined
   }
 
   // Has trusts filter (has at least one trust model)
-  if (params.hasTrusts !== undefined) {
-    if (params.hasTrusts) {
-      mustConditions.push({
-        key: 'supported_trusts',
-        values_count: { gte: 1 },
-      });
-    } else {
-      mustConditions.push({
-        key: 'supported_trusts',
-        values_count: { lte: 0 },
-      });
-    }
-  }
+  addHasValuesCountFilter(mustConditions, 'supported_trusts', params.hasTrusts);
 
   // --- Exact match filters ---
 
@@ -371,22 +350,7 @@ export function buildFilter(params: AgentFilterParams): QdrantFilter | undefined
   // --- Trust score filters (Gap 1) ---
 
   // Trust score range filter
-  if (params.trustScoreMin !== undefined || params.trustScoreMax !== undefined) {
-    const range: { gte?: number; lte?: number } = {};
-
-    if (params.trustScoreMin !== undefined) {
-      range.gte = params.trustScoreMin;
-    }
-
-    if (params.trustScoreMax !== undefined) {
-      range.lte = params.trustScoreMax;
-    }
-
-    mustConditions.push({
-      key: 'trust_score',
-      range,
-    });
-  }
+  addRangeFilter(mustConditions, 'trust_score', params.trustScoreMin, params.trustScoreMax);
 
   // --- Curation filters (Gap 3) ---
 
@@ -424,37 +388,25 @@ export function buildFilter(params: AgentFilterParams): QdrantFilter | undefined
     });
   }
 
+  // Declared skills array filter (match any)
+  if (params.declaredSkills && params.declaredSkills.length > 0) {
+    mustConditions.push({
+      key: 'declared_oasf_skills',
+      match: { any: params.declaredSkills },
+    });
+  }
+
+  // Declared domains array filter (match any)
+  if (params.declaredDomains && params.declaredDomains.length > 0) {
+    mustConditions.push({
+      key: 'declared_oasf_domains',
+      match: { any: params.declaredDomains },
+    });
+  }
+
   // --- Gap 5: New endpoint filters ---
-
-  // Has email filter
-  if (params.hasEmail !== undefined) {
-    if (params.hasEmail) {
-      mustNotConditions.push({
-        key: 'email_endpoint',
-        match: { value: '' },
-      });
-    } else {
-      mustConditions.push({
-        key: 'email_endpoint',
-        match: { value: '' },
-      });
-    }
-  }
-
-  // Has OASF endpoint filter
-  if (params.hasOasfEndpoint !== undefined) {
-    if (params.hasOasfEndpoint) {
-      mustNotConditions.push({
-        key: 'oasf_endpoint',
-        match: { value: '' },
-      });
-    } else {
-      mustConditions.push({
-        key: 'oasf_endpoint',
-        match: { value: '' },
-      });
-    }
-  }
+  addHasFieldFilter(mustConditions, mustNotConditions, 'email_endpoint', params.hasEmail);
+  addHasFieldFilter(mustConditions, mustNotConditions, 'oasf_endpoint', params.hasOasfEndpoint);
 
   // --- Gap 6: Reachability attestation filters ---
 
@@ -478,36 +430,31 @@ export function buildFilter(params: AgentFilterParams): QdrantFilter | undefined
   // --- Validation score filters ---
 
   // Validation score range filter
-  if (params.minValidationScore !== undefined || params.maxValidationScore !== undefined) {
-    const range: { gte?: number; lte?: number } = {};
+  addRangeFilter(mustConditions, 'validation_score', params.minValidationScore, params.maxValidationScore);
 
-    if (params.minValidationScore !== undefined) {
-      range.gte = params.minValidationScore;
-    }
+  // Validation status filters (using range for numeric fields)
+  addHasRangeCountFilter(mustConditions, 'total_validations', params.hasValidations);
+  addHasRangeCountFilter(mustConditions, 'pending_validations', params.hasPendingValidations);
+  addHasRangeCountFilter(mustConditions, 'expired_validations', params.hasExpiredValidations);
 
-    if (params.maxValidationScore !== undefined) {
-      range.lte = params.maxValidationScore;
-    }
+  // --- Wallet verification filter ---
 
+  // Wallet verified filter (ERC-8004 v1.0)
+  if (params.walletVerified !== undefined) {
     mustConditions.push({
-      key: 'validation_score',
-      range,
+      key: 'wallet_verified',
+      match: { value: params.walletVerified },
     });
   }
 
-  // Has validations filter (has at least one validation)
-  if (params.hasValidations !== undefined) {
-    if (params.hasValidations) {
-      mustConditions.push({
-        key: 'total_validations',
-        range: { gte: 1 },
-      });
-    } else {
-      mustConditions.push({
-        key: 'total_validations',
-        range: { lte: 0 },
-      });
-    }
+  // --- Tags filter ---
+
+  // Has tags filter (filter by agents with specific feedback tags)
+  if (params.hasTags && params.hasTags.length > 0) {
+    mustConditions.push({
+      key: 'all_tags',
+      match: { any: params.hasTags },
+    });
   }
 
   // --- Exclusion filters (notIn / except) ---

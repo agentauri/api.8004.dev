@@ -227,9 +227,9 @@ searchStream.post('/', async (c) => {
 
           hasMcp = mcpTools.length > 0 || mcpPrompts.length > 0 || mcpResources.length > 0;
           hasA2a = a2aSkills.length > 0;
-          x402Support = meta.x402support === true;
+          x402Support = meta.x402Support === true;
           supportedTrust = [];
-          if (supportedTrusts.includes('x402') || meta.x402support === true)
+          if (supportedTrusts.includes('x402') || meta.x402Support === true)
             supportedTrust.push('x402');
           if (supportedTrusts.includes('eas')) supportedTrust.push('eas');
           image = typeof meta.image === 'string' ? meta.image : undefined;

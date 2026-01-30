@@ -9,7 +9,7 @@ The 8004 API aggregates trust signals from multiple sources to provide agent rep
 Primary source: [Ethereum Attestation Service (EAS)](https://attest.sh) attestations.
 
 Users submit on-chain attestations containing:
-- **Score**: 1-5 rating
+- **Score**: 0-100 rating (normalized from original 1-5 scale)
 - **Tags**: Descriptive labels (helpful, fast, accurate, etc.)
 - **Context**: Optional feedback text
 
@@ -29,7 +29,7 @@ Average rating across all feedback:
 ```json
 {
   "reputation": {
-    "averageScore": 4.2,
+    "averageScore": 84,
     "count": 25,
     "distribution": {
       "low": 2,
@@ -44,9 +44,9 @@ Average rating across all feedback:
 
 | Category | Score Range | Description |
 |----------|-------------|-------------|
-| `low` | 1-2 | Poor experience |
-| `medium` | 3 | Average experience |
-| `high` | 4-5 | Good experience |
+| `low` | 0-33 | Poor experience |
+| `medium` | 34-66 | Average experience |
+| `high` | 67-100 | Good experience |
 
 ## API Endpoints
 
@@ -65,7 +65,7 @@ Response:
     "agentId": "11155111:1234",
     "reputation": {
       "count": 25,
-      "averageScore": 4.2,
+      "averageScore": 84,
       "distribution": {
         "low": 2,
         "medium": 5,
@@ -74,7 +74,7 @@ Response:
     },
     "recentFeedback": [
       {
-        "score": 5,
+        "score": 100,
         "tags": ["helpful", "fast"],
         "context": "Great code review experience",
         "submitter": "0x1234...5678",
@@ -88,12 +88,12 @@ Response:
 ### Filter by Reputation
 
 ```bash
-# Agents with minimum 4.0 reputation
-curl "https://api.8004.dev/api/v1/agents?minRep=4" \
+# Agents with minimum 80 reputation
+curl "https://api.8004.dev/api/v1/agents?minRep=80" \
   -H "X-API-Key: your-api-key"
 
-# Reputation between 3 and 4.5
-curl "https://api.8004.dev/api/v1/agents?minRep=3&maxRep=4.5" \
+# Reputation between 50 and 90
+curl "https://api.8004.dev/api/v1/agents?minRep=50&maxRep=90" \
   -H "X-API-Key: your-api-key"
 ```
 
@@ -113,7 +113,7 @@ Agent responses include reputation summary:
 {
   "id": "11155111:1234",
   "name": "CodeReview Pro",
-  "reputationScore": 4.2,
+  "reputationScore": 84,
   "reputationCount": 25,
   "supportedTrust": ["eas"]
 }
@@ -134,6 +134,7 @@ EAS attestations are synced from:
 
 | Chain | Chain ID |
 |-------|----------|
+| Ethereum | 1 |
 | Ethereum Sepolia | 11155111 |
 | Base Sepolia | 84532 |
 
@@ -160,7 +161,7 @@ curl -N "https://api.8004.dev/api/v1/events?reputation=true" \
 Events:
 ```
 event: reputation_change
-data: {"agentId":"11155111:1234","previousScore":4.0,"newScore":4.2}
+data: {"agentId":"11155111:1234","previousScore":80,"newScore":84}
 ```
 
 ## Best Practices
@@ -176,7 +177,7 @@ data: {"agentId":"11155111:1234","previousScore":4.0,"newScore":4.2}
 
 - Submit honest feedback after interactions
 - Include specific context in feedback
-- Use the full 1-5 scale appropriately
+- Use the full 0-100 scale appropriately
 - Check reputation before using new agents
 
 ## Related

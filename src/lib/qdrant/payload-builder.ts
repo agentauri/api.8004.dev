@@ -117,8 +117,12 @@ export interface PayloadEnrichment {
   lastReachabilityCheckMcp?: string;
   /** Last A2A reachability check timestamp */
   lastReachabilityCheckA2a?: string;
+  /** Last Web reachability check timestamp */
+  lastReachabilityCheckWeb?: string;
   /** Wallet address of the reachability attestor */
   reachabilityAttestor?: string;
+  /** Whether Web endpoint is reachable */
+  isReachableWeb?: boolean;
 
   // Validation score fields
   /** Average validation score (0-100) */
@@ -127,6 +131,14 @@ export interface PayloadEnrichment {
   totalValidations?: number;
   /** Number of completed validations */
   completedValidations?: number;
+  /** Number of pending validations */
+  pendingValidations?: number;
+  /** Number of expired validations */
+  expiredValidations?: number;
+
+  // Tags aggregation
+  /** All unique feedback tags for this agent */
+  allTags?: string[];
 }
 
 /**
@@ -190,6 +202,7 @@ export function buildAgentPayload(
     // Reachability status
     is_reachable_a2a: enrichment?.isReachableA2a ?? false,
     is_reachable_mcp: enrichment?.isReachableMcp ?? false,
+    is_reachable_web: enrichment?.isReachableWeb ?? false,
 
     // Timestamps
     created_at: input.createdAt ?? new Date().toISOString(),
@@ -219,12 +232,21 @@ export function buildAgentPayload(
     // Gap 6: Reachability attestations
     last_reachability_check_mcp: enrichment?.lastReachabilityCheckMcp ?? '',
     last_reachability_check_a2a: enrichment?.lastReachabilityCheckA2a ?? '',
+    last_reachability_check_web: enrichment?.lastReachabilityCheckWeb ?? '',
     reachability_attestor: enrichment?.reachabilityAttestor ?? '',
 
     // Validation score fields
     validation_score: enrichment?.validationScore ?? 0,
     total_validations: enrichment?.totalValidations ?? 0,
     completed_validations: enrichment?.completedValidations ?? 0,
+    pending_validations: enrichment?.pendingValidations ?? 0,
+    expired_validations: enrichment?.expiredValidations ?? 0,
+
+    // Wallet verification (ERC-8004 v1.0: on-chain verified wallet)
+    wallet_verified: !!(input.walletAddress && input.walletAddress.length > 0),
+
+    // Tags aggregation (from D1 agent_feedback)
+    all_tags: enrichment?.allTags ?? [],
   };
 }
 

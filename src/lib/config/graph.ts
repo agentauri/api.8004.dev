@@ -25,10 +25,11 @@ export {
  * Subgraph IDs for each chain on The Graph Network
  * These are deployment IDs on the decentralized network
  *
- * Currently only ETH Sepolia has v1.0 contracts deployed.
+ * Currently ETH Mainnet and ETH Sepolia have v1.0 contracts deployed.
  * Other chains will be added when their contracts are deployed.
  */
 export const SUBGRAPH_IDS: Record<number, string> = {
+  1: 'FV6RR6y13rsnCxBAicKuQEwDp8ioEGiNaWaZUmvr1F8k', // Ethereum Mainnet (v1.0)
   11155111: '6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT', // Ethereum Sepolia (v1.0)
 };
 

@@ -72,12 +72,14 @@ search.post('/', async (c) => {
         // Wallet filters
         owner: body.filters.owner,
         walletAddress: body.filters.walletAddress,
+        walletVerified: body.filters.walletVerified,
         // Trust model filters
         trustModels: body.filters.trustModels,
         hasTrusts: body.filters.hasTrusts,
         // Reachability filters
         reachableA2a: body.filters.reachableA2a,
         reachableMcp: body.filters.reachableMcp,
+        reachableWeb: body.filters.reachableWeb,
         // Registration file filter
         hasRegistrationFile: body.filters.hasRegistrationFile,
         // Exact match filters (new)
@@ -87,6 +89,11 @@ search.post('/', async (c) => {
         excludeChainIds: body.filters.excludeChainIds,
         excludeSkills: body.filters.excludeSkills,
         excludeDomains: body.filters.excludeDomains,
+        // Declared OASF array filters
+        declaredSkills: body.filters.declaredSkills,
+        declaredDomains: body.filters.declaredDomains,
+        // Tags filter
+        hasTags: body.filters.hasTags,
       })
     : undefined;
 

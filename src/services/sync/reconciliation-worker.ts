@@ -22,13 +22,10 @@ import { createQdrantClient } from '../qdrant';
 
 /**
  * Build Graph endpoints lazily using the provided API key.
- * Only ETH Sepolia (11155111) has v1.0 contracts deployed currently.
+ * Returns all chains with subgraph deployments (currently ETH Mainnet + ETH Sepolia).
  */
 function getGraphEndpoints(graphApiKey: string): Record<number, string> {
-  const allUrls = buildSubgraphUrls(graphApiKey);
-  return Object.fromEntries(
-    Object.entries(allUrls).filter(([chainId]) => chainId === '11155111')
-  );
+  return buildSubgraphUrls(graphApiKey);
 }
 
 interface GraphAgent {

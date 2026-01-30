@@ -23,6 +23,7 @@ export interface Env {
   SEARCH_SERVICE_URL: string;
 
   // RPC URLs for supported chains
+  ETHEREUM_RPC_URL?: string;
   SEPOLIA_RPC_URL: string;
   BASE_SEPOLIA_RPC_URL: string;
   POLYGON_AMOY_RPC_URL: string;

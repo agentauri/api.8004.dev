@@ -34,9 +34,9 @@ import {
 
 /**
  * Supported chain IDs with deployed v1.0 contracts
- * Currently only ETH Sepolia has v1.0 contracts deployed
+ * ETH Mainnet and ETH Sepolia have v1.0 contracts deployed
  */
-const SUPPORTED_CHAIN_IDS: number[] = [11155111];
+const SUPPORTED_CHAIN_IDS: number[] = [1, 11155111];
 
 /**
  * Raw Feedback entity from The Graph
@@ -317,11 +317,17 @@ function sanitizeExternalString(
 
 /**
  * Reachability tags from watchtower
- * These tags indicate the feedback is a reachability attestation
+ * These tags indicate the feedback is a reachability attestation.
+ *
+ * Supports two formats:
+ * - Legacy: tag1="reachability_mcp" or tag1="reachability_a2a"
+ * - Watchtower v1: tag1="reachable", tag2="mcp" or tag2="a2a" or tag2="web"
  */
 const REACHABILITY_TAGS = {
   MCP: 'reachability_mcp',
   A2A: 'reachability_a2a',
+  /** Watchtower v1 uses a generic tag1 with protocol in tag2 */
+  REACHABLE: 'reachable',
 } as const;
 
 /**
@@ -331,8 +337,37 @@ const REACHABILITY_TAGS = {
 const STAR_SCORE_THRESHOLD = 90;
 
 /**
+ * Determine the reachability protocol from feedback tags.
+ *
+ * Supports two formats:
+ * - Legacy: tag1="reachability_mcp" or tag1="reachability_a2a"
+ * - Watchtower v1: tag1="reachable", tag2="mcp" or tag2="a2a" or tag2="web"
+ *
+ * @returns 'mcp' | 'a2a' | 'web' | null
+ */
+function getReachabilityProtocol(feedback: GraphFeedback): 'mcp' | 'a2a' | 'web' | null {
+  if (!feedback.tag1) return null;
+
+  const tag1Lower = feedback.tag1.toLowerCase();
+
+  // Legacy format: tag1 contains the full reachability type
+  if (tag1Lower === REACHABILITY_TAGS.MCP) return 'mcp';
+  if (tag1Lower === REACHABILITY_TAGS.A2A) return 'a2a';
+
+  // Watchtower v1 format: tag1="reachable", tag2 specifies protocol
+  if (tag1Lower === REACHABILITY_TAGS.REACHABLE && feedback.tag2) {
+    const tag2Lower = feedback.tag2.toLowerCase();
+    if (tag2Lower === 'mcp') return 'mcp';
+    if (tag2Lower === 'a2a') return 'a2a';
+    if (tag2Lower === 'web') return 'web';
+  }
+
+  return null;
+}
+
+/**
  * Check if feedback is a reachability attestation and update Qdrant payload
- * Watchtower posts feedback with tag1: "reachability_mcp" or "reachability_a2a"
+ * Supports both legacy (tag1="reachability_mcp") and watchtower v1 (tag1="reachable", tag2="mcp") formats.
  *
  * @param qdrant - Qdrant client for updating payloads
  * @param agentId - Agent ID in format chainId:tokenId
@@ -344,40 +379,42 @@ async function processReachabilityAttestation(
   agentId: string,
   feedback: GraphFeedback
 ): Promise<boolean> {
-  if (!qdrant || !feedback.tag1) return false;
+  if (!qdrant) return false;
 
-  const tag1Lower = feedback.tag1.toLowerCase();
-
-  // Check if this is a reachability attestation
-  if (tag1Lower !== REACHABILITY_TAGS.MCP && tag1Lower !== REACHABILITY_TAGS.A2A) {
-    return false;
-  }
+  const protocol = getReachabilityProtocol(feedback);
+  if (!protocol) return false;
 
   const timestamp = timestampToIso(feedback.createdAt);
   const attestor = feedback.clientAddress;
 
   try {
-    // Update the appropriate reachability field based on tag
-    if (tag1Lower === REACHABILITY_TAGS.MCP) {
+    if (protocol === 'mcp') {
       await qdrant.setPayloadByAgentId(agentId, {
         last_reachability_check_mcp: timestamp,
         reachability_attestor: attestor,
         is_reachable_mcp: true,
       });
-      console.info(`Gap 6: Updated MCP reachability for ${agentId} from attestor ${attestor}`);
-    } else if (tag1Lower === REACHABILITY_TAGS.A2A) {
+      console.info(`Reachability: Updated MCP for ${agentId} from attestor ${attestor}`);
+    } else if (protocol === 'a2a') {
       await qdrant.setPayloadByAgentId(agentId, {
         last_reachability_check_a2a: timestamp,
         reachability_attestor: attestor,
         is_reachable_a2a: true,
       });
-      console.info(`Gap 6: Updated A2A reachability for ${agentId} from attestor ${attestor}`);
+      console.info(`Reachability: Updated A2A for ${agentId} from attestor ${attestor}`);
+    } else if (protocol === 'web') {
+      await qdrant.setPayloadByAgentId(agentId, {
+        last_reachability_check_web: timestamp,
+        reachability_attestor: attestor,
+        is_reachable_web: true,
+      });
+      console.info(`Reachability: Updated Web for ${agentId} from attestor ${attestor}`);
     }
 
     return true;
   } catch (error) {
     console.warn(
-      `Gap 6: Failed to update reachability for ${agentId}:`,
+      `Reachability: Failed to update ${protocol} for ${agentId}:`,
       error instanceof Error ? error.message : String(error)
     );
     return false;

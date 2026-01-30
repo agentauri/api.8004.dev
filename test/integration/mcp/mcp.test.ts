@@ -85,7 +85,7 @@ describe('MCP Server', () => {
       const body = await response.json();
       expect(body).toMatchObject({
         name: '8004-agents',
-        version: '1.0.0',
+        version: '2.2.0',
         protocolVersion: '2025-06-18',
       });
     });

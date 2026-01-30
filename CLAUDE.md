@@ -73,26 +73,33 @@ This project is designed to be open source (MIT License). All contributions must
 api.8004.dev/
 ├── src/
 │   ├── index.ts                    # Main entry, queue/scheduled handlers
-│   ├── routes/                     # API route handlers (28 files)
+│   ├── routes/                     # API route handlers (29 files)
 │   │   ├── agents-qdrant.ts        # /api/v1/agents (Qdrant-based)
 │   │   ├── analytics.ts            # /api/v1/analytics
 │   │   ├── chains.ts               # /api/v1/chains
 │   │   ├── classify.ts             # /api/v1/agents/:id/classify
 │   │   ├── compose.ts              # /api/v1/compose (team building)
+│   │   ├── evaluate.ts             # /api/v1/evaluate (agent evaluation)
+│   │   ├── evaluations.ts          # /api/v1/evaluations (evaluation queue)
 │   │   ├── events.ts               # /api/v1/events (SSE)
-│   │   ├── feedbacks.ts            # /api/v1/feedbacks
+│   │   ├── feedbacks.ts            # /api/v1/feedbacks (global feedbacks)
 │   │   ├── health.ts               # /api/v1/health
+│   │   ├── health-agent.ts         # /api/v1/agents/:id/health
 │   │   ├── intents.ts              # /api/v1/intents (workflows)
 │   │   ├── keys.ts                 # /api/v1/keys (API key management)
 │   │   ├── leaderboard.ts          # /api/v1/leaderboard
+│   │   ├── metadata.ts             # /api/v1/agents/:id/metadata
 │   │   ├── openapi.ts              # /api/v1/openapi
 │   │   ├── reputation.ts           # /api/v1/agents/:id/reputation
 │   │   ├── scripts.ts              # Public scripts
 │   │   ├── search-qdrant.ts        # /api/v1/search (vector search)
-│   │   ├── stats.ts                # /api/v1/stats
+│   │   ├── search-stream.ts        # /api/v1/search/stream (SSE search)
+│   │   ├── stats.ts                # /api/v1/stats, /stats/global, /stats/chains/:id
+│   │   ├── tags.ts                 # /api/v1/tags (feedback tags)
 │   │   ├── taxonomy.ts             # /api/v1/taxonomy
-│   │   ├── verification.ts         # /api/v1/verification
-│   │   └── validations.ts          # Request validation schemas
+│   │   ├── trending.ts             # /api/v1/trending
+│   │   ├── validations.ts          # /api/v1/agents/:id/validations
+│   │   └── verification.ts         # /api/v1/verification
 │   ├── services/                   # Business logic (30+ services)
 │   │   ├── qdrant.ts               # Qdrant Cloud client
 │   │   ├── qdrant-search.ts        # High-level search service
@@ -127,7 +134,7 @@ api.8004.dev/
 │   │   └── utils/                  # Errors, validation, rate-limit
 │   ├── mcp/                        # Model Context Protocol
 │   └── types/                      # TypeScript type definitions
-├── migrations/                     # D1 database migrations (24 files)
+├── migrations/                     # D1 database migrations (26 files)
 ├── test/                           # Unit & integration tests
 └── scripts/                        # E2E tests, utilities
 ```
@@ -194,6 +201,17 @@ FALLBACK_MODEL             # Default: claude-3-haiku-20240307
 CACHE_TTL                  # Default: 300 (seconds)
 RATE_LIMIT_RPM             # Default: 300
 GRAPH_API_KEY              # The Graph API key
+EMBEDDING_MODEL            # Default: text-embedding-bge-m3
+IPFS_GATEWAY_URL           # Default: https://ipfs.io/ipfs/
+
+# HyDE Query Expansion (optional)
+HYDE_ENABLED               # Enable HyDE for improved semantic search
+HYDE_MODEL                 # Model for HyDE generation
+
+# Cross-Encoder Reranking (optional)
+RERANKER_ENABLED           # Enable cross-encoder reranking
+RERANKER_MODEL             # Model for reranking
+RERANKER_TOP_K             # Number of top results to rerank
 ```
 
 ---
@@ -204,12 +222,19 @@ GRAPH_API_KEY              # The Graph API key
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/v1/agents` | List agents with 40+ native filters |
+| GET | `/api/v1/agents` | List agents with 50+ native filters |
+| GET | `/api/v1/agents/batch` | Get multiple agents by IDs |
 | GET | `/api/v1/agents/:id` | Get agent details |
 | GET | `/api/v1/agents/:id/similar` | Find similar agents |
 | GET | `/api/v1/agents/:id/complementary` | Find complementary agents |
 | GET | `/api/v1/agents/:id/compatible` | Find I/O compatible agents |
+| GET | `/api/v1/agents/:id/health` | Agent health status |
+| GET | `/api/v1/agents/:id/metadata` | On-chain key-value metadata |
+| GET | `/api/v1/agents/:id/metadata/:key` | Specific metadata entry |
+| GET | `/api/v1/agents/:id/validations` | Agent validations list |
+| GET | `/api/v1/agents/:id/validations/summary` | Validation summary with AgentStats |
 | POST | `/api/v1/search` | Semantic vector search |
+| POST | `/api/v1/search/stream` | Streaming search via SSE |
 
 ### Classification & Reputation
 
@@ -218,6 +243,27 @@ GRAPH_API_KEY              # The Graph API key
 | GET | `/api/v1/agents/:id/classify` | Get OASF classification |
 | POST | `/api/v1/agents/:id/classify` | Request classification |
 | GET | `/api/v1/agents/:id/reputation` | Get reputation & feedback |
+| GET | `/api/v1/agents/:id/reputation/history` | Get reputation over time |
+| GET | `/api/v1/agents/:id/reputation/feedback` | Get feedback entries |
+
+### Evaluations
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/evaluate/:agentId` | Get latest evaluation |
+| POST | `/api/v1/evaluate/:agentId` | Trigger new evaluation |
+| GET | `/api/v1/evaluate/info` | Evaluation API info |
+| GET | `/api/v1/evaluate/benchmarks` | List benchmark tests |
+| GET | `/api/v1/evaluations` | List all evaluations |
+| POST | `/api/v1/evaluations` | Queue new evaluation |
+| GET | `/api/v1/evaluations/:id` | Get evaluation by ID |
+
+### Feedbacks
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/feedbacks` | Global feedbacks with filters (reviewers, agentIds, feedbackIndex) |
+| GET | `/api/v1/feedbacks/:feedbackId/responses` | Feedback responses |
 
 ### Workflows & Composition
 
@@ -234,9 +280,29 @@ GRAPH_API_KEY              # The Graph API key
 |--------|----------|-------------|
 | GET | `/api/v1/chains` | Chain statistics |
 | GET | `/api/v1/stats` | Platform statistics |
+| GET | `/api/v1/stats/global` | Global cross-chain aggregates |
+| GET | `/api/v1/stats/chains/:chainId` | Chain-specific protocol stats |
 | GET | `/api/v1/taxonomy` | OASF taxonomy tree |
+| GET | `/api/v1/tags` | Unique feedback tags |
+| GET | `/api/v1/trending` | Trending agents by period |
+| GET | `/api/v1/leaderboard` | Agent reputation rankings |
 | GET | `/api/v1/health` | Health checks |
 | GET | `/api/v1/events` | SSE real-time updates |
+
+### API Keys & Verification
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/keys` | Create API key |
+| GET | `/api/v1/keys` | List API keys |
+| GET | `/api/v1/keys/:id` | Get API key details |
+| PATCH | `/api/v1/keys/:id` | Update API key |
+| DELETE | `/api/v1/keys/:id` | Delete API key |
+| POST | `/api/v1/keys/:id/rotate` | Rotate API key |
+| GET | `/api/v1/keys/:id/usage` | Get API key usage statistics |
+| GET | `/api/v1/verification` | Agent verification status |
+| POST | `/api/v1/agents/:id/verification/challenge` | Generate verification challenge |
+| POST | `/api/v1/agents/:id/verification/verify` | Submit verification proof |
 
 ### MCP & OpenAPI
 
@@ -260,13 +326,16 @@ agent_classifications (agent_id, skills, domains, confidence, model_version)
 classification_queue (agent_id, status, attempts, error)
 
 -- Feedback & reputation
-agent_feedback (agent_id, score, tags, submitter, eas_uid, tx_id, feedback_index, endpoint, feedback_hash)
+agent_feedback (agent_id, chain_id, score, tags, submitter, eas_uid, tx_id, feedback_index, endpoint, feedback_hash)
 agent_reputation (agent_id, average_score, feedback_count, distribution)
 
 -- Sync state
 eas_sync_state (chain_id, last_block, attestations_synced)
 qdrant_sync_state (last_sync, agents_synced, agents_deleted)
 graph_feedback_sync (chain_id, last_sync, last_block)
+
+-- API keys
+api_keys (id, key_hash, name, permissions, rate_limit, expires_at)
 ```
 
 ### Advanced Tables
@@ -284,6 +353,17 @@ trust_graph_state (last_computation, total_iterations, status)
 -- Intent templates
 intent_templates (id, name, description, category, is_featured)
 intent_template_steps (template_id, step_order, role, required_skills)
+
+-- Evaluations
+agent_evaluations (id, agent_id, status, benchmark_id, result, score)
+evaluations_queue (id, agent_id, priority, status, attempts)
+
+-- Analytics & verification
+analytics_events (id, event_type, agent_id, metadata, timestamp)
+verification_requests (id, agent_id, status, verification_type)
+
+-- ERC-8004 version tracking
+erc_8004_versions (chain_id, version, deployed_at, contract_address)
 ```
 
 ---
@@ -362,8 +442,16 @@ intent_template_steps (template_id, step_order, role, required_skills)
 
 | Frequency | Task |
 |-----------|------|
-| Every 15 min | Graph → Qdrant sync, D1 → Qdrant sync |
-| Every hour | EAS indexing, batch classification (50 agents), reconciliation |
+| Every 15 min | Graph → Qdrant sync |
+| Every 15 min | D1 → Qdrant sync |
+| Every 30 min | Re-embedding queue processing |
+| Every 30 min | MCP capabilities crawl |
+| Every hour | EAS attestations sync |
+| Every hour | Graph feedback sync |
+| Every hour | Batch classification (50 agents) |
+| Every hour | Reconciliation (if GRAPH_API_KEY configured) |
+| Every hour | Analytics aggregation |
+| Daily (00:00 UTC) | Reputation snapshot for trending |
 
 ---
 
@@ -371,6 +459,7 @@ intent_template_steps (template_id, step_order, role, required_skills)
 
 | Chain | Chain ID | Network | Status |
 |-------|----------|---------|--------|
+| Ethereum | 1 | Mainnet | ✅ Active (v1.0) |
 | Ethereum Sepolia | 11155111 | Testnet | ✅ Active (v1.0) |
 | Base Sepolia | 84532 | Testnet | ✅ Active (v1.0) |
 | Polygon Amoy | 80002 | Testnet | ✅ Active (v1.0) |
@@ -428,7 +517,13 @@ pnpm run test:e2e          # E2E tests (~120 cases)
 - Contracts: https://github.com/erc-8004/erc-8004-contracts
 - Subgraph: https://github.com/agent0lab/subgraph
 
-**Deployed Contracts (ETH Sepolia only):**
+**Deployed Contracts:**
+
+**Ethereum Mainnet (Chain ID: 1):**
+- IdentityRegistry: `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432`
+- ReputationRegistry: `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`
+
+**Ethereum Sepolia (Chain ID: 11155111):**
 - IdentityRegistry: `0x8004A818BFB912233c491871b3d84c89A494BD9e`
 - ReputationRegistry: `0x8004B663056A597Dffe9eCcC1965A193B7388713`
 

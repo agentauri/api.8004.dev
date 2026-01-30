@@ -78,6 +78,7 @@ crons = [
 # Secrets (set via `wrangler secret put <SECRET_NAME>`)
 # ------------------------------------------------------------------
 # RPC URLs for supported chains:
+# Ethereum Mainnet (1):             ETHEREUM_RPC_URL
 # Ethereum Sepolia (11155111):      SEPOLIA_RPC_URL
 # Base Sepolia (84532):             BASE_SEPOLIA_RPC_URL
 # Polygon Amoy (80002):             POLYGON_AMOY_RPC_URL

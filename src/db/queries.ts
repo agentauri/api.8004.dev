@@ -722,6 +722,12 @@ export type ScoreCategory = 'positive' | 'neutral' | 'negative';
 export interface GlobalFeedbacksParams {
   chainIds?: number[];
   scoreCategory?: ScoreCategory;
+  /** Filter by reviewer wallet addresses */
+  reviewers?: string[];
+  /** Filter by multiple agent IDs (format: chainId:tokenId) */
+  agentIds?: string[];
+  /** Filter by specific feedback index */
+  feedbackIndex?: number;
   limit: number;
   offset: number;
 }
@@ -775,6 +781,26 @@ export async function getAllFeedbacksPaginated(
         whereClause += ' AND score < 40';
         break;
     }
+  }
+
+  // Reviewer filter (filter by submitter wallet addresses)
+  if (params.reviewers && params.reviewers.length > 0) {
+    const placeholders = params.reviewers.map(() => '?').join(',');
+    whereClause += ` AND LOWER(submitter) IN (${placeholders})`;
+    bindings.push(...params.reviewers.map((r) => r.toLowerCase()));
+  }
+
+  // Agent IDs filter (filter by multiple agent IDs)
+  if (params.agentIds && params.agentIds.length > 0) {
+    const placeholders = params.agentIds.map(() => '?').join(',');
+    whereClause += ` AND agent_id IN (${placeholders})`;
+    bindings.push(...params.agentIds);
+  }
+
+  // Feedback index filter
+  if (params.feedbackIndex !== undefined) {
+    whereClause += ' AND feedback_index = ?';
+    bindings.push(params.feedbackIndex);
   }
 
   // Count query
@@ -1008,4 +1034,49 @@ export async function updateSnapshotState(
     )
     .bind(date, count, error ?? null)
     .run();
+}
+
+/**
+ * Get all unique feedback tags for a batch of agents
+ * Used to populate the all_tags field in Qdrant payload
+ * @param db - D1 database instance
+ * @param agentIds - List of agent IDs to get tags for
+ * @returns Map of agent ID to array of unique tags
+ */
+export async function getAgentTagsBatch(
+  db: D1Database,
+  agentIds: string[]
+): Promise<Map<string, string[]>> {
+  if (agentIds.length === 0) {
+    return new Map();
+  }
+
+  const tagsMap = new Map<string, string[]>();
+
+  // Process in chunks to avoid SQLite placeholder limit
+  for (let i = 0; i < agentIds.length; i += MAX_BATCH_SIZE) {
+    const chunk = agentIds.slice(i, i + MAX_BATCH_SIZE);
+    const placeholders = chunk.map(() => '?').join(',');
+
+    // Get all feedback entries with tags for the agents
+    const result = await db
+      .prepare(
+        `SELECT agent_id, tags FROM agent_feedback
+         WHERE agent_id IN (${placeholders}) AND tags IS NOT NULL AND tags != ''`
+      )
+      .bind(...chunk)
+      .all<{ agent_id: string; tags: string }>();
+
+    // Aggregate tags per agent
+    for (const row of result.results) {
+      const existingTags = tagsMap.get(row.agent_id) ?? [];
+      // Tags are stored as comma-separated strings
+      const newTags = row.tags.split(',').map((t) => t.trim()).filter((t) => t.length > 0);
+      // Merge unique tags
+      const merged = [...new Set([...existingTags, ...newTags])];
+      tagsMap.set(row.agent_id, merged);
+    }
+  }
+
+  return tagsMap;
 }

@@ -127,7 +127,7 @@ curl https://api.8004.dev/mcp
 ```json
 {
   "name": "8004-agents",
-  "version": "1.0.0",
+  "version": "2.2.0",
   "protocolVersion": "2024-11-05"
 }
 ```
@@ -154,7 +154,7 @@ Expected:
 ```json
 {
   "name": "8004-agents",
-  "version": "1.0.0",
+  "version": "2.2.0",
   "protocolVersion": "2024-11-05"
 }
 ```

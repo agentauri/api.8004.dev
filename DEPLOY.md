@@ -270,7 +270,7 @@ wrangler deploy
 curl https://api.8004.dev/api/v1/health
 
 # Expected response:
-# {"status":"ok","timestamp":"...","version":"2.0.0","services":{...}}
+# {"status":"ok","timestamp":"...","version":"2.2.0","services":{...}}
 
 # Test agent search (requires API key)
 curl "https://api.8004.dev/api/v1/agents?limit=5" \
@@ -451,8 +451,8 @@ The release workflow automatically deploys on version tags:
 
 ```bash
 # Create and push a version tag
-git tag v2.0.0
-git push origin v2.0.0
+git tag v2.2.0
+git push origin v2.2.0
 ```
 
 ## Resource Limits

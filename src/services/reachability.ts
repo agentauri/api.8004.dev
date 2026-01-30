@@ -18,6 +18,8 @@ export interface AgentReachability {
   a2a: boolean;
   /** Whether MCP endpoint was recently verified as reachable */
   mcp: boolean;
+  /** Whether Web endpoint was recently verified as reachable */
+  web: boolean;
 }
 
 /**
@@ -41,9 +43,15 @@ export interface ReachabilityService {
 
 /**
  * Reachability tags used in feedback
+ *
+ * Supports two formats:
+ * - Legacy: tag1="reachability_mcp", tag1="reachability_a2a", tag1="reachability_web"
+ * - Watchtower v1: tag1="reachable", tag2="mcp" or tag2="a2a" or tag2="web"
  */
 const REACHABILITY_TAG_A2A = 'reachability_a2a';
 const REACHABILITY_TAG_MCP = 'reachability_mcp';
+const REACHABILITY_TAG_WEB = 'reachability_web';
+const REACHABILITY_TAG_GENERIC = 'reachable';
 
 /**
  * Minimum score (out of 100) for an endpoint to be considered reachable
@@ -93,14 +101,20 @@ export function createReachabilityService(db: D1Database): ReachabilityService {
   }
 
   /**
-   * Check if feedback indicates reachability for a specific tag
+   * Check if feedback indicates reachability for a specific protocol.
+   * Matches both legacy tags (e.g., "reachability_mcp") and
+   * watchtower v1 format (tag1="reachable", tag2="mcp").
    */
-  function isReachable(feedback: FeedbackRow[], tag: string): boolean {
-    // Find the most recent feedback with this tag
+  function isReachable(feedback: FeedbackRow[], legacyTag: string, protocol: string): boolean {
+    // Find the most recent feedback matching either format
     const relevantFeedback = feedback
       .filter((f) => {
         const tags = parseTags(f.tags);
-        return tags.includes(tag);
+        // Legacy format: ["reachability_mcp"]
+        if (tags.includes(legacyTag)) return true;
+        // Watchtower v1 format: ["reachable", "mcp"]
+        if (tags.includes(REACHABILITY_TAG_GENERIC) && tags.includes(protocol)) return true;
+        return false;
       })
       .sort((a, b) => new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime());
 
@@ -114,23 +128,32 @@ export function createReachabilityService(db: D1Database): ReachabilityService {
       const cutoff = getRecentCutoff();
 
       // Query recent feedback for this agent with reachability tags
+      // Matches legacy format (reachability_a2a, etc.) and watchtower v1 (reachable)
       const results = await db
         .prepare(
           `SELECT agent_id, score, tags, submitted_at
            FROM agent_feedback
            WHERE agent_id = ?
              AND submitted_at >= ?
-             AND (tags LIKE ? OR tags LIKE ?)
+             AND (tags LIKE ? OR tags LIKE ? OR tags LIKE ? OR tags LIKE ?)
            ORDER BY submitted_at DESC`
         )
-        .bind(agentId, cutoff, `%${REACHABILITY_TAG_A2A}%`, `%${REACHABILITY_TAG_MCP}%`)
+        .bind(
+          agentId,
+          cutoff,
+          `%${REACHABILITY_TAG_A2A}%`,
+          `%${REACHABILITY_TAG_MCP}%`,
+          `%${REACHABILITY_TAG_WEB}%`,
+          `%${REACHABILITY_TAG_GENERIC}%`
+        )
         .all<FeedbackRow>();
 
       const feedback = results.results ?? [];
 
       return {
-        a2a: isReachable(feedback, REACHABILITY_TAG_A2A),
-        mcp: isReachable(feedback, REACHABILITY_TAG_MCP),
+        a2a: isReachable(feedback, REACHABILITY_TAG_A2A, 'a2a'),
+        mcp: isReachable(feedback, REACHABILITY_TAG_MCP, 'mcp'),
+        web: isReachable(feedback, REACHABILITY_TAG_WEB, 'web'),
       };
     },
 
@@ -144,15 +167,15 @@ export function createReachabilityService(db: D1Database): ReachabilityService {
 
       // Initialize all agents with default false values
       for (const agentId of agentIds) {
-        reachabilityMap.set(agentId, { a2a: false, mcp: false });
+        reachabilityMap.set(agentId, { a2a: false, mcp: false, web: false });
       }
 
       const cutoff = getRecentCutoff();
 
       // D1 has a limit of 100 bound parameters per query
-      // Each query uses batch.length + 3 variables (batch + cutoff + 2 LIKE patterns)
-      // Use batch size of 95 to stay safely under the 100 limit
-      const BATCH_SIZE = 95;
+      // Each query uses batch.length + 5 variables (batch + cutoff + 4 LIKE patterns)
+      // Use batch size of 94 to stay safely under the 100 limit
+      const BATCH_SIZE = 94;
       const feedbackByAgent = new Map<string, FeedbackRow[]>();
 
       for (let i = 0; i < agentIds.length; i += BATCH_SIZE) {
@@ -160,18 +183,26 @@ export function createReachabilityService(db: D1Database): ReachabilityService {
         const placeholders = batch.map(() => '?').join(', ');
 
         // Query recent feedback for this batch with reachability tags
+        // Matches legacy format (reachability_a2a, etc.) and watchtower v1 (reachable)
         const query = `
           SELECT agent_id, score, tags, submitted_at
           FROM agent_feedback
           WHERE agent_id IN (${placeholders})
             AND submitted_at >= ?
-            AND (tags LIKE ? OR tags LIKE ?)
+            AND (tags LIKE ? OR tags LIKE ? OR tags LIKE ? OR tags LIKE ?)
           ORDER BY agent_id, submitted_at DESC
         `;
 
         const results = await db
           .prepare(query)
-          .bind(...batch, cutoff, `%${REACHABILITY_TAG_A2A}%`, `%${REACHABILITY_TAG_MCP}%`)
+          .bind(
+            ...batch,
+            cutoff,
+            `%${REACHABILITY_TAG_A2A}%`,
+            `%${REACHABILITY_TAG_MCP}%`,
+            `%${REACHABILITY_TAG_WEB}%`,
+            `%${REACHABILITY_TAG_GENERIC}%`
+          )
           .all<FeedbackRow>();
 
         const feedback = results.results ?? [];
@@ -187,8 +218,9 @@ export function createReachabilityService(db: D1Database): ReachabilityService {
       // Determine reachability for each agent
       for (const [agentId, agentFeedback] of feedbackByAgent) {
         reachabilityMap.set(agentId, {
-          a2a: isReachable(agentFeedback, REACHABILITY_TAG_A2A),
-          mcp: isReachable(agentFeedback, REACHABILITY_TAG_MCP),
+          a2a: isReachable(agentFeedback, REACHABILITY_TAG_A2A, 'a2a'),
+          mcp: isReachable(agentFeedback, REACHABILITY_TAG_MCP, 'mcp'),
+          web: isReachable(agentFeedback, REACHABILITY_TAG_WEB, 'web'),
         });
       }
 

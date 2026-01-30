@@ -31,8 +31,8 @@ import {
 } from '@/lib/config/graph';
 
 // Supported chain IDs with deployed v1.0 contracts
-// Currently only ETH Sepolia has v1.0 contracts deployed
-const SUPPORTED_CHAIN_IDS: number[] = [11155111];
+// ETH Mainnet and ETH Sepolia have v1.0 contracts deployed
+const SUPPORTED_CHAIN_IDS: number[] = [1, 11155111];
 
 /**
  * Graph agent structure for v1.0 (current spec)

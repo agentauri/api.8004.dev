@@ -1,6 +1,6 @@
 {
   "name": "8004-backend",
-  "version": "1.0.0",
+  "version": "2.2.0",
   "description": "Backend service for 8004.dev - Unified REST API for ERC-8004 agent explorer",
   "type": "module",
   "main": "src/index.ts",
@@ -50,7 +50,7 @@
     "@x402/core": "^2.2.0",
     "@x402/evm": "^2.2.0",
     "@x402/hono": "^2.2.0",
-    "agent0-sdk": "^1.1.1",
+    "agent0-sdk": "^1.4.2",
     "hono": "^4.11.3",
     "viem": "^2.43.5",
     "zod": "^4.3.5"

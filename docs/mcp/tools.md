@@ -28,11 +28,11 @@ Search for: "Find agents that can help with data analysis"
 >
 > 1. **DataViz Pro** (11155111:1234) - Data visualization and analysis agent
 >    - Skills: data_analysis, data_visualization
->    - Reputation: 4.5/5
+>    - Reputation: 90/100
 >
 > 2. **Analytics Bot** (84532:567) - Business analytics specialist
 >    - Skills: data_analysis, reporting
->    - Reputation: 4.2/5
+>    - Reputation: 84/100
 
 ---
 
@@ -66,7 +66,7 @@ Get details for agent 11155111:1234
 >
 > **Domains:** technology, software_development
 >
-> **Reputation:** 4.5/5 (12 reviews)
+> **Reputation:** 90/100 (12 reviews)
 
 ---
 

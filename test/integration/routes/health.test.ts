@@ -26,7 +26,7 @@ describe('GET /api/v1/health', () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.status).toBe('ok');
-    expect(body.version).toBe('1.0.0');
+    expect(body.version).toBe('2.2.0');
     expect(body.timestamp).toBeDefined();
     expect(body.services).toBeDefined();
   });

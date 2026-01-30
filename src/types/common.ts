@@ -62,3 +62,60 @@ export interface PaginationMeta {
   limit: number;
   offset?: number;
 }
+
+/**
+ * Per-chain protocol breakdown for global stats
+ */
+export interface ProtocolChainBreakdown {
+  chainId: number;
+  chainName: string;
+  agents: number;
+  feedback: number;
+  validations: number;
+}
+
+/**
+ * Global statistics response (cross-chain aggregates)
+ */
+export interface GlobalStatsResponse {
+  success: true;
+  data: {
+    /** Total registered agents across all chains */
+    totalAgents: number;
+    /** Total feedback entries across all chains */
+    totalFeedback: number;
+    /** Total validations across all chains */
+    totalValidations: number;
+    /** Per-chain breakdown */
+    protocolsByChain: ProtocolChainBreakdown[];
+    /** Last updated timestamp */
+    lastUpdated: string;
+  };
+}
+
+/**
+ * Chain-specific protocol statistics response
+ */
+export interface ChainProtocolStatsResponse {
+  success: true;
+  data: {
+    chainId: number;
+    chainName: string;
+    /** Total registered agents on this chain */
+    totalAgents: number;
+    /** Agents with registration files */
+    withRegistrationFile: number;
+    /** Active agents */
+    activeAgents: number;
+    /** Total feedback entries */
+    totalFeedback: number;
+    /** Total validations */
+    totalValidations: number;
+    /** All unique tags used in feedback */
+    tags: string[];
+    /** Deployment status */
+    deploymentStatus: 'active' | 'pending';
+    /** Last updated timestamp */
+    lastUpdated: string;
+  };
+}

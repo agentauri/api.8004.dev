@@ -26,8 +26,8 @@ describe('chainIdSchema', () => {
   });
 
   it('rejects invalid chain IDs', () => {
-    expect(() => chainIdSchema.parse(1)).toThrow();
     expect(() => chainIdSchema.parse(999999)).toThrow();
+    expect(() => chainIdSchema.parse(0)).toThrow();
     expect(() => chainIdSchema.parse('invalid')).toThrow();
   });
 });

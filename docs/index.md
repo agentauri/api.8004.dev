@@ -49,20 +49,21 @@ curl -X POST "https://api.8004.dev/api/v1/search" \
 
 ## Supported Chains
 
-| Chain | Chain ID | Network |
-|-------|----------|---------|
-| Ethereum Sepolia | 11155111 | Testnet |
-| Base Sepolia | 84532 | Testnet |
-| Polygon Amoy | 80002 | Testnet |
-| Linea Sepolia | 59141 | Testnet |
-| Hedera Testnet | 296 | Testnet |
-| HyperEVM Testnet | 998 | Testnet |
-| SKALE | 1351057110 | Testnet |
+| Chain | Chain ID | Network | Status |
+|-------|----------|---------|--------|
+| Ethereum | 1 | Mainnet | ✅ Active |
+| Ethereum Sepolia | 11155111 | Testnet | ✅ Active |
+| Base Sepolia | 84532 | Testnet | ✅ Active |
+| Polygon Amoy | 80002 | Testnet | ✅ Active |
+| Linea Sepolia | 59141 | Testnet | ⏳ Pending |
+| Hedera Testnet | 296 | Testnet | ⏳ Pending |
+| HyperEVM Testnet | 998 | Testnet | ⏳ Pending |
+| SKALE | 1351057110 | Testnet | ⏳ Pending |
 
 ## Key Features
 
-- **44+ API Endpoints** - Comprehensive REST API for agent discovery
-- **40+ Search Filters** - Fine-grained filtering by skills, domains, reputation, chains, trust score, version
+- **50+ API Endpoints** - Comprehensive REST API for agent discovery
+- **50+ Search Filters** - Fine-grained filtering by skills, domains, reputation, chains, trust score, version, validations, reachability
 - **Vector Search** - Powered by Qdrant Cloud with Venice AI embeddings
 - **MCP Server** - Native integration with Claude Desktop, Cursor, and more
 - **Open Source** - MIT licensed, contributions welcome

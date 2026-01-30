@@ -10,6 +10,7 @@ import type { SearchMode } from './search';
 
 /**
  * Supported blockchain chain IDs
+ * - 1: Ethereum Mainnet
  * - 11155111: Ethereum Sepolia
  * - 84532: Base Sepolia
  * - 80002: Polygon Amoy
@@ -18,7 +19,7 @@ import type { SearchMode } from './search';
  * - 998: HyperEVM Testnet
  * - 1351057110: SKALE Base Sepolia
  */
-export type SupportedChainId = 11155111 | 84532 | 80002 | 59141 | 296 | 998 | 1351057110;
+export type SupportedChainId = 1 | 11155111 | 84532 | 80002 | 59141 | 296 | 998 | 1351057110;
 
 /**
  * Supported trust methods

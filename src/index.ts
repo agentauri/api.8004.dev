@@ -195,7 +195,7 @@ app.route('', scripts);
 app.get('/', (c) => {
   return c.json({
     name: '8004-backend',
-    version: '1.0.0',
+    version: '2.2.0',
     docs: {
       json: '/api/v1/openapi/openapi.json',
       yaml: '/api/v1/openapi/openapi.yaml',
