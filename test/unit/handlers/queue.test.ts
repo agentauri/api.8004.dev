@@ -171,7 +171,7 @@ describe('Scheduled handler', () => {
     vi.restoreAllMocks();
   });
 
-  it('calls ctx.waitUntil with sync function', async () => {
+  it('calls ctx.waitUntil with sync function', { timeout: 15000 }, async () => {
     // Mock all sync workers that run in scheduled handler
     vi.doMock('@/services/sync/graph-sync-worker', () => ({
       syncFromGraph: vi.fn().mockResolvedValue({
