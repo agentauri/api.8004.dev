@@ -44,7 +44,7 @@
   },
   "homepage": "https://github.com/agent0lab/8004-backend#readme",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.71.2",
+    "@anthropic-ai/sdk": "^0.72.1",
     "@google/generative-ai": "^0.24.1",
     "@modelcontextprotocol/sdk": "^1.25.1",
     "@x402/core": "^2.2.0",
