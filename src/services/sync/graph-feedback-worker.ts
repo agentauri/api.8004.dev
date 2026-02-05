@@ -21,15 +21,11 @@
 
 import type { D1Database } from '@cloudflare/workers-types';
 import type { NewFeedback } from '@/db/schema';
+import { executeWithChainKey, SUBGRAPH_IDS } from '@/lib/config/graph';
 import { fetchWithTimeout } from '@/lib/utils/fetch';
+import { createQdrantClient, type QdrantClient } from '../qdrant';
 import type { ReputationService } from '../reputation';
 import { createReputationService } from '../reputation';
-import { createQdrantClient, type QdrantClient } from '../qdrant';
-
-import {
-  executeWithChainKey,
-  SUBGRAPH_IDS,
-} from '@/lib/config/graph';
 
 /**
  * Supported chain IDs with deployed v1.0 contracts and subgraphs
@@ -37,16 +33,16 @@ import {
  */
 const SUPPORTED_CHAIN_IDS: number[] = [
   // Mainnets
-  1,        // Ethereum Mainnet
-  137,      // Polygon Mainnet
-  8453,     // Base Mainnet
-  56,       // BSC Mainnet
-  143,      // Monad Mainnet
+  1, // Ethereum Mainnet
+  137, // Polygon Mainnet
+  8453, // Base Mainnet
+  56, // BSC Mainnet
+  143, // Monad Mainnet
   // Testnets
   11155111, // Ethereum Sepolia
-  84532,    // Base Sepolia
-  97,       // BSC Testnet
-  10143,    // Monad Testnet
+  84532, // Base Sepolia
+  97, // BSC Testnet
+  10143, // Monad Testnet
 ];
 
 /**
@@ -181,7 +177,9 @@ async function fetchFeedbackFromGraph(
     );
 
     if (!response.ok) {
-      throw new Error(`Graph API error ${response.status} for chain ${chainId}: ${response.statusText}`);
+      throw new Error(
+        `Graph API error ${response.status} for chain ${chainId}: ${response.statusText}`
+      );
     }
 
     const result = (await response.json()) as {
@@ -191,7 +189,9 @@ async function fetchFeedbackFromGraph(
 
     if (result.errors?.length) {
       const firstError = result.errors[0];
-      throw new Error(`Graph query error for chain ${chainId}: ${firstError?.message ?? 'Unknown error'}`);
+      throw new Error(
+        `Graph query error for chain ${chainId}: ${firstError?.message ?? 'Unknown error'}`
+      );
     }
 
     return result.data?.feedbacks ?? [];
@@ -279,9 +279,7 @@ function normalizeTag(tag: string | null): string | null {
  * Normalizes both bytes32 hex strings (v0.4) and regular strings (v1.0)
  */
 function buildTags(tag1: string | null, tag2: string | null): string[] {
-  return [normalizeTag(tag1), normalizeTag(tag2)].filter(
-    (tag): tag is string => tag !== null
-  );
+  return [normalizeTag(tag1), normalizeTag(tag2)].filter((tag): tag is string => tag !== null);
 }
 
 /**
@@ -588,7 +586,9 @@ async function processFeedback(
     eas_uid: toGraphFeedbackUid(feedback.id), // Use eas_uid for dedup with "graph:" prefix
     tx_id: undefined, // Transaction hash not available from Graph
     // ERC-8004 v1.0 fields
-    feedback_index: feedback.feedbackIndex ? Number.parseInt(feedback.feedbackIndex, 10) : undefined,
+    feedback_index: feedback.feedbackIndex
+      ? Number.parseInt(feedback.feedbackIndex, 10)
+      : undefined,
     endpoint: sanitizeExternalString(feedback.endpoint, MAX_ENDPOINT_LENGTH, 'endpoint'),
     submitted_at: timestampToIso(feedback.createdAt),
   };
@@ -726,7 +726,13 @@ export async function syncFeedbackFromGraph(
           `Graph feedback sync: chain ${chainId} - processing batch of ${feedbackBatch.length} feedback entries`
         );
 
-        const batchLatest = await processBatch(db, reputationService, feedbackBatch, result, qdrant);
+        const batchLatest = await processBatch(
+          db,
+          reputationService,
+          feedbackBatch,
+          result,
+          qdrant
+        );
         if (batchLatest > latestCreatedAt) {
           latestCreatedAt = batchLatest;
         }
@@ -737,7 +743,9 @@ export async function syncFeedbackFromGraph(
 
         // Safety limit per chain
         if (skip > 10000) {
-          console.warn(`Graph feedback sync: chain ${chainId} reached safety limit of 10000 entries`);
+          console.warn(
+            `Graph feedback sync: chain ${chainId} reached safety limit of 10000 entries`
+          );
           break;
         }
       }

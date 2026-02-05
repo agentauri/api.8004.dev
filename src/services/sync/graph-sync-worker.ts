@@ -9,38 +9,34 @@
 
 import type { D1Database } from '@cloudflare/workers-types';
 import { type EmbedFields, formatAgentText } from '@/lib/ai/formatting';
+import { executeWithChainKey, SUBGRAPH_IDS } from '@/lib/config/graph';
 import { createWorkerLogger } from '@/lib/logger/worker-logger';
-import type { AgentPayload } from '../../lib/qdrant/types';
 import {
   buildAgentPayload,
   type PayloadBuilderInput,
   type PayloadEnrichment,
 } from '../../lib/qdrant/payload-builder';
+import type { AgentPayload } from '../../lib/qdrant/types';
 import { type A2AClient, createA2AClient, type ExtractedIOModes } from '../a2a-client';
 import { generateEmbedding } from '../embedding';
 import { createQdrantClient, type QdrantClient } from '../qdrant';
 import { type AgentReachability, createReachabilityService } from '../reachability';
 import { type ContentFields, computeContentHash, computeEmbedHash } from './content-hash';
 
-import {
-  executeWithChainKey,
-  SUBGRAPH_IDS,
-} from '@/lib/config/graph';
-
 // Supported chain IDs with deployed v1.0 contracts and subgraphs
 // Updated February 2026 with all deployed chains
 const SUPPORTED_CHAIN_IDS: number[] = [
   // Mainnets
-  1,        // Ethereum Mainnet
-  137,      // Polygon Mainnet
-  8453,     // Base Mainnet
-  56,       // BSC Mainnet
-  143,      // Monad Mainnet
+  1, // Ethereum Mainnet
+  137, // Polygon Mainnet
+  8453, // Base Mainnet
+  56, // BSC Mainnet
+  143, // Monad Mainnet
   // Testnets
   11155111, // Ethereum Sepolia
-  84532,    // Base Sepolia
-  97,       // BSC Testnet
-  10143,    // Monad Testnet
+  84532, // Base Sepolia
+  97, // BSC Testnet
+  10143, // Monad Testnet
 ];
 
 /**
@@ -163,7 +159,6 @@ function buildAgentQueryV1_0(): string {
   `;
 }
 
-
 /**
  * Fetch all agents from a single chain's Graph endpoint
  * Uses chain-specific API keys with optional user key fallback
@@ -211,9 +206,7 @@ async function fetchAgentsFromGraph(
  * Fetch all agents from all chains
  * Uses chain-specific API keys with optional user key fallback
  */
-async function fetchAllAgentsFromGraph(
-  userKey: string | undefined
-): Promise<GraphAgent[]> {
+async function fetchAllAgentsFromGraph(userKey: string | undefined): Promise<GraphAgent[]> {
   const allAgents: GraphAgent[] = [];
 
   for (const chainId of SUPPORTED_CHAIN_IDS) {
