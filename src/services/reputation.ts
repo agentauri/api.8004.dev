@@ -113,6 +113,7 @@ function rowToFeedback(row: AgentFeedbackRow): AgentFeedback {
     transactionHash: row.tx_id ?? undefined,
     feedbackIndex: row.feedback_index ?? undefined,
     endpoint: row.endpoint ?? undefined,
+    feedbackHash: row.feedback_hash ?? undefined,
   };
 }
 

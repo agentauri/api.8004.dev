@@ -317,7 +317,7 @@ feedbacks.get('/:feedbackId/responses', async (c) => {
   }
 
   // Fetch responses from subgraph
-  const subgraphUrls = c.env.GRAPH_API_KEY ? buildSubgraphUrls(c.env.GRAPH_API_KEY) : {};
+  const subgraphUrls = buildSubgraphUrls(c.env.GRAPH_API_KEY);
   const subgraphResponses = await fetchFeedbackResponsesFromSubgraph(
     chainId,
     feedbackId,

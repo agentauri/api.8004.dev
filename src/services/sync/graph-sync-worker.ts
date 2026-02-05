@@ -23,16 +23,25 @@ import { type AgentReachability, createReachabilityService } from '../reachabili
 import { type ContentFields, computeContentHash, computeEmbedHash } from './content-hash';
 
 import {
-  buildSubgraphUrl,
-  DEFAULT_GRAPH_API_KEY,
-  getGraphKeyManager,
+  executeWithChainKey,
   SUBGRAPH_IDS,
-  isGraphRetryableError,
 } from '@/lib/config/graph';
 
-// Supported chain IDs with deployed v1.0 contracts
-// ETH Mainnet and ETH Sepolia have v1.0 contracts deployed
-const SUPPORTED_CHAIN_IDS: number[] = [1, 11155111];
+// Supported chain IDs with deployed v1.0 contracts and subgraphs
+// Updated February 2026 with all deployed chains
+const SUPPORTED_CHAIN_IDS: number[] = [
+  // Mainnets
+  1,        // Ethereum Mainnet
+  137,      // Polygon Mainnet
+  8453,     // Base Mainnet
+  56,       // BSC Mainnet
+  143,      // Monad Mainnet
+  // Testnets
+  11155111, // Ethereum Sepolia
+  84532,    // Base Sepolia
+  97,       // BSC Testnet
+  10143,    // Monad Testnet
+];
 
 /**
  * Graph agent structure for v1.0 (current spec)
@@ -156,12 +165,12 @@ function buildAgentQueryV1_0(): string {
 
 
 /**
- * Fetch all agents from a single chain's Graph endpoint with key rotation
- * Uses GraphKeyManager for retry logic between SDK key and user key
+ * Fetch all agents from a single chain's Graph endpoint
+ * Uses chain-specific API keys with optional user key fallback
  */
 async function fetchAgentsFromGraph(
   chainId: number,
-  keyManager: ReturnType<typeof getGraphKeyManager>,
+  userKey: string | undefined,
   first = 1000,
   skip = 0
 ): Promise<GraphAgent[]> {
@@ -172,13 +181,8 @@ async function fetchAgentsFromGraph(
 
   const query = buildAgentQueryV1_0();
 
-  // Use key manager with retry for key rotation
-  return keyManager.executeWithRetry(async (apiKey) => {
-    const endpoint = buildSubgraphUrl(chainId, apiKey);
-    if (!endpoint) {
-      throw new Error(`Failed to build endpoint for chain ${chainId}`);
-    }
-
+  // Use chain-specific key with user key fallback
+  return executeWithChainKey(chainId, userKey, async (endpoint) => {
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -205,10 +209,10 @@ async function fetchAgentsFromGraph(
 
 /**
  * Fetch all agents from all chains
- * Uses GraphKeyManager for key rotation and retry logic
+ * Uses chain-specific API keys with optional user key fallback
  */
 async function fetchAllAgentsFromGraph(
-  keyManager: ReturnType<typeof getGraphKeyManager>
+  userKey: string | undefined
 ): Promise<GraphAgent[]> {
   const allAgents: GraphAgent[] = [];
 
@@ -217,7 +221,7 @@ async function fetchAllAgentsFromGraph(
     const first = 1000;
 
     while (true) {
-      const batch = await fetchAgentsFromGraph(chainId, keyManager, first, skip);
+      const batch = await fetchAgentsFromGraph(chainId, userKey, first, skip);
       if (batch.length === 0) break;
 
       allAgents.push(...batch);
@@ -416,10 +420,6 @@ export async function syncFromGraph(
   const a2aClient = createA2AClient({ timeoutMs: 5000 });
   const reachabilityService = createReachabilityService(db);
 
-  // Create key manager for Graph API requests
-  // Uses user-priority strategy for sync workers to prefer user key when available
-  const keyManager = getGraphKeyManager(env.GRAPH_API_KEY, 'user-priority');
-
   const result: GraphSyncResult = {
     newAgents: 0,
     updatedAgents: 0,
@@ -432,7 +432,8 @@ export async function syncFromGraph(
   logger.start('Fetching agents from Graph');
 
   // Fetch all agents from Graph (including those without registrationFile)
-  const allAgents = await fetchAllAgentsFromGraph(keyManager);
+  // Uses chain-specific API keys with optional user key fallback
+  const allAgents = await fetchAllAgentsFromGraph(env.GRAPH_API_KEY);
   const agentsWithReg = allAgents.filter((a) => a.registrationFile);
   const agentsWithoutReg = allAgents.length - agentsWithReg.length;
 

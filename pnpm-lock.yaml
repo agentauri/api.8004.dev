@@ -31,8 +31,8 @@ importers:
         specifier: ^2.2.0
         version: 2.2.0(hono@4.11.3)
       agent0-sdk:
-        specifier: ^1.4.2
-        version: 1.4.2(encoding@0.1.13)(graphql@16.12.0)(typescript@5.9.3)(zod@4.3.5)
+        specifier: ^1.5.2
+        version: 1.5.2(encoding@0.1.13)(graphql@16.12.0)(typescript@5.9.3)(zod@4.3.5)
       hono:
         specifier: ^4.11.3
         version: 4.11.3
@@ -1521,8 +1521,8 @@ packages:
     engines: {node: '>=0.4.0'}
     hasBin: true
 
-  agent0-sdk@1.4.2:
-    resolution: {integrity: sha512-FBJlF8RVzuyV6MJbv24XHbRfVniipm+7XTk839edh0z4cpD3E3ViXp/eWw+7vwWecQEcOc7CJQ4XOKSUGgGi0A==}
+  agent0-sdk@1.5.2:
+    resolution: {integrity: sha512-BKqj0ZKuN3IpdK8wcjSRjLtwslqSITpwF6t2fEE3p0Uh54btSC4XfR0qBmM9DCKjdXMN9nc9qR9GdZOUTy7krw==}
     engines: {node: '>=22.0.0'}
 
   ajv-formats@3.0.1:
@@ -4210,7 +4210,7 @@ snapshots:
 
   acorn@8.14.0: {}
 
-  agent0-sdk@1.4.2(encoding@0.1.13)(graphql@16.12.0)(typescript@5.9.3)(zod@4.3.5):
+  agent0-sdk@1.5.2(encoding@0.1.13)(graphql@16.12.0)(typescript@5.9.3)(zod@4.3.5):
     dependencies:
       graphql-request: 6.1.0(encoding@0.1.13)(graphql@16.12.0)
       ipfs-http-client: 60.0.1(encoding@0.1.13)

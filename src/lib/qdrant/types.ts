@@ -166,6 +166,8 @@ export interface AgentPayload {
   declared_oasf_skills: string[];
   /** OASF domains declared by the agent in registration file */
   declared_oasf_domains: string[];
+  /** Whether agent has OASF data (non-empty skills or domains) */
+  has_oasf: boolean;
 
   // Gap 5: New endpoint fields (v1.0)
   /** Email contact endpoint */
@@ -553,6 +555,8 @@ export interface AgentFilterParams {
   declaredSkills?: string[];
   /** Filter by multiple declared OASF domain slugs (match any) */
   declaredDomains?: string[];
+  /** Filter by agents with OASF data (declared skills or domains) */
+  hasOasf?: boolean;
 
   // Gap 5: New endpoint filters
   /** Filter by agents with email endpoint */

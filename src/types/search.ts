@@ -87,6 +87,8 @@ export interface SearchFilters {
   declaredSkills?: string[];
   /** Filter by multiple declared OASF domain slugs (match any) */
   declaredDomains?: string[];
+  /** Filter by agents with OASF data (declared skills or domains) */
+  hasOasf?: boolean;
   /** Filter by agents with specific feedback tags (match any) */
   hasTags?: string[];
   // Gap 5: New endpoint filters

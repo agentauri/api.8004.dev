@@ -27,16 +27,27 @@ import { createReputationService } from '../reputation';
 import { createQdrantClient, type QdrantClient } from '../qdrant';
 
 import {
-  buildSubgraphUrl,
-  getGraphKeyManager,
+  executeWithChainKey,
   SUBGRAPH_IDS,
 } from '@/lib/config/graph';
 
 /**
- * Supported chain IDs with deployed v1.0 contracts
- * ETH Mainnet and ETH Sepolia have v1.0 contracts deployed
+ * Supported chain IDs with deployed v1.0 contracts and subgraphs
+ * Updated February 2026 with all deployed chains
  */
-const SUPPORTED_CHAIN_IDS: number[] = [1, 11155111];
+const SUPPORTED_CHAIN_IDS: number[] = [
+  // Mainnets
+  1,        // Ethereum Mainnet
+  137,      // Polygon Mainnet
+  8453,     // Base Mainnet
+  56,       // BSC Mainnet
+  143,      // Monad Mainnet
+  // Testnets
+  11155111, // Ethereum Sepolia
+  84532,    // Base Sepolia
+  97,       // BSC Testnet
+  10143,    // Monad Testnet
+];
 
 /**
  * Raw Feedback entity from The Graph
@@ -130,16 +141,16 @@ const FEEDBACK_QUERY_V1_0 = `
 
 /**
  * Fetch feedback from The Graph with pagination
- * Uses GraphKeyManager for key rotation and retry logic
+ * Uses chain-specific API keys with optional user key fallback
  * @param chainId - Chain ID to fetch feedback for
- * @param keyManager - GraphKeyManager for key rotation
+ * @param userKey - Optional user-provided API key for fallback
  * @param first - Number of items to fetch
  * @param skip - Number of items to skip
  * @param createdAtGt - Minimum createdAt timestamp
  */
 async function fetchFeedbackFromGraph(
   chainId: number,
-  keyManager: ReturnType<typeof getGraphKeyManager>,
+  userKey: string | undefined,
   first: number,
   skip: number,
   createdAtGt: number
@@ -150,13 +161,8 @@ async function fetchFeedbackFromGraph(
     return [];
   }
 
-  // Use key manager with retry for key rotation
-  return keyManager.executeWithRetry(async (apiKey) => {
-    const endpoint = buildSubgraphUrl(chainId, apiKey);
-    if (!endpoint) {
-      throw new Error(`Failed to build endpoint for chain ${chainId}`);
-    }
-
+  // Use chain-specific key with user key fallback
+  return executeWithChainKey(chainId, userKey, async (endpoint) => {
     const response = await fetchWithTimeout(
       endpoint,
       {
@@ -657,9 +663,8 @@ export async function syncFeedbackFromGraph(
 ): Promise<GraphFeedbackSyncResult> {
   const reputationService = createReputationService(db);
 
-  // Create key manager for Graph API requests
-  // Uses user-priority strategy for sync workers to prefer user key when available
-  const keyManager = getGraphKeyManager(env?.GRAPH_API_KEY, 'user-priority');
+  // User-provided API key for fallback (chain-specific SDK keys are used by default)
+  const userKey = env?.GRAPH_API_KEY;
 
   // Gap 6: Create Qdrant client if config available (for reachability attestation updates)
   const qdrant =
@@ -706,7 +711,7 @@ export async function syncFeedbackFromGraph(
         // Fetch batch of feedback for this chain
         const feedbackBatch = await fetchFeedbackFromGraph(
           chainId,
-          keyManager,
+          userKey,
           first,
           skip,
           lastCreatedAt

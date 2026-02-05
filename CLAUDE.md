@@ -457,16 +457,30 @@ erc_8004_versions (chain_id, version, deployed_at, contract_address)
 
 ## Supported Chains
 
-| Chain | Chain ID | Network | Status |
-|-------|----------|---------|--------|
-| Ethereum | 1 | Mainnet | ✅ Active (v1.0) |
-| Ethereum Sepolia | 11155111 | Testnet | ✅ Active (v1.0) |
-| Base Sepolia | 84532 | Testnet | ✅ Active (v1.0) |
-| Polygon Amoy | 80002 | Testnet | ✅ Active (v1.0) |
-| Linea Sepolia | 59141 | Testnet | ⏳ Pending v1.0 |
-| Hedera Testnet | 296 | Testnet | ⏳ Pending v1.0 |
-| HyperEVM Testnet | 998 | Testnet | ⏳ Pending v1.0 |
-| SKALE Base Sepolia | 1351057110 | Testnet | ⏳ Pending v1.0 |
+### Mainnets
+| Chain | Chain ID | Status |
+|-------|----------|--------|
+| Ethereum | 1 | ✅ Active (v1.0) |
+| Polygon | 137 | ✅ Active (v1.0) |
+| Base | 8453 | ✅ Active (v1.0) |
+| BSC | 56 | ✅ Active (v1.0) |
+| Monad | 143 | ✅ Active (v1.0) |
+| Gnosis | 100 | ⏳ Deployed (pending subgraph) |
+| Scroll | 534352 | ⏳ Deployed (pending subgraph) |
+
+### Testnets
+| Chain | Chain ID | Status |
+|-------|----------|--------|
+| Ethereum Sepolia | 11155111 | ✅ Active (v1.0) |
+| Base Sepolia | 84532 | ✅ Active (v1.0) |
+| BSC Testnet | 97 | ✅ Active (v1.0) |
+| Monad Testnet | 10143 | ✅ Active (v1.0) |
+| Polygon Amoy | 80002 | ⏳ Pending v1.0 |
+| Scroll Testnet | 534351 | ⏳ Pending v1.0 |
+| Linea Sepolia | 59141 | ⏳ Pending v1.0 |
+| Hedera Testnet | 296 | ⏳ Pending v1.0 |
+| HyperEVM Testnet | 998 | ⏳ Pending v1.0 |
+| SKALE Base Sepolia | 1351057110 | ⏳ Pending v1.0 |
 
 **Note**: Only active chains are supported for filtering in the API. Pending chains require v1.0 contract deployment and subgraph indexing.
 

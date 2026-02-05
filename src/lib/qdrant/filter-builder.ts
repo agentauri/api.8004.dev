@@ -404,6 +404,14 @@ export function buildFilter(params: AgentFilterParams): QdrantFilter | undefined
     });
   }
 
+  // Has OASF data filter (declared skills or domains)
+  if (params.hasOasf !== undefined) {
+    mustConditions.push({
+      key: 'has_oasf',
+      match: { value: params.hasOasf },
+    });
+  }
+
   // --- Gap 5: New endpoint filters ---
   addHasFieldFilter(mustConditions, mustNotConditions, 'email_endpoint', params.hasEmail);
   addHasFieldFilter(mustConditions, mustNotConditions, 'oasf_endpoint', params.hasOasfEndpoint);

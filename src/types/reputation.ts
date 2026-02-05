@@ -70,6 +70,8 @@ export interface AgentFeedback {
   feedbackIndex?: number;
   /** Service endpoint reference (ERC-8004 v1.0) */
   endpoint?: string;
+  /** KECCAK-256 hash of feedback content (ERC-8004 v1.0) */
+  feedbackHash?: string;
 }
 
 /**

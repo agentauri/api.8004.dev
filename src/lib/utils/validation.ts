@@ -57,9 +57,16 @@ const addressArrayFilters = createArrayFilterSchemas(MAX_LENGTHS.ADDRESS);
 const trustModelArrayFilters = createArrayFilterSchemas(MAX_LENGTHS.TRUST_MODEL);
 
 /**
- * Supported chain IDs
+ * Supported chain IDs - chains with active subgraph deployments
+ * Mainnets: Ethereum (1), Polygon (137), Base (8453), BSC (56), Monad (143)
+ * Testnets: Ethereum Sepolia (11155111), Base Sepolia (84532), BSC Testnet (97), Monad Testnet (10143)
  */
-export const SUPPORTED_CHAIN_IDS = [1, 11155111, 84532, 80002] as const;
+export const SUPPORTED_CHAIN_IDS = [
+  // Mainnets
+  1, 137, 8453, 56, 143,
+  // Testnets
+  11155111, 84532, 97, 10143,
+] as const;
 
 /**
  * Chain ID validation schema
@@ -291,6 +298,8 @@ export const listAgentsQuerySchema = z.object({
   'declaredSkills[]': skillArrayFilters.bracket,
   declaredDomains: skillArrayFilters.csv,
   'declaredDomains[]': skillArrayFilters.bracket,
+  // Has OASF data filter
+  hasOasf: stringBooleanSchema.optional(),
   // Tags filter
   hasTags: skillArrayFilters.csv,
   'hasTags[]': skillArrayFilters.bracket,
@@ -375,6 +384,8 @@ export const searchRequestSchema = z.object({
       declaredSkills: z.array(z.string().max(MAX_LENGTHS.SKILL)).max(MAX_LENGTHS.ARRAY_ITEMS).optional(),
       /** Filter by multiple declared OASF domain slugs (match any) */
       declaredDomains: z.array(z.string().max(MAX_LENGTHS.SKILL)).max(MAX_LENGTHS.ARRAY_ITEMS).optional(),
+      /** Filter by agents with OASF data (declared skills or domains) */
+      hasOasf: z.boolean().optional(),
       /** Filter by agents with specific feedback tags (match any) */
       hasTags: z.array(z.string().max(MAX_LENGTHS.SKILL)).max(MAX_LENGTHS.ARRAY_ITEMS).optional(),
       // Gap 5: New endpoint filters

@@ -223,6 +223,7 @@ export function buildAgentPayload(
     // Gap 4: Declared OASF fields
     declared_oasf_skills: input.oasfSkills ?? [],
     declared_oasf_domains: input.oasfDomains ?? [],
+    has_oasf: (input.oasfSkills?.length ?? 0) > 0 || (input.oasfDomains?.length ?? 0) > 0,
 
     // Gap 5: New endpoint fields
     email_endpoint: input.emailEndpoint ?? '',

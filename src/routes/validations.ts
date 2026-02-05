@@ -76,7 +76,7 @@ validations.get('/', async (c) => {
   const { chainId } = parsed;
 
   // Fetch validations from subgraph
-  const subgraphUrls = c.env.GRAPH_API_KEY ? buildSubgraphUrls(c.env.GRAPH_API_KEY) : {};
+  const subgraphUrls = buildSubgraphUrls(c.env.GRAPH_API_KEY);
   const subgraphValidations = await fetchValidationsFromSubgraph(
     chainId,
     agentId,
@@ -135,7 +135,7 @@ validations.get('/summary', async (c) => {
   const { chainId } = parsed;
 
   // Fetch validations and AgentStats in parallel
-  const subgraphUrls = c.env.GRAPH_API_KEY ? buildSubgraphUrls(c.env.GRAPH_API_KEY) : {};
+  const subgraphUrls = buildSubgraphUrls(c.env.GRAPH_API_KEY);
   const [subgraphValidations, agentStats] = await Promise.all([
     fetchValidationsFromSubgraph(chainId, agentId, subgraphUrls, 1000),
     fetchAgentStatsFromSubgraph(chainId, agentId, subgraphUrls),

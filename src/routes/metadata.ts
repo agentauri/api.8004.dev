@@ -85,7 +85,7 @@ metadata.get('/', async (c) => {
   }
 
   // Fetch metadata from subgraph
-  const subgraphUrls = c.env.GRAPH_API_KEY ? buildSubgraphUrls(c.env.GRAPH_API_KEY) : {};
+  const subgraphUrls = buildSubgraphUrls(c.env.GRAPH_API_KEY);
   const subgraphMetadata = await fetchAgentMetadataFromSubgraph(chainId, agentId, subgraphUrls);
 
   const metadataEntries = subgraphMetadata.map(transformMetadata);
@@ -129,7 +129,7 @@ metadata.get('/:key', async (c) => {
   const { chainId } = parsed;
 
   // Fetch metadata from subgraph
-  const subgraphUrls = c.env.GRAPH_API_KEY ? buildSubgraphUrls(c.env.GRAPH_API_KEY) : {};
+  const subgraphUrls = buildSubgraphUrls(c.env.GRAPH_API_KEY);
   const subgraphMetadata = await fetchAgentMetadataFromSubgraph(chainId, agentId, subgraphUrls);
 
   // Find the specific key

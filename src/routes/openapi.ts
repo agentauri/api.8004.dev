@@ -390,6 +390,12 @@ function generateOpenAPISpec(): object {
               schema: { type: 'string' },
             },
             {
+              name: 'hasOasf',
+              in: 'query',
+              description: 'Filter by agents with OASF data (declared skills or domains)',
+              schema: { type: 'boolean' },
+            },
+            {
               name: 'hasTags',
               in: 'query',
               description: 'Filter by agents with specific feedback tags (comma-separated)',
@@ -2942,6 +2948,7 @@ function generateOpenAPISpec(): object {
                 walletVerified: { type: 'boolean', description: 'Wallet verification status (ERC-8004 v1.0)' },
                 declaredSkills: { type: 'array', items: { type: 'string' }, description: 'Multiple declared OASF skill slugs' },
                 declaredDomains: { type: 'array', items: { type: 'string' }, description: 'Multiple declared OASF domain slugs' },
+                hasOasf: { type: 'boolean', description: 'Has OASF data (declared skills or domains)' },
                 hasTags: { type: 'array', items: { type: 'string' }, description: 'Filter by agents with specific feedback tags' },
                 reachableWeb: { type: 'boolean', description: 'Web endpoint is reachable' },
                 minValidationScore: { type: 'number', minimum: 0, maximum: 100, description: 'Minimum validation score (0-100)' },
@@ -3036,6 +3043,10 @@ function generateOpenAPISpec(): object {
               description: 'Per-client feedback index (ERC-8004 v1.0)',
             },
             endpoint: { type: 'string', description: 'Service endpoint reference (ERC-8004 v1.0)' },
+            feedbackHash: {
+              type: 'string',
+              description: 'KECCAK-256 hash of feedback content (ERC-8004 v1.0)',
+            },
           },
         },
         FeedbackListResponse: {

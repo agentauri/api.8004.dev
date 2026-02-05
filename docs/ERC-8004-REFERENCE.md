@@ -2,7 +2,7 @@
 
 This document tracks the current state of the ERC-8004 ecosystem. Keep this updated as the spec evolves.
 
-**Last Updated**: January 2026
+**Last Updated**: February 2026
 
 ---
 
@@ -17,28 +17,40 @@ This document tracks the current state of the ERC-8004 ecosystem. Keep this upda
 | **Subgraph Repo** | https://github.com/agent0lab/subgraph |
 | **SDK (agent0-ts)** | https://github.com/agent0lab/agent0-ts |
 | **SDK (agent0-py)** | https://github.com/agent0lab/agent0-py |
-| **Python SDK v1.0.0 Notes** | https://github.com/agent0lab/agent0-py/blob/main/RELEASE_NOTES_1.0.0.md |
+| **Python SDK v1.5.2 Notes** | https://github.com/agent0lab/agent0-py/blob/main/release_notes/RELEASE_NOTES_1.5.2.md |
 
 ---
 
-## Current Deployment Status (January 2026)
+## Current Deployment Status (February 2026)
 
 ### Contracts v1.0
 
+**Mainnet Deployments:**
+
 | Chain | Chain ID | IdentityRegistry | ReputationRegistry | Status |
 |-------|----------|------------------|-------------------|--------|
-| **ETH Mainnet** | 1 | `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` | `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63` | **DEPLOYED** (Genesis Month) |
-| **ETH Sepolia** | 11155111 | `0x8004A818BFB912233c491871b3d84c89A494BD9e` | `0x8004B663056A597Dffe9eCcC1965A193B7388713` | **DEPLOYED** |
-| Base Sepolia | 84532 | - | - | Pending |
+| **ETH Mainnet** | 1 | `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` | `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63` | **ACTIVE** |
+| **Polygon Mainnet** | 137 | `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` | `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63` | **ACTIVE** |
+| **Base Mainnet** | 8453 | `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` | `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63` | **ACTIVE** |
+| **BSC Mainnet** | 56 | `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` | `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63` | **ACTIVE** |
+| **Monad Mainnet** | 143 | `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` | `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63` | **ACTIVE** |
+| **Gnosis Mainnet** | 100 | `0x8004A818BFB912233c491871b3d84c89A494BD9e` | `0x8004B663056A597Dffe9eCcC1965A193B7388713` | **DEPLOYED** |
+| **Scroll Mainnet** | 534352 | `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` | `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63` | **DEPLOYED** |
+
+**Testnet Deployments:**
+
+| Chain | Chain ID | IdentityRegistry | ReputationRegistry | Status |
+|-------|----------|------------------|-------------------|--------|
+| **ETH Sepolia** | 11155111 | `0x8004A818BFB912233c491871b3d84c89A494BD9e` | `0x8004B663056A597Dffe9eCcC1965A193B7388713` | **ACTIVE** |
+| **Base Sepolia** | 84532 | `0x8004A818BFB912233c491871b3d84c89A494BD9e` | `0x8004B663056A597Dffe9eCcC1965A193B7388713` | **ACTIVE** |
+| **BSC Testnet** | 97 | `0x8004A818BFB912233c491871b3d84c89A494BD9e` | `0x8004B663056A597Dffe9eCcC1965A193B7388713` | **ACTIVE** |
+| **Monad Testnet** | 10143 | `0x8004A818BFB912233c491871b3d84c89A494BD9e` | `0x8004B663056A597Dffe9eCcC1965A193B7388713` | **ACTIVE** |
 | Polygon Amoy | 80002 | - | - | Pending |
 | Linea Sepolia | 59141 | - | - | Pending |
 | Hedera Testnet | 296 | - | - | Pending |
 | HyperEVM Testnet | 998 | - | - | Pending |
 | SKALE Base Sepolia | 1351057110 | - | - | Pending |
-
-**Ethereum Mainnet Details:**
-- Start Block: `24339924`
-- Subgraph ID: `FV6RR6y13rsnCxBAicKuQEwDp8ioEGiNaWaZUmvr1F8k`
+| Scroll Testnet | 534351 | - | - | Pending |
 
 **Infrastructure Addresses (Deterministic across all chains):**
 - CREATE2 Factory: `0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7`
@@ -46,19 +58,20 @@ This document tracks the current state of the ERC-8004 ecosystem. Keep this upda
 
 ### Subgraphs
 
-| Chain | Chain ID | Subgraph ID | Status | Notes |
-|-------|----------|-------------|--------|-------|
-| **ETH Mainnet** | 1 | `FV6RR6y13rsnCxBAicKuQEwDp8ioEGiNaWaZUmvr1F8k` | **ACTIVE** | Genesis Month deployment |
-| **ETH Sepolia** | 11155111 | `6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT` | **ACTIVE** | Testnet |
-| Base Sepolia | 84532 | - | **REMOVED** | Awaiting v1.0 contract deployment |
-| Polygon Amoy | 80002 | - | **REMOVED** | Awaiting v1.0 contract deployment |
-| Linea Sepolia | 59141 | - | **REMOVED** | Awaiting v1.0 contract deployment |
-| Hedera Testnet | 296 | - | **REMOVED** | Awaiting v1.0 contract deployment |
-| HyperEVM Testnet | 998 | - | **REMOVED** | Awaiting v1.0 contract deployment |
-| SKALE Base Sepolia | 1351057110 | - | **REMOVED** | Awaiting v1.0 contract deployment |
+| Chain | Chain ID | Subgraph ID | Status |
+|-------|----------|-------------|--------|
+| **ETH Mainnet** | 1 | `FV6RR6y13rsnCxBAicKuQEwDp8ioEGiNaWaZUmvr1F8k` | **ACTIVE** |
+| **Polygon Mainnet** | 137 | `9q16PZv1JudvtnCAf44cBoxg82yK9SSsFvrjCY9xnneF` | **ACTIVE** |
+| **Base Mainnet** | 8453 | `43s9hQRurMGjuYnC1r2ZwS6xSQktbFyXMPMqGKUFJojb` | **ACTIVE** |
+| **BSC Mainnet** | 56 | `D6aWqowLkWqBgcqmpNKXuNikPkob24ADXCciiP8Hvn1K` | **ACTIVE** |
+| **Monad Mainnet** | 143 | `4tvLxkczjhSaMiqRrCV1EyheYHyJ7Ad8jub1UUyukBjg` | **ACTIVE** |
+| **ETH Sepolia** | 11155111 | `6wQRC7geo9XYAhckfmfo8kbMRLeWU8KQd3XsJqFKmZLT` | **ACTIVE** |
+| **Base Sepolia** | 84532 | `4yYAvQLFjBhBtdRCY7eUWo181VNoTSLLFd5M7FXQAi6u` | **ACTIVE** |
+| **BSC Testnet** | 97 | `BTjind17gmRZ6YhT9peaCM13SvWuqztsmqyfjpntbg3Z` | **ACTIVE** |
+| **Monad Testnet** | 10143 | `8iiMH9sj471jbp7AwUuuyBXvPJqCEsobuHBeUEKQSxhU` | **ACTIVE** |
 
-**Note**: v0.4 subgraphs have been deprecated and removed. ETH Mainnet and ETH Sepolia v1.0 are currently active.
-Other chains will be re-enabled when v1.0 contracts are deployed.
+**Note**: Gnosis and Scroll mainnets have contracts deployed but subgraphs are pending.
+Testnet subgraphs for Polygon Amoy, Linea Sepolia, Hedera, HyperEVM, and SKALE are pending contract deployment.
 
 **Contact**: @lentan to add more chains
 
@@ -204,9 +217,9 @@ type AgentRegistrationFile @entity {
 - [x] Type definitions: Remove legacy `agentWalletChainId` (types/agent.ts)
 - [x] **Mainnet Readiness**: Query `value` (BigDecimal) instead of `score` from subgraph (graph-feedback-worker.ts)
 
-### SDK Status (agent0-sdk v1.4.2)
+### SDK Status (agent0-sdk v1.5.2)
 
-The `agentWallet` query bug from v0.31.0 has been resolved. The backend now uses agent0-sdk v1.4.2 which includes:
+The `agentWallet` query bug from v0.31.0 has been resolved. The backend now uses agent0-sdk v1.5.2 which includes:
 - Mainnet registry defaults and subgraph configuration
 - Multi-chain support with correct `agentWallet` queries
 - Renamed `averageScore` → `averageValue`, `minAverageScore` → `minAverageValue`

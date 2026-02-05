@@ -57,7 +57,7 @@ stats.get('/', async (c) => {
   const hasErrors = chainStats.some((chain) => chain.status === 'error');
 
   // Fetch Protocol stats from subgraph for enhanced data
-  const subgraphUrls = c.env.GRAPH_API_KEY ? buildSubgraphUrls(c.env.GRAPH_API_KEY) : {};
+  const subgraphUrls = buildSubgraphUrls(c.env.GRAPH_API_KEY);
   const protocolStatsPromises = chainStats.map((chain) =>
     fetchProtocolStatsFromSubgraph(chain.chainId, subgraphUrls).catch((error) => {
       console.warn(
@@ -133,7 +133,7 @@ stats.get('/global', async (c) => {
   ]);
 
   // Fetch Protocol stats from subgraph for each chain
-  const subgraphUrls = c.env.GRAPH_API_KEY ? buildSubgraphUrls(c.env.GRAPH_API_KEY) : {};
+  const subgraphUrls = buildSubgraphUrls(c.env.GRAPH_API_KEY);
   const protocolStatsPromises = chainStats.map((chain) =>
     fetchProtocolStatsFromSubgraph(chain.chainId, subgraphUrls).catch((error) => {
       console.warn(
@@ -216,7 +216,7 @@ stats.get('/chains/:chainId', async (c) => {
   const chainStat = chainStats.find((s) => s.chainId === chainId);
 
   // Fetch Protocol stats from subgraph
-  const subgraphUrls = c.env.GRAPH_API_KEY ? buildSubgraphUrls(c.env.GRAPH_API_KEY) : {};
+  const subgraphUrls = buildSubgraphUrls(c.env.GRAPH_API_KEY);
   const protocolStats = await fetchProtocolStatsFromSubgraph(chainId, subgraphUrls).catch(
     (error) => {
       console.warn(

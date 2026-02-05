@@ -3,7 +3,7 @@
  * @module services/sdk
  */
 
-import type { SearchParams } from 'agent0-sdk';
+import type { SearchFilters, SearchOptions } from 'agent0-sdk';
 import { SDK } from 'agent0-sdk';
 import { circuitBreakers } from '@/lib/utils/circuit-breaker';
 import { SDKError } from '@/lib/utils/errors';
@@ -107,8 +107,17 @@ export interface ChainConfig {
     Env,
     | 'ETHEREUM_RPC_URL'
     | 'SEPOLIA_RPC_URL'
-    | 'BASE_SEPOLIA_RPC_URL'
+    | 'POLYGON_RPC_URL'
     | 'POLYGON_AMOY_RPC_URL'
+    | 'BASE_RPC_URL'
+    | 'BASE_SEPOLIA_RPC_URL'
+    | 'BSC_RPC_URL'
+    | 'BSC_TESTNET_RPC_URL'
+    | 'MONAD_RPC_URL'
+    | 'MONAD_TESTNET_RPC_URL'
+    | 'GNOSIS_RPC_URL'
+    | 'SCROLL_RPC_URL'
+    | 'SCROLL_TESTNET_RPC_URL'
     | 'LINEA_SEPOLIA_RPC_URL'
     | 'HEDERA_TESTNET_RPC_URL'
     | 'HYPEREVM_TESTNET_RPC_URL'
@@ -120,16 +129,28 @@ export interface ChainConfig {
  * Chain IDs with ERC-8004 v1.0 contracts actively deployed and indexed
  */
 export const ACTIVE_CHAIN_IDS: Set<number> = new Set([
+  // Mainnets
   1,        // Ethereum Mainnet
+  137,      // Polygon Mainnet
+  8453,     // Base Mainnet
+  56,       // BSC Mainnet
+  143,      // Monad Mainnet
+  100,      // Gnosis Mainnet
+  534352,   // Scroll Mainnet
+  // Testnets
   11155111, // Ethereum Sepolia
   84532,    // Base Sepolia
   80002,    // Polygon Amoy
+  97,       // BSC Testnet
+  10143,    // Monad Testnet
+  534351,   // Scroll Testnet
 ]);
 
 /**
  * Supported chains configuration
  */
 export const SUPPORTED_CHAINS: ChainConfig[] = [
+  // === MAINNETS ===
   {
     chainId: 1,
     name: 'Ethereum',
@@ -137,6 +158,49 @@ export const SUPPORTED_CHAINS: ChainConfig[] = [
     explorerUrl: 'https://etherscan.io',
     rpcEnvKey: 'ETHEREUM_RPC_URL',
   },
+  {
+    chainId: 137,
+    name: 'Polygon',
+    shortName: 'polygon',
+    explorerUrl: 'https://polygonscan.com',
+    rpcEnvKey: 'POLYGON_RPC_URL',
+  },
+  {
+    chainId: 8453,
+    name: 'Base',
+    shortName: 'base',
+    explorerUrl: 'https://basescan.org',
+    rpcEnvKey: 'BASE_RPC_URL',
+  },
+  {
+    chainId: 56,
+    name: 'BNB Smart Chain',
+    shortName: 'bsc',
+    explorerUrl: 'https://bscscan.com',
+    rpcEnvKey: 'BSC_RPC_URL',
+  },
+  {
+    chainId: 143,
+    name: 'Monad',
+    shortName: 'monad',
+    explorerUrl: 'https://monadscan.com',
+    rpcEnvKey: 'MONAD_RPC_URL',
+  },
+  {
+    chainId: 100,
+    name: 'Gnosis',
+    shortName: 'gnosis',
+    explorerUrl: 'https://gnosisscan.io',
+    rpcEnvKey: 'GNOSIS_RPC_URL',
+  },
+  {
+    chainId: 534352,
+    name: 'Scroll',
+    shortName: 'scroll',
+    explorerUrl: 'https://scrollscan.com',
+    rpcEnvKey: 'SCROLL_RPC_URL',
+  },
+  // === TESTNETS ===
   {
     chainId: 11155111,
     name: 'Ethereum Sepolia',
@@ -157,6 +221,27 @@ export const SUPPORTED_CHAINS: ChainConfig[] = [
     shortName: 'amoy',
     explorerUrl: 'https://amoy.polygonscan.com',
     rpcEnvKey: 'POLYGON_AMOY_RPC_URL',
+  },
+  {
+    chainId: 97,
+    name: 'BSC Testnet',
+    shortName: 'bsc-testnet',
+    explorerUrl: 'https://testnet.bscscan.com',
+    rpcEnvKey: 'BSC_TESTNET_RPC_URL',
+  },
+  {
+    chainId: 10143,
+    name: 'Monad Testnet',
+    shortName: 'monad-testnet',
+    explorerUrl: 'https://monad-testnet.socialscan.io',
+    rpcEnvKey: 'MONAD_TESTNET_RPC_URL',
+  },
+  {
+    chainId: 534351,
+    name: 'Scroll Testnet',
+    shortName: 'scroll-testnet',
+    explorerUrl: 'https://sepolia.scrollscan.com',
+    rpcEnvKey: 'SCROLL_TESTNET_RPC_URL',
   },
   {
     chainId: 59141,
@@ -223,7 +308,7 @@ export interface GetAgentsParams {
 /**
  * Parameters for fallback search (used when vector search fails)
  */
-export interface FallbackSearchParams {
+export interface FallbackSearchFilters {
   /** Search query (used for name/description substring match) */
   query: string;
   /** Chain IDs to search */
@@ -271,7 +356,7 @@ export interface FallbackSearchResult {
 /**
  * Parameters for reputation-based search
  */
-export interface ReputationSearchParams {
+export interface ReputationSearchFilters {
   /** Chain IDs to search */
   chainIds?: number[];
   /** Minimum average reputation score (1-5) */
@@ -293,6 +378,12 @@ export interface ReputationSearchResult {
   hasMore: boolean;
   nextCursor?: string;
 }
+
+/**
+ * Type aliases for backward compatibility
+ */
+export type FallbackSearchParams = FallbackSearchFilters;
+export type ReputationSearchParams = ReputationSearchFilters;
 
 /**
  * Calculate basic search score based on name/description match quality
@@ -500,11 +591,14 @@ async function fetchAgentExtrasFromSubgraph(
 
 /**
  * Feedback record from subgraph
- * Updated for ERC-8004 v1.0: added endpoint, feedbackIndex, feedbackHash
+ * Updated for ERC-8004 v1.0: value replaces score, added endpoint, feedbackIndex, feedbackHash
  */
 export interface SubgraphFeedback {
   id: string;
-  score: number;
+  /** Feedback value (BigDecimal as string, typically 0-100 range) */
+  value: string;
+  /** Normalized score for backward compatibility (computed from value) */
+  score?: number;
   clientAddress: string;
   tag1?: string;
   tag2?: string;
@@ -611,11 +705,14 @@ export async function fetchFeedbacksFromSubgraph(
   const query = `{
     feedbacks(where: {agent: "${sanitizedAgentId}"}, first: ${sanitizedLimit}, orderBy: createdAt, orderDirection: desc) {
       id
-      score
+      value
       clientAddress
       tag1
       tag2
+      endpoint
+      feedbackIndex
       feedbackUri
+      feedbackHash
       createdAt
       isRevoked
     }
@@ -1255,13 +1352,13 @@ export interface SDKService {
    * Fallback search using SDK (used when vector search is unavailable)
    * Performs substring matching on name/description with basic scoring
    */
-  search(params: FallbackSearchParams): Promise<FallbackSearchResult>;
+  search(params: FallbackSearchFilters): Promise<FallbackSearchResult>;
 
   /**
    * Search agents by reputation score using SDK's native reputation search
    * Uses minRep natively, maxRep via post-filtering
    */
-  searchByReputation(params: ReputationSearchParams): Promise<ReputationSearchResult>;
+  searchByReputation(params: ReputationSearchFilters): Promise<ReputationSearchResult>;
 }
 
 /**
@@ -1305,15 +1402,19 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
 
   /**
    * Transform SDK agent to our AgentSummary format
+   * SDK v1.5.2: mcp/a2a are endpoint strings (not booleans)
    */
   function transformAgent(agent: {
     agentId: string;
+    chainId: number;
     name: string;
     description: string;
     image?: string;
     active: boolean;
-    mcp: boolean;
-    a2a: boolean;
+    /** SDK v1.5.2: endpoint string or undefined */
+    mcp?: string;
+    /** SDK v1.5.2: endpoint string or undefined */
+    a2a?: string;
     x402support: boolean;
     operators?: string[];
     ens?: string | null;
@@ -1326,16 +1427,20 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
     const chainIdStr = parts[0] || '0';
     const tokenId = parts[1] || '0';
 
+    // SDK v1.5.2: mcp/a2a are endpoint strings, convert to boolean for hasMcp/hasA2a
+    const hasMcp = Boolean(agent.mcp);
+    const hasA2a = Boolean(agent.a2a);
+
     return {
       id: agent.agentId,
-      chainId: Number.parseInt(chainIdStr, 10),
+      chainId: agent.chainId || Number.parseInt(chainIdStr, 10),
       tokenId,
       name: agent.name,
       description: agent.description,
       image: agent.image,
       active: agent.active,
-      hasMcp: agent.mcp,
-      hasA2a: agent.a2a,
+      hasMcp,
+      hasA2a,
       x402Support: agent.x402support,
       supportedTrust: deriveSupportedTrust(agent.x402support),
       operators: agent.operators || [],
@@ -1376,46 +1481,44 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
       }
 
       // Build base search params (without chains - each SDK queries its own chain)
-      const baseSearchParams: Omit<SearchParams, 'chains'> = {};
+      const baseSearchFilters: Omit<SearchFilters, 'chains'> = {};
       // Filter by active status when explicitly specified
-      if (active !== undefined) baseSearchParams.active = active;
-      // Only pass true values to SDK - SDK subgraph filter doesn't correctly handle =false
-      // (it looks for mcpEndpoint: null but agents may have empty string)
-      // The =false cases are handled by post-filtering in routes/agents.ts
-      if (hasMcp === true) baseSearchParams.mcp = true;
-      if (hasA2a === true) baseSearchParams.a2a = true;
-      if (hasX402 === true) baseSearchParams.x402support = true;
-      if (mcpTools && mcpTools.length > 0) baseSearchParams.mcpTools = mcpTools;
-      if (a2aSkills && a2aSkills.length > 0) baseSearchParams.a2aSkills = a2aSkills;
+      if (active !== undefined) baseSearchFilters.active = active;
+      // SDK v1.5.2: use hasMCP/hasA2A instead of mcp/a2a
+      // Only pass true values - =false cases are handled by post-filtering in routes/agents.ts
+      if (hasMcp === true) baseSearchFilters.hasMCP = true;
+      if (hasA2a === true) baseSearchFilters.hasA2A = true;
+      if (hasX402 === true) baseSearchFilters.x402support = true;
+      if (mcpTools && mcpTools.length > 0) baseSearchFilters.mcpTools = mcpTools;
+      if (a2aSkills && a2aSkills.length > 0) baseSearchFilters.a2aSkills = a2aSkills;
       // Note: hasRegistrationFile is handled by post-filtering as SDK doesn't support it directly
 
       try {
-        // Single chain: use direct SDK query with cursor/offset pagination
+        // Single chain: SDK v1.5.2 returns full results, we handle pagination locally
         if (chainsToQuery.length === 1) {
           const chainConfig = chainsToQuery[0];
           if (!chainConfig) {
             return { items: [], nextCursor: undefined, total: 0 };
           }
           const sdk = getSDK(chainConfig.chainId);
-          const searchParams: SearchParams = {
-            ...baseSearchParams,
+          const searchFilters: SearchFilters = {
+            ...baseSearchFilters,
             chains: [chainConfig.chainId],
           };
 
-          // Use offset as cursor if provided (SDK accepts offset as cursor string)
-          const effectiveCursor = cursor ?? (offset !== undefined ? String(offset) : undefined);
-          const result = await sdk.searchAgents(searchParams, {
+          // SDK v1.5.2 returns AgentSummary[] directly (no pagination in SDK)
+          const result = await sdk.searchAgents(searchFilters, {
             sort: ['createdAt:desc'],
-            pageSize: limit,
-            cursor: effectiveCursor,
           });
 
-          const items = result.items.map(transformAgent);
-          const total = result.meta?.totalResults ?? items.length;
+          // SDK returns array directly now
+          const allItems = result.map(transformAgent);
+          const total = allItems.length;
 
-          // Calculate if there are more results
+          // Handle pagination locally
           const currentOffset = offset ?? ((cursor ? Number.parseInt(cursor, 10) : 0) || 0);
-          const hasMore = currentOffset + items.length < total;
+          const items = allItems.slice(currentOffset, currentOffset + limit);
+          const hasMore = currentOffset + limit < total;
 
           return {
             items,
@@ -1468,40 +1571,26 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
         }
 
         // Cache miss: fetch all results from all chains and cache them
-        // Query each chain in parallel, fetching larger batches for caching
-        const maxItemsPerChain = 200; // Fetch up to 200 items per chain for caching
-
+        // Query each chain in parallel
+        // SDK v1.5.2 returns full results as AgentSummary[] directly
         const chainPromises = chainsToQuery.map(async (chainConfig) => {
           const sdk = getSDK(chainConfig.chainId);
-          const searchParams: SearchParams = {
-            ...baseSearchParams,
+          const searchFilters: SearchFilters = {
+            ...baseSearchFilters,
             chains: [chainConfig.chainId],
           };
 
-          // Fetch multiple pages to get comprehensive results
-          const allChainItems: AgentSummary[] = [];
-          let chainCursor: string | undefined;
-          let itemsFetched = 0;
-          const pageSize = 100;
+          // SDK v1.5.2 returns all results directly
+          const result = await sdk.searchAgents(searchFilters, {
+            sort: ['createdAt:desc'],
+          });
 
-          while (itemsFetched < maxItemsPerChain) {
-            const result = await sdk.searchAgents(searchParams, {
-              sort: ['createdAt:desc'],
-              pageSize,
-              cursor: chainCursor,
-            });
-
-            const items = result.items.map(transformAgent);
-            allChainItems.push(...items);
-            itemsFetched += items.length;
-
-            chainCursor = result.nextCursor;
-            if (!chainCursor || items.length < pageSize) break;
-          }
+          // Result is AgentSummary[] directly in v1.5.2
+          const items = result.map(transformAgent);
 
           return {
             chainId: chainConfig.chainId,
-            items: allChainItems,
+            items,
           };
         });
 
@@ -1582,6 +1671,13 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
 
         if (!agent) return null;
 
+        // SDK v1.5.2: mcp/a2a are endpoint strings, convert to booleans
+        const hasMcp = Boolean(agent.mcp);
+        const hasA2a = Boolean(agent.a2a);
+        // Get endpoint URLs - in v1.5.2 agent.mcp/a2a ARE the endpoints
+        const mcpEndpointUrl = agent.mcp || extras.mcpEndpoint || getExtraString(agent.extras, 'mcpEndpoint') || '';
+        const a2aEndpointUrl = agent.a2a || extras.a2aEndpoint || getExtraString(agent.extras, 'a2aEndpoint') || '';
+
         // Transform to our detailed format
         return {
           id: agent.agentId,
@@ -1591,8 +1687,8 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
           description: agent.description,
           image: agent.image,
           active: agent.active,
-          hasMcp: agent.mcp,
-          hasA2a: agent.a2a,
+          hasMcp,
+          hasA2a,
           x402Support: agent.x402support,
           supportedTrust: deriveSupportedTrust(agent.x402support),
           // Additional fields from SDK
@@ -1601,15 +1697,15 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
           did: agent.did || undefined,
           walletAddress: agent.walletAddress || undefined,
           endpoints: {
-            mcp: agent.mcp
+            mcp: hasMcp
               ? {
-                  url: extras.mcpEndpoint ?? getExtraString(agent.extras, 'mcpEndpoint') ?? '',
+                  url: mcpEndpointUrl,
                   version: extras.mcpVersion ?? '1.0.0',
                 }
               : undefined,
-            a2a: agent.a2a
+            a2a: hasA2a
               ? {
-                  url: extras.a2aEndpoint ?? getExtraString(agent.extras, 'a2aEndpoint') ?? '',
+                  url: a2aEndpointUrl,
                   version: extras.a2aVersion ?? '1.0.0',
                 }
               : undefined,
@@ -1642,10 +1738,10 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
             name: agent.name,
             description: agent.description,
             image: agent.image,
-            mcp: agent.mcp,
-            a2a: agent.a2a,
-            mcpEndpoint: extras.mcpEndpoint,
-            a2aEndpoint: extras.a2aEndpoint,
+            mcp: hasMcp,
+            a2a: hasA2a,
+            mcpEndpoint: mcpEndpointUrl || undefined,
+            a2aEndpoint: a2aEndpointUrl || undefined,
             reputationCount: undefined, // Will be populated when reputation is fetched
           }),
           // Compute aggregated health score
@@ -1653,10 +1749,10 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
             name: agent.name,
             description: agent.description,
             image: agent.image,
-            mcp: agent.mcp,
-            a2a: agent.a2a,
-            mcpEndpoint: extras.mcpEndpoint,
-            a2aEndpoint: extras.a2aEndpoint,
+            mcp: hasMcp,
+            a2a: hasA2a,
+            mcpEndpoint: mcpEndpointUrl || undefined,
+            a2aEndpoint: a2aEndpointUrl || undefined,
             reputationCount: undefined, // Will be populated when reputation is fetched
             reputationScore: undefined,
           }),
@@ -1814,7 +1910,7 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
     },
 
     // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Fallback search with OR mode requires multiple branches
-    async search(params: FallbackSearchParams): Promise<FallbackSearchResult> {
+    async search(params: FallbackSearchFilters): Promise<FallbackSearchResult> {
       const {
         query,
         chainIds,
@@ -1867,7 +1963,7 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
         }
 
         // Build base search params
-        const baseSearchParams: SearchParams = {
+        const baseSearchFilters: SearchFilters = {
           chains: chainsToQuery.map((c) => c.chainId),
         };
 
@@ -1875,11 +1971,11 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
         // Instead, we fetch all agents and filter locally by name/description
 
         // Filter by active status when explicitly specified
-        if (active !== undefined) baseSearchParams.active = active;
+        if (active !== undefined) baseSearchFilters.active = active;
 
         // Add MCP tools and A2A skills filters if provided
-        if (mcpTools && mcpTools.length > 0) baseSearchParams.mcpTools = mcpTools;
-        if (a2aSkills && a2aSkills.length > 0) baseSearchParams.a2aSkills = a2aSkills;
+        if (mcpTools && mcpTools.length > 0) baseSearchFilters.mcpTools = mcpTools;
+        if (a2aSkills && a2aSkills.length > 0) baseSearchFilters.a2aSkills = a2aSkills;
 
         let allItems: AgentSummary[] = [];
 
@@ -1895,18 +1991,19 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
             const chainSdk = getSDK(chainConfig.chainId);
 
             for (const filter of booleanFilters) {
-              const filterParams: SearchParams = {
-                ...baseSearchParams,
+              const filterParams: SearchFilters = {
+                ...baseSearchFilters,
                 chains: [chainConfig.chainId],
               };
-              if (filter === 'mcp') filterParams.mcp = true;
-              if (filter === 'a2a') filterParams.a2a = true;
+              if (filter === 'mcp') filterParams.hasMCP = true;
+              if (filter === 'a2a') filterParams.hasA2A = true;
               if (filter === 'x402') filterParams.x402support = true;
 
               searchPromises.push(
                 chainSdk
-                  .searchAgents(filterParams, { sort: ['createdAt:desc'], pageSize: fetchLimit })
-                  .then((result) => result.items.map(transformAgent))
+                  .searchAgents(filterParams, { sort: ['createdAt:desc'] })
+                  // SDK v1.5.2 returns array directly
+                  .then((result) => result.map(transformAgent))
               );
             }
           }
@@ -1929,86 +2026,45 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
           allItems = [...agentMap.values()];
         } else {
           // AND mode: single search with all filters
-          if (mcp !== undefined) baseSearchParams.mcp = mcp;
-          if (a2a !== undefined) baseSearchParams.a2a = a2a;
-          if (x402 !== undefined) baseSearchParams.x402support = x402;
+          // SDK v1.5.2: use hasMCP/hasA2A instead of mcp/a2a
+          if (mcp !== undefined) baseSearchFilters.hasMCP = mcp;
+          if (a2a !== undefined) baseSearchFilters.hasA2A = a2a;
+          if (x402 !== undefined) baseSearchFilters.x402support = x402;
 
-          // SDK doesn't support fuzzy/substring search reliably for old agents
-          // When query provided, search each chain separately for full pagination depth
+          // SDK v1.5.2 returns full results, we do local filtering for substring search
           const queryLower = query?.trim().toLowerCase();
 
-          if (queryLower) {
-            // Search each chain separately to get full pagination depth
-            const maxPagesPerChain = 20;
-            const pageSize = 100;
+          // Query each chain separately and merge results
+          // SDK v1.5.2 returns AgentSummary[] directly
+          const chainSearchPromises = chainsToQuery.map(async (chainConfig) => {
+            const chainSdk = getSDK(chainConfig.chainId);
+            const chainParams = { ...baseSearchFilters, chains: [chainConfig.chainId] };
+            // SDK v1.5.2: returns array directly
+            const result = await chainSdk.searchAgents(chainParams, {
+              sort: ['createdAt:desc'],
+            });
+            return result;
+          });
 
-            // Parallel search each chain
-            // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Multi-chain search requires pagination and result aggregation
-            const chainSearchPromises = chainsToQuery.map(async (chainConfig) => {
-              const chainItems: AgentSummary[] = [];
-              const chainSdk = getSDK(chainConfig.chainId);
-              const chainParams = { ...baseSearchParams, chains: [chainConfig.chainId] };
+          const chainResults = await Promise.allSettled(chainSearchPromises);
 
-              let cursor: string | undefined;
-              let pagesChecked = 0;
-
-              while (pagesChecked < maxPagesPerChain) {
-                const result = await chainSdk.searchAgents(chainParams, {
-                  sort: ['createdAt:desc'],
-                  pageSize,
-                  cursor,
-                });
-
-                for (const agent of result.items) {
+          // Merge results from all chains
+          for (const result of chainResults) {
+            if (result.status === 'fulfilled') {
+              // Filter by query locally if provided
+              if (queryLower) {
+                for (const agent of result.value) {
                   const nameMatch = agent.name?.toLowerCase().includes(queryLower);
                   const descMatch = agent.description?.toLowerCase().includes(queryLower);
-                  if (!nameMatch && !descMatch) continue;
-
-                  chainItems.push(transformAgent(agent));
+                  if (nameMatch || descMatch) {
+                    allItems.push(transformAgent(agent));
+                  }
                 }
-
-                cursor = result.nextCursor;
-                pagesChecked++;
-
-                if (!cursor) break;
-              }
-
-              return chainItems;
-            });
-
-            const chainResults = await Promise.allSettled(chainSearchPromises);
-
-            // Merge results from all chains (only from successful queries)
-            for (const result of chainResults) {
-              if (result.status === 'fulfilled') {
-                allItems.push(...result.value);
               } else {
-                console.warn('Chain search failed with query:', result.reason);
-              }
-            }
-          } else {
-            // No query - query each chain separately and merge results
-            // SDK doesn't support multi-chain queries, so we must query each chain
-            const perChainFetchLimit = Math.ceil(fetchLimit / chainsToQuery.length);
-
-            const chainSearchPromises = chainsToQuery.map(async (chainConfig) => {
-              const chainSdk = getSDK(chainConfig.chainId);
-              const chainParams = { ...baseSearchParams, chains: [chainConfig.chainId] };
-              const result = await chainSdk.searchAgents(chainParams, {
-                sort: ['createdAt:desc'],
-                pageSize: perChainFetchLimit,
-              });
-              return result.items;
-            });
-
-            const chainResults = await Promise.allSettled(chainSearchPromises);
-
-            for (const result of chainResults) {
-              if (result.status === 'fulfilled') {
                 allItems.push(...result.value.map(transformAgent));
-              } else {
-                console.warn('Chain search failed without query:', result.reason);
               }
+            } else {
+              console.warn('Chain search failed:', result.reason);
             }
           }
         }
@@ -2070,45 +2126,51 @@ export function createSDKService(env: Env, cache?: KVNamespace): SDKService {
       }
 
       try {
-        const primaryChain = chainsToQuery[0];
-        if (!primaryChain) {
-          return { items: [], total: 0, hasMore: false };
-        }
-        const sdk = getSDK(primaryChain.chainId);
+        // SDK v1.5.2: searchAgentsByReputation removed, use searchAgents with feedback filter
+        // Query each chain separately since SDK doesn't support multi-chain queries
+        const chainSearchPromises = chainsToQuery.map(async (chainConfig) => {
+          const chainSdk = getSDK(chainConfig.chainId);
+          const searchFilters: SearchFilters = {
+            chains: [chainConfig.chainId],
+            feedback: {
+              hasFeedback: true,
+              minValue: minRep,
+              maxValue: maxRep,
+            },
+          };
+          // SDK v1.5.2 returns AgentSummary[] directly
+          const result = await chainSdk.searchAgents(searchFilters, {
+            sort: ['averageValue:desc'],
+          });
+          return result;
+        });
 
-        // Use SDK's native reputation search with minAverageValue
-        // Over-fetch if maxRep is set (we'll need to post-filter)
-        const fetchLimit = maxRep !== undefined ? Math.min(limit * 3, 100) : limit;
+        const chainResults = await Promise.allSettled(chainSearchPromises);
 
-        const result = await sdk.searchAgentsByReputation(
-          { minAverageValue: minRep },
-          {
-            pageSize: fetchLimit,
-            cursor,
-            chains: chainsToQuery.map((c) => c.chainId),
+        // Merge results from all chains
+        let allItems: AgentSummary[] = [];
+        for (const result of chainResults) {
+          if (result.status === 'fulfilled') {
+            allItems.push(...result.value.map(transformAgent));
+          } else {
+            console.warn('Chain reputation search failed:', result.reason);
           }
-        );
-
-        // Transform SDK results to our format
-        let items: AgentSummary[] = result.items.map(transformAgent);
-
-        // Post-filter by maxRep if specified (SDK doesn't support this natively)
-        // Note: We can't filter by reputationScore here because SDK doesn't return it
-        // The route handler will need to enrich with reputation data and filter
-
-        const total = result.meta?.totalResults ?? items.length;
-        const hasMore = !!result.nextCursor || items.length >= fetchLimit;
-
-        // Apply limit after any post-filtering
-        if (items.length > limit) {
-          items = items.slice(0, limit);
         }
+
+        // Sort by averageValue descending (use feedbackCount as proxy since SDK doesn't return averageValue)
+        // The route handler will need to enrich with actual reputation data
+        const total = allItems.length;
+
+        // Handle pagination locally
+        const currentOffset = cursor ? Number.parseInt(cursor, 10) || 0 : 0;
+        const items = allItems.slice(currentOffset, currentOffset + limit);
+        const hasMore = currentOffset + limit < total;
 
         return {
           items,
           total,
           hasMore,
-          nextCursor: result.nextCursor,
+          nextCursor: hasMore ? String(currentOffset + limit) : undefined,
         };
       } catch (error) {
         throw new SDKError('searchByReputation', error);

@@ -10,16 +10,29 @@ import type { SearchMode } from './search';
 
 /**
  * Supported blockchain chain IDs
+ * Mainnets:
  * - 1: Ethereum Mainnet
+ * - 137: Polygon Mainnet
+ * - 8453: Base Mainnet
+ * - 56: BSC Mainnet
+ * - 143: Monad Mainnet
+ * - 100: Gnosis Mainnet
+ * - 534352: Scroll Mainnet
+ * Testnets:
  * - 11155111: Ethereum Sepolia
  * - 84532: Base Sepolia
  * - 80002: Polygon Amoy
+ * - 97: BSC Testnet
+ * - 10143: Monad Testnet
+ * - 534351: Scroll Testnet
  * - 59141: Linea Sepolia
  * - 296: Hedera Testnet
  * - 998: HyperEVM Testnet
  * - 1351057110: SKALE Base Sepolia
  */
-export type SupportedChainId = 1 | 11155111 | 84532 | 80002 | 59141 | 296 | 998 | 1351057110;
+export type SupportedChainId =
+  | 1 | 137 | 8453 | 56 | 143 | 100 | 534352  // Mainnets
+  | 11155111 | 84532 | 80002 | 97 | 10143 | 534351 | 59141 | 296 | 998 | 1351057110;  // Testnets
 
 /**
  * Supported trust methods

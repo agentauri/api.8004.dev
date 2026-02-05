@@ -22,11 +22,21 @@ export interface Env {
   GOOGLE_AI_API_KEY: string;
   SEARCH_SERVICE_URL: string;
 
-  // RPC URLs for supported chains
+  // RPC URLs for supported chains - Mainnets
   ETHEREUM_RPC_URL?: string;
+  POLYGON_RPC_URL?: string;
+  BASE_RPC_URL?: string;
+  BSC_RPC_URL?: string;
+  MONAD_RPC_URL?: string;
+  GNOSIS_RPC_URL?: string;
+  SCROLL_RPC_URL?: string;
+  // RPC URLs for supported chains - Testnets
   SEPOLIA_RPC_URL: string;
   BASE_SEPOLIA_RPC_URL: string;
   POLYGON_AMOY_RPC_URL: string;
+  BSC_TESTNET_RPC_URL?: string;
+  MONAD_TESTNET_RPC_URL?: string;
+  SCROLL_TESTNET_RPC_URL?: string;
   LINEA_SEPOLIA_RPC_URL: string;
   HEDERA_TESTNET_RPC_URL: string;
   HYPEREVM_TESTNET_RPC_URL: string;
