@@ -20,7 +20,7 @@ importers:
         version: 0.24.1
       '@modelcontextprotocol/sdk':
         specifier: ^1.25.1
-        version: 1.25.1(@cfworker/json-schema@4.1.1)(hono@4.11.3)(zod@4.3.5)
+        version: 1.25.1(@cfworker/json-schema@4.1.1)(hono@4.11.7)(zod@4.3.5)
       '@x402/core':
         specifier: ^2.2.0
         version: 2.2.0
@@ -29,13 +29,13 @@ importers:
         version: 2.2.0(typescript@5.9.3)
       '@x402/hono':
         specifier: ^2.2.0
-        version: 2.2.0(hono@4.11.3)
+        version: 2.2.0(hono@4.11.7)
       agent0-sdk:
         specifier: ^1.5.2
         version: 1.5.2(encoding@0.1.13)(graphql@16.12.0)(typescript@5.9.3)(zod@4.3.5)
       hono:
-        specifier: ^4.11.3
-        version: 4.11.3
+        specifier: ^4.11.7
+        version: 4.11.7
       viem:
         specifier: ^2.43.5
         version: 2.43.5(typescript@5.9.3)(zod@4.3.5)
@@ -1936,6 +1936,7 @@ packages:
 
   glob@10.5.0:
     resolution: {integrity: sha512-DfXN8DfhJ7NH3Oe7cFmu3NCu1wKbkReJ8TorzSAFbSKrlNaQSKfIzqYqVY8zlbs2NLBbWpRiU52GX2PbaBVNkg==}
+    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
     hasBin: true
 
   gopd@1.2.0:
@@ -1972,8 +1973,8 @@ packages:
   hast-util-whitespace@3.0.0:
     resolution: {integrity: sha512-88JUN06ipLwsnv+dVn+OIYOvAuvBMy/Qoi6O7mQHxdPXpjy+Cd6xRkWwux7DKO+4sYILtLBRIKgsdpS2gQc7qw==}
 
-  hono@4.11.3:
-    resolution: {integrity: sha512-PmQi306+M/ct/m5s66Hrg+adPnkD5jiO6IjA7WhWw0gSBSo1EcRegwuI1deZ+wd5pzCGynCcn2DprnE4/yEV4w==}
+  hono@4.11.7:
+    resolution: {integrity: sha512-l7qMiNee7t82bH3SeyUCt9UF15EVmaBvsppY2zQtrbIhl/yzBTny+YUxsVjSjQ6gaqaeVtZmGocom8TzBlA4Yw==}
     engines: {node: '>=16.9.0'}
 
   hookable@5.5.3:
@@ -3537,9 +3538,9 @@ snapshots:
     dependencies:
       graphql: 16.12.0
 
-  '@hono/node-server@1.19.7(hono@4.11.3)':
+  '@hono/node-server@1.19.7(hono@4.11.7)':
     dependencies:
-      hono: 4.11.3
+      hono: 4.11.7
 
   '@iconify-json/simple-icons@1.2.64':
     dependencies:
@@ -3722,9 +3723,9 @@ snapshots:
       multiformats: 11.0.2
       uint8arrays: 4.0.10
 
-  '@modelcontextprotocol/sdk@1.25.1(@cfworker/json-schema@4.1.1)(hono@4.11.3)(zod@4.3.5)':
+  '@modelcontextprotocol/sdk@1.25.1(@cfworker/json-schema@4.1.1)(hono@4.11.7)(zod@4.3.5)':
     dependencies:
-      '@hono/node-server': 1.19.7(hono@4.11.3)
+      '@hono/node-server': 1.19.7(hono@4.11.7)
       ajv: 8.17.1
       ajv-formats: 3.0.1(ajv@8.17.1)
       content-type: 1.0.5
@@ -4182,11 +4183,11 @@ snapshots:
       ajv: 8.17.1
       zod: 3.25.76
 
-  '@x402/hono@2.2.0(hono@4.11.3)':
+  '@x402/hono@2.2.0(hono@4.11.7)':
     dependencies:
       '@x402/core': 2.2.0
       '@x402/extensions': 2.2.0
-      hono: 4.11.3
+      hono: 4.11.7
       zod: 3.25.76
 
   abitype@1.2.3(typescript@5.9.3)(zod@3.25.76):
@@ -4752,7 +4753,7 @@ snapshots:
     dependencies:
       '@types/hast': 3.0.4
 
-  hono@4.11.3: {}
+  hono@4.11.7: {}
 
   hookable@5.5.3: {}
 
