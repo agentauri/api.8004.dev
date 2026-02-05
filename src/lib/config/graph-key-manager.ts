@@ -101,7 +101,6 @@ export class GraphKeyManager {
       case 'sdk-priority':
         useUserFirst = false;
         break;
-      case 'round-robin':
       default:
         // Stateless round-robin based on timestamp
         // Distributes load ~50/50 without persistent state
@@ -109,16 +108,19 @@ export class GraphKeyManager {
         break;
     }
 
+    // userKey is guaranteed to be non-null here because hasRotation() returned true
+    const userKey = this.userKey as string;
+
     if (useUserFirst) {
       return {
-        primary: this.userKey!,
+        primary: userKey,
         fallback: this.sdkKey,
         source: 'user',
       };
     } else {
       return {
         primary: this.sdkKey,
-        fallback: this.userKey!,
+        fallback: userKey,
         source: 'sdk',
       };
     }
@@ -156,7 +158,7 @@ export class GraphKeyManager {
       }
 
       // Log retry attempt
-      console.log(
+      console.info(
         `[GraphKeyManager] Primary key (${source}) failed, retrying with fallback: ${
           primaryError instanceof Error ? primaryError.message : 'Unknown error'
         }`

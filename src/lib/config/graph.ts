@@ -6,11 +6,11 @@
 
 // Import and re-export key manager
 import {
-  GraphKeyManager as GraphKeyManagerClass,
   createGraphKeyManager as createKeyManager,
+  GraphKeyManager as GraphKeyManagerClass,
   isGraphRetryableError as isRetryableError,
-  type KeyRotationStrategy as RotationStrategy,
   type GraphKeyManagerConfig as KeyManagerConfig,
+  type KeyRotationStrategy as RotationStrategy,
 } from './graph-key-manager';
 
 export {
@@ -177,7 +177,7 @@ export async function executeWithChainKey<T>(
     }
 
     // Log retry attempt
-    console.log(
+    console.info(
       `[GraphChainKey] SDK key for chain ${chainId} failed, retrying with user key: ${
         primaryError instanceof Error ? primaryError.message : 'Unknown error'
       }`

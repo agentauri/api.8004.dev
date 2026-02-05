@@ -7,7 +7,7 @@ import { Hono } from 'hono';
 import { getAllFeedbacksPaginated, getFeedbackStats, type ScoreCategory } from '@/db/queries';
 import { errors } from '@/lib/utils/errors';
 import { rateLimit, rateLimitConfigs } from '@/lib/utils/rate-limit';
-import { feedbacksQuerySchema, validateAndParseAgentId } from '@/lib/utils/validation';
+import { feedbacksQuerySchema } from '@/lib/utils/validation';
 import { CACHE_KEYS, CACHE_TTL, createCacheService } from '@/services/cache';
 import {
   buildSubgraphUrls,
