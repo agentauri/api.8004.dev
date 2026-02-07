@@ -25,7 +25,7 @@ import { type ContentFields, computeContentHash, computeEmbedHash } from './cont
 
 // Supported chain IDs with deployed v1.0 contracts and subgraphs
 // Updated February 2026 with all deployed chains
-const SUPPORTED_CHAIN_IDS: number[] = [
+export const SUPPORTED_CHAIN_IDS: number[] = [
   // Mainnets
   1, // Ethereum Mainnet
   137, // Polygon Mainnet
@@ -94,6 +94,8 @@ export interface GraphSyncResult {
   skipped?: number;
   /** Whether there are more agents to sync in the next run */
   hasMore?: boolean;
+  /** Chain ID that was processed in this invocation */
+  chainId?: number;
 }
 
 /**
@@ -203,29 +205,100 @@ async function fetchAgentsFromGraph(
 }
 
 /**
- * Fetch all agents from all chains
- * Uses chain-specific API keys with optional user key fallback
+ * Fetch all agents from a single chain, paginating through all results.
+ * @param chainId - Chain to fetch from
+ * @param userKey - Optional Graph API key
+ * @returns All agents on that chain
  */
-async function fetchAllAgentsFromGraph(userKey: string | undefined): Promise<GraphAgent[]> {
+async function fetchAllAgentsFromChain(
+  chainId: number,
+  userKey: string | undefined
+): Promise<GraphAgent[]> {
   const allAgents: GraphAgent[] = [];
+  let skip = 0;
+  const first = 1000;
 
-  for (const chainId of SUPPORTED_CHAIN_IDS) {
-    let skip = 0;
-    const first = 1000;
+  while (true) {
+    const batch = await fetchAgentsFromGraph(chainId, userKey, first, skip);
+    if (batch.length === 0) break;
 
-    while (true) {
-      const batch = await fetchAgentsFromGraph(chainId, userKey, first, skip);
-      if (batch.length === 0) break;
+    allAgents.push(...batch);
+    skip += first;
 
-      allAgents.push(...batch);
-      skip += first;
-
-      // Safety limit
-      if (skip > 10000) break;
-    }
+    // Safety limit
+    if (skip > 50000) break;
   }
 
   return allAgents;
+}
+
+/**
+ * Get the next chain ID to sync using round-robin.
+ * Reads `last_graph_sync_chain_id` from D1, returns the next chain in the list.
+ * On first run (NULL), starts with chain index 0 (Ethereum Mainnet).
+ * If the stored chain ID is no longer in SUPPORTED_CHAIN_IDS, wraps to index 0.
+ */
+export async function getNextChainId(db: D1Database): Promise<number> {
+  const firstChain = SUPPORTED_CHAIN_IDS[0] as number;
+
+  const row = await db
+    .prepare('SELECT last_graph_sync_chain_id FROM qdrant_sync_state WHERE id = ?')
+    .bind('global')
+    .first<{ last_graph_sync_chain_id: number | null }>();
+
+  const lastChainId = row?.last_graph_sync_chain_id ?? null;
+
+  if (lastChainId === null) {
+    return firstChain;
+  }
+
+  const lastIndex = SUPPORTED_CHAIN_IDS.indexOf(lastChainId);
+  if (lastIndex === -1) {
+    return firstChain;
+  }
+
+  const nextIndex = (lastIndex + 1) % SUPPORTED_CHAIN_IDS.length;
+  return SUPPORTED_CHAIN_IDS[nextIndex] as number;
+}
+
+/**
+ * Update D1 sync state after processing a chain.
+ * Advances the round-robin pointer and updates per-chain timestamps.
+ */
+async function updateChainSyncState(
+  db: D1Database,
+  chainId: number,
+  stats: { synced: number; embedded: number }
+): Promise<void> {
+  const now = new Date().toISOString();
+
+  // Read current per-chain timestamps
+  const row = await db
+    .prepare('SELECT graph_sync_chain_timestamps FROM qdrant_sync_state WHERE id = ?')
+    .bind('global')
+    .first<{ graph_sync_chain_timestamps: string | null }>();
+
+  let timestamps: Record<string, string> = {};
+  try {
+    timestamps = JSON.parse(row?.graph_sync_chain_timestamps || '{}') as Record<string, string>;
+  } catch {
+    timestamps = {};
+  }
+  timestamps[String(chainId)] = now;
+
+  await db
+    .prepare(
+      `UPDATE qdrant_sync_state
+       SET last_graph_sync = ?,
+           last_graph_sync_chain_id = ?,
+           graph_sync_chain_timestamps = ?,
+           agents_synced = agents_synced + ?,
+           embeddings_generated = embeddings_generated + ?,
+           updated_at = datetime('now')
+       WHERE id = 'global'`
+    )
+    .bind(now, chainId, JSON.stringify(timestamps), stats.synced, stats.embedded)
+    .run();
 }
 
 /**
@@ -395,8 +468,12 @@ async function fetchA2AIOModes(
 }
 
 /**
- * Sync agents from Graph to Qdrant
- * Processes agents incrementally to stay under Cloudflare's subrequest limit
+ * Sync agents from Graph to Qdrant — one chain per invocation (round-robin).
+ *
+ * Each cron invocation picks the next chain via round-robin, fetches all agents
+ * for that chain, then processes up to MAX_AGENTS_PER_SYNC that are new or changed.
+ * This stays well under Cloudflare's ~1000 subrequest limit even for large chains
+ * like Ethereum Mainnet (11K+ agents).
  */
 export async function syncFromGraph(
   db: D1Database,
@@ -422,26 +499,46 @@ export async function syncFromGraph(
     hasMore: false,
   };
 
-  logger.start('Fetching agents from Graph');
+  // 1. Determine which chain to sync this invocation
+  const chainId = await getNextChainId(db);
+  result.chainId = chainId;
 
-  // Fetch all agents from Graph (including those without registrationFile)
-  // Uses chain-specific API keys with optional user key fallback
-  const allAgents = await fetchAllAgentsFromGraph(env.GRAPH_API_KEY);
+  logger.start(`Syncing chain ${chainId} (round-robin)`);
+
+  // 2. Fetch all agents for this single chain
+  let allAgents: GraphAgent[];
+  try {
+    allAgents = await fetchAllAgentsFromChain(chainId, env.GRAPH_API_KEY);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    result.errors.push(`Fetch chain ${chainId}: ${message}`);
+
+    // Advance the chain pointer even on failure so we don't get stuck
+    await updateChainSyncState(db, chainId, { synced: 0, embedded: 0 });
+
+    logger.complete({
+      chainId,
+      error: message,
+      note: 'Advanced chain pointer despite fetch failure',
+    });
+
+    return result;
+  }
+
   const agentsWithReg = allAgents.filter((a) => a.registrationFile);
   const agentsWithoutReg = allAgents.length - agentsWithReg.length;
 
-  logger.progress('Fetched agents from Graph', {
+  logger.progress(`Fetched agents from chain ${chainId}`, {
     total: allAgents.length,
     withRegistration: agentsWithReg.length,
     withoutRegistration: agentsWithoutReg,
   });
 
-  // Get existing sync metadata for all agents (to identify which need syncing)
+  // 3. Get existing sync metadata for this chain's agents
   const agentIds = allAgents.map((a) => `${a.chainId}:${a.agentId}`);
-
-  // Query existing metadata in batches
   const existingMetadata = new Map<string, { content_hash: string; embed_hash: string }>();
   const BATCH_SIZE = 95;
+
   for (let i = 0; i < agentIds.length; i += BATCH_SIZE) {
     const batch = agentIds.slice(i, i + BATCH_SIZE);
     const placeholders = batch.map(() => '?').join(',');
@@ -460,8 +557,7 @@ export async function syncFromGraph(
   }
   logger.progress('Found existing sync metadata', { existingSynced: existingMetadata.size });
 
-  // Identify agents that need syncing (new or changed)
-  // Process ALL agents (with or without registrationFile)
+  // 4. Identify agents that need syncing (new or changed)
   const toSync: AgentToSync[] = [];
   let skipped = 0;
   let contentChanged = 0;
@@ -476,12 +572,8 @@ export async function syncFromGraph(
     const existing = existingMetadata.get(agentId);
 
     if (!existing) {
-      // New agent - needs full index with embedding
       toSync.push({ agent, needsEmbed: true });
     } else {
-      // Existing agent - check if content changed (e.g., owner field added, registrationFile added)
-      // Compute content hash from Graph fields to compare (use async SHA-256 to match stored hashes)
-      // Use same fallback logic as agentToPayload to ensure hash consistency
       const quickContentFields: ContentFields = {
         agentId,
         name: agent.registrationFile?.name || `Agent #${agent.agentId}`,
@@ -489,16 +581,14 @@ export async function syncFromGraph(
         active: agent.registrationFile?.active ?? false,
         hasMcp: Boolean(agent.registrationFile?.mcpEndpoint),
         hasA2a: Boolean(agent.registrationFile?.a2aEndpoint),
-        skills: [], // D1 fields - use empty for Graph-only comparison
-        domains: [], // D1 fields - use empty for Graph-only comparison
-        reputation: 0, // D1 field - use 0 for Graph-only comparison
+        skills: [],
+        domains: [],
+        reputation: 0,
         owner: (agent.owner ?? '').toLowerCase(),
         hasRegistrationFile: !!agent.registrationFile,
       };
       const newHash = await computeContentHash(quickContentFields);
 
-      // If hash differs, content changed - needs payload update (no re-embedding)
-      // Note: After adding owner field to hash, all old agents will have different hashes
       if (newHash !== existing.content_hash) {
         toSync.push({ agent, needsEmbed: false });
         contentChanged++;
@@ -511,6 +601,7 @@ export async function syncFromGraph(
   result.skipped = skipped;
   const newCount = toSync.filter((a) => a.needsEmbed).length;
   logger.progress('Identified agents to sync', {
+    chainId,
     toSync: toSync.length,
     newAgents: newCount,
     contentChanged,
@@ -518,11 +609,13 @@ export async function syncFromGraph(
   });
 
   if (toSync.length === 0) {
-    logger.skip('No agents need syncing');
+    // No work needed, but still advance the chain pointer
+    await updateChainSyncState(db, chainId, { synced: 0, embedded: 0 });
+    logger.skip(`No agents need syncing on chain ${chainId}`);
     return result;
   }
 
-  // Fetch A2A IO modes only for agents we're going to sync
+  // 5. Fetch A2A IO modes only for agents we're going to sync
   const agentsToFetchA2A = toSync.filter((a) => a.agent.registrationFile?.a2aEndpoint);
   logger.progress('Fetching A2A AgentCards', { count: agentsToFetchA2A.length });
   const ioModesMap = await fetchA2AIOModes(
@@ -531,13 +624,12 @@ export async function syncFromGraph(
   );
   logger.progress('Fetched A2A AgentCards', { fetched: ioModesMap.size });
 
-  // Update toSync with IO modes
   for (const item of toSync) {
     const agentId = `${item.agent.chainId}:${item.agent.agentId}`;
     item.ioModes = ioModesMap.get(agentId);
   }
 
-  // Fetch reachability status only for agents we're syncing
+  // 6. Fetch reachability status only for agents we're syncing
   const syncAgentIds = toSync.map((a) => `${a.agent.chainId}:${a.agent.agentId}`);
   logger.progress('Fetching reachability status', { agentCount: syncAgentIds.length });
   const reachabilityMap = await reachabilityService.getAgentReachabilitiesBatch(syncAgentIds);
@@ -545,23 +637,20 @@ export async function syncFromGraph(
 
   logger.progress('Processing agents', { count: toSync.length });
 
-  // Process agents that need syncing
+  // 7. Process agents that need syncing
   for (const { agent, needsEmbed, ioModes } of toSync) {
     const agentId = `${agent.chainId}:${agent.agentId}`;
 
     try {
-      // Get reachability status for this agent
       const reachability = reachabilityMap.get(agentId);
       const payload = agentToPayload(agent, ioModes, reachability);
       const embedFields = getEmbedFields(agent, ioModes);
       const contentFields = getContentFields(payload);
 
       if (needsEmbed) {
-        // Generate new embedding
         const text = formatAgentText(embedFields);
         const vector = await generateEmbedding(text, env.VENICE_API_KEY);
 
-        // Upsert to Qdrant with new embedding
         await qdrant.upsertAgent(agentId, vector, payload);
         result.reembedded++;
 
@@ -571,12 +660,10 @@ export async function syncFromGraph(
           result.updatedAgents++;
         }
       } else {
-        // Just update payload without re-embedding
         await qdrant.setPayloadByAgentId(agentId, payload);
         result.updatedAgents++;
       }
 
-      // Update sync metadata
       const embedHash = await computeEmbedHash(embedFields);
       const contentHash = await computeContentHash(contentFields);
 
@@ -598,7 +685,6 @@ export async function syncFromGraph(
       const message = error instanceof Error ? error.message : String(error);
       result.errors.push(`Sync ${agentId}: ${message}`);
 
-      // Mark as error in sync metadata
       await db
         .prepare(
           `INSERT INTO agent_sync_metadata (agent_id, content_hash, sync_status, last_error)
@@ -613,21 +699,14 @@ export async function syncFromGraph(
     }
   }
 
-  // Update global sync state
-  const now = new Date().toISOString();
-  await db
-    .prepare(
-      `UPDATE qdrant_sync_state
-       SET last_graph_sync = ?,
-           agents_synced = agents_synced + ?,
-           embeddings_generated = embeddings_generated + ?,
-           updated_at = datetime('now')
-       WHERE id = 'global'`
-    )
-    .bind(now, result.newAgents + result.updatedAgents, result.reembedded)
-    .run();
+  // 8. Update chain sync state (advances round-robin pointer)
+  await updateChainSyncState(db, chainId, {
+    synced: result.newAgents + result.updatedAgents,
+    embedded: result.reembedded,
+  });
 
   logger.complete({
+    chainId,
     newAgents: result.newAgents,
     updatedAgents: result.updatedAgents,
     reembedded: result.reembedded,

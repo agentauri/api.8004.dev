@@ -612,7 +612,7 @@ export default {
               GRAPH_API_KEY: graphApiKey,
             });
             console.info(
-              `Graph sync: ${graphResult.newAgents} new, ${graphResult.updatedAgents} updated, ` +
+              `Graph sync [chain ${graphResult.chainId ?? '?'}]: ${graphResult.newAgents} new, ${graphResult.updatedAgents} updated, ` +
                 `${graphResult.reembedded} reembedded, ${graphResult.skipped ?? 0} skipped, ` +
                 `${graphResult.errors.length} errors${graphResult.hasMore ? ' (more pending)' : ''}`
             );

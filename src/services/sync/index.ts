@@ -17,7 +17,7 @@ export { syncD1ToQdrant } from './d1-sync-worker';
 export type { GraphFeedbackSyncResult } from './graph-feedback-worker';
 export { syncFeedbackFromGraph } from './graph-feedback-worker';
 export type { GraphSyncResult } from './graph-sync-worker';
-export { syncFromGraph } from './graph-sync-worker';
+export { getNextChainId, SUPPORTED_CHAIN_IDS, syncFromGraph } from './graph-sync-worker';
 export type { ReconciliationResult } from './reconciliation-worker';
 export { runReconciliation } from './reconciliation-worker';
 export type { ReembedOptions, ReembedResult } from './reembed-worker';
