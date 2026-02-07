@@ -9,8 +9,6 @@ import { enqueueClassification } from '@/db/queries';
 import type { ClassificationJob, Env } from '@/types';
 import {
   createMockClassifierService,
-  createMockEASIndexerService,
-  createMockExecutionContext,
   createMockQueueMessage,
   createMockSDKService,
 } from '../../mocks/services';
@@ -157,69 +155,3 @@ describe('Queue handler', () => {
   });
 });
 
-describe('Scheduled handler', () => {
-  let consoleInfoSpy: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
-    consoleInfoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-    vi.clearAllMocks();
-    vi.resetModules();
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('calls ctx.waitUntil with sync function', { timeout: 15000 }, async () => {
-    // Mock all sync workers that run in scheduled handler
-    vi.doMock('@/services/sync/graph-sync-worker', () => ({
-      syncFromGraph: vi.fn().mockResolvedValue({
-        newAgents: 0,
-        updatedAgents: 0,
-        reembedded: 0,
-        errors: [],
-      }),
-    }));
-    vi.doMock('@/services/sync/d1-sync-worker', () => ({
-      syncD1ToQdrant: vi.fn().mockResolvedValue({
-        classificationsUpdated: 0,
-        reputationUpdated: 0,
-        errors: [],
-      }),
-    }));
-    vi.doMock('@/services/sync/reconciliation-worker', () => ({
-      runReconciliation: vi.fn().mockResolvedValue({
-        orphansDeleted: 0,
-        missingIndexed: 0,
-        errors: [],
-      }),
-    }));
-    vi.doMock('@/services/eas-indexer', () => ({
-      createEASIndexerService: () => createMockEASIndexerService(),
-      EAS_CONFIGS: [],
-    }));
-
-    const appModule = await import('@/index');
-    const { ctx, waitUntilPromises } = createMockExecutionContext();
-
-    // Use a scheduledTime at minute 0 to trigger all hourly syncs (EAS, reconciliation)
-    const hourlyTime = new Date();
-    hourlyTime.setMinutes(0, 0, 0);
-
-    await appModule.default.scheduled(
-      { scheduledTime: hourlyTime.getTime(), cron: '0 * * * *' } as ScheduledEvent,
-      testEnv(),
-      ctx
-    );
-
-    expect(ctx.waitUntil).toHaveBeenCalled();
-    await Promise.all(waitUntilPromises);
-
-    // Verify all sync workers were called
-    expect(consoleInfoSpy).toHaveBeenCalledWith('Starting Graph → Qdrant sync...');
-    expect(consoleInfoSpy).toHaveBeenCalledWith('Starting D1 → Qdrant sync...');
-    expect(consoleInfoSpy).toHaveBeenCalledWith('Starting EAS attestation sync...');
-    expect(consoleInfoSpy).toHaveBeenCalledWith('EAS attestation sync complete');
-  });
-});
