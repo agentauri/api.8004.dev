@@ -519,7 +519,8 @@ export async function insertFeedback(db: D1Database, feedback: NewFeedback): Pro
     .prepare(
       `INSERT INTO agent_feedback
        (id, agent_id, chain_id, score, tags, context, feedback_uri, feedback_hash, submitter, eas_uid, tx_id, feedback_index, endpoint, submitted_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(eas_uid) DO NOTHING`
     )
     .bind(
       id,
